@@ -95,3 +95,15 @@ Docker Compose (MariaDB + single Go binary). Also supports Debian Trixie as a sy
 - `docker-compose.yml` — MariaDB + app with health checks
 - `openvas-tracker.service` — systemd unit with security hardening
 - `install.sh` — creates user, installs binary, copies config, enables service
+- `.github/workflows/release-deb.yml` — builds .deb on `v*` tag push (self-hosted runner), uploads to GitHub release
+
+**Production server:** `SCANNER01` (192.168.1.100), Debian Trixie 13, accessible via `ssh scanner01`. Service runs as `openvas-tracker` user, config in `/etc/openvas-tracker/env`.
+
+**Deploy .deb manually:** `scp` package tree to server, `dpkg-deb --build`, `dpkg -i`. Binary must be `chmod 755` (use `install -m 0755`, not `cp`).
+
+## Gotchas
+
+- **No Redis**: Was removed — no async task queue, no caching. Don't re-introduce.
+- **No active scanning**: No Nmap, no gvm-cli, no scan launching. Import-only via webhook.
+- **docker-init.sql**: Must be updated when adding new migrations (add `SOURCE` line).
+- **deploy/openvas-tracker.env.example**: Keep in sync with `internal/config/config.go` — was stale before (had Postgres/Redis refs).
