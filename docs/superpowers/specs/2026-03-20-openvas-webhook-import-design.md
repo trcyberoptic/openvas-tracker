@@ -1,12 +1,12 @@
-﻿# OpenVAS Webhook Import Design
+# OpenVAS Webhook Import Design
 
 ## Summary
 
-Replace the OpenVAS scan orchestration (gvm-cli execution, async task queue) with a passive webhook-based import endpoint. OpenVAS pushes completed scan reports to OpenVAS-Tracker via an HTTP Alert. OpenVAS-Tracker parses the XML, creates a scan record, and stores vulnerabilities. Nmap scanning remains unchanged.
+Convert OpenVAS-Tracker from a scan orchestrator into a pure vulnerability dashboard. Remove all active scanning (OpenVAS gvm-cli, Nmap CLI), the asynq task queue, and the Redis dependency. Add a webhook-based import endpoint so OpenVAS can push completed scan reports via HTTP Alert. OpenVAS-Tracker parses the XML, creates a scan record, and stores vulnerabilities.
 
 ## Motivation
 
-OpenVAS-Tracker does not need to control OpenVAS directly. The existing `OpenVASScanner.Scan()` is a simplified stub that only calls `gvm-cli` for report retrieval. Instead, OpenVAS should push results automatically via its built-in Alert mechanism, keeping OpenVAS-Tracker as a results tracker rather than a scan orchestrator.
+OpenVAS-Tracker does not need to control scanners directly. It should act purely as a results dashboard — receiving, storing, and displaying vulnerability data. The existing scanner integrations (`OpenVASScanner.Scan()`, `NmapScanner.Scan()`) are simplified stubs. Instead, OpenVAS pushes results automatically via its built-in Alert mechanism.
 
 ## Design
 
@@ -39,12 +39,12 @@ OpenVAS-Tracker does not need to control OpenVAS directly. The existing `OpenVAS
 
 ### 2. API-Key Authentication
 
-**Config:** New field `ImportAPIKey string` in `ScannerConfig`, replacing `OpenVASPath`.
+**Config:** New field `ImportAPIKey string` in a new `ImportConfig` struct, replacing the entire `ScannerConfig`.
 
-- Config key: `scanner.importapikey` — must be explicitly registered via `v.SetDefault("scanner.importapikey", "")` in `config.go`'s `Load()` function. The old `v.SetDefault("scanner.openvaspath", "gvm-cli")` line is removed at the same time.
-- Env variable: `OT_SCANNER_IMPORTAPIKEY`
+- Config key: `import.apikey` — must be explicitly registered via `v.SetDefault("import.apikey", "")` in `config.go`'s `Load()` function. All `scanner.*` defaults are removed.
+- Env variable: `OT_IMPORT_APIKEY`
 - No default value — must be explicitly configured
-- **Minimum requirement:** key must be at least 32 characters. The middleware rejects startup if configured key is shorter.
+- **Minimum requirement:** key must be at least 32 characters. The app rejects startup if configured key is shorter.
 - **The key must not be logged at startup or in error messages.**
 
 **Middleware:** New function `APIKeyAuth(key string) echo.MiddlewareFunc` in `internal/middleware/apikey.go`.
@@ -84,7 +84,7 @@ Each import creates one scan record in the `scans` table. Because `CreateScanPar
 | `completed_at` | now | UpdateScanStatus |
 | `raw_output` | the original XML | UpdateScanStatus |
 
-**Note on existing data:** The `ScanTypeOpenvas` constant and DB enum value `"openvas"` remain unchanged. Existing scan rows with `scan_type = 'openvas'` from the old orchestrator are unaffected. No DB migration is needed.
+**Note on existing data:** The `ScanTypeOpenvas` constant and DB enum value `"openvas"` remain unchanged. Existing scan rows from the old orchestrator are unaffected. No DB migration is needed.
 
 **Note on COALESCE:** The two-step approach works because `CreateScan` leaves `started_at` and `completed_at` as NULL, and `UpdateScanStatus` uses `COALESCE(?, started_at)` which sets the value when it is NULL. If the `CreateScan` query is ever changed to set default timestamps, this flow would need to be revisited.
 
@@ -121,18 +121,22 @@ Each import creates one scan record in the `scans` table. Because `CreateScanPar
 
 ### 6. Code Removal
 
-The following OpenVAS orchestration code is removed:
+All active scanning infrastructure is removed. The app becomes a pure dashboard + import receiver.
 
-| File | What | Stays |
+| File/Dir | What is removed | What stays |
 |---|---|---|
 | `internal/scanner/openvas.go` | `OpenVASScanner` struct, `NewOpenVASScanner()`, `Scan()` | `ParseOpenVASXML()`, all XML structs, `OpenVASResult` |
-| `internal/scanner/openvas_test.go` | Tests for `Scan()` | Tests for `ParseOpenVASXML()` |
-| `internal/worker/scan_task.go` | `HandleOpenVASScan()` | `HandleNmapScan()`, `ScanPayload`, `NewScanTask()` |
-| `internal/worker/server.go` | `TaskScanOpenVAS` constant, mux registration | `TaskScanNmap`, nmap mux registration |
-| `internal/config/config.go` | `ScannerConfig.OpenVASPath`, default `gvm-cli` | `ScannerConfig.NmapPath` |
-| `cmd/OpenVAS-Tracker/main.go` | `openvasScanner` instantiation, passing to `NewMux` | Everything else |
-| `internal/handler/scans.go` | `oneof=nmap openvas` validation, `TaskScanOpenVAS` branch in `Launch()` | Changed to `oneof=nmap`, OpenVAS task-type selection removed |
-| `internal/handler/schedules.go` | `oneof=nmap openvas` validation | Changed to `oneof=nmap` |
+| `internal/scanner/openvas_test.go` | Nothing removed | Tests for `ParseOpenVASXML()` (kept as-is) |
+| `internal/scanner/nmap.go` | `NmapScanner` struct, `NewNmapScanner()`, `Scan()` | `ParseNmapXML()`, all XML/result structs (kept for potential future nmap import) |
+| `internal/scanner/nmap_test.go` | Nothing removed | Tests for `ParseNmapXML()` (kept as-is) |
+| `internal/worker/` | **Entire directory deleted** | Nothing — no more task queue |
+| `internal/service/scan.go` | **Entire file deleted** — depends on asynq + worker | Nothing |
+| `internal/handler/scans.go` | `Launch()` (POST), asynq dependency, `launchScanRequest` | `List()`, `Get()`, simplified `ScanHandler` using `queries.Queries` only |
+| `internal/handler/schedules.go` | `scan_type` `oneof` validation narrowed | Schedules kept but `openvas` removed from validation |
+| `internal/config/config.go` | `ScannerConfig` struct, `RedisConfig` struct, all `scanner.*` and `redis.*` defaults | New `ImportConfig` struct with `APIKey` field |
+| `cmd/openvas-tracker/main.go` | `asynq` client, `scanner` import, `worker` import, `openvasScanner`/`nmapScanner`, worker startup/shutdown, Redis config usage | Import handler wiring, all other handlers |
+| `.env.example` | `OT_SCANNER_*`, `OT_REDIS_*` lines | New `OT_IMPORT_APIKEY=` line |
+| `go.mod` / `go.sum` | `github.com/hibiken/asynq` dependency | Everything else |
 
 ### 7. New Files
 
