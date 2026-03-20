@@ -45,6 +45,9 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	// Embedded SPA (must be last — catch-all)
+	serveFrontend(e)
+
 	// Graceful shutdown
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	go func() {
