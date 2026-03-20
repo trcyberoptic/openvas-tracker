@@ -219,6 +219,23 @@ func (q *Queries) ListHostSummaries(ctx context.Context) ([]HostSummaryRow, erro
 	return items, rows.Err()
 }
 
+func (q *Queries) ListVulnsByHost(ctx context.Context, host string) ([]Vulnerability, error) {
+	rows, err := q.db.QueryContext(ctx, `SELECT `+vulnCols+` FROM vulnerabilities WHERE affected_host = ? ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 END`, host)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Vulnerability
+	for rows.Next() {
+		var i Vulnerability
+		if err := scanVuln(rows, &i); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
 func (q *Queries) DeleteVulnerability(ctx context.Context, arg DeleteVulnerabilityParams) error {
 	const deleteVulnerability = `DELETE FROM vulnerabilities WHERE id = ? AND user_id = ?`
 	_, err := q.db.ExecContext(ctx, deleteVulnerability, arg.ID, arg.UserID)

@@ -198,6 +198,25 @@ func (q *Queries) CountTicketsByStatus(ctx context.Context, userID string) ([]Co
 	return items, rows.Err()
 }
 
+type DashboardTicketStatsRow struct {
+	MyTickets         int64 `json:"my_tickets"`
+	UnassignedTickets int64 `json:"unassigned_tickets"`
+	OpenTicketsTotal  int64 `json:"open_tickets_total"`
+	ResolvedTickets   int64 `json:"resolved_tickets"`
+}
+
+func (q *Queries) DashboardTicketStats(ctx context.Context, userID string) (DashboardTicketStatsRow, error) {
+	const query = `SELECT
+		COALESCE(SUM(CASE WHEN assigned_to = ? AND status IN ('open','in_progress','review') THEN 1 ELSE 0 END), 0) as my_tickets,
+		COALESCE(SUM(CASE WHEN assigned_to IS NULL AND status IN ('open','in_progress','review') THEN 1 ELSE 0 END), 0) as unassigned_tickets,
+		COALESCE(SUM(CASE WHEN status IN ('open','in_progress','review') THEN 1 ELSE 0 END), 0) as open_tickets_total,
+		COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0) as resolved_tickets
+		FROM tickets`
+	var s DashboardTicketStatsRow
+	err := q.db.QueryRowContext(ctx, query, userID).Scan(&s.MyTickets, &s.UnassignedTickets, &s.OpenTicketsTotal, &s.ResolvedTickets)
+	return s, err
+}
+
 func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 	const deleteTicket = `DELETE FROM tickets WHERE id = ?`
 	_, err := q.db.ExecContext(ctx, deleteTicket, id)

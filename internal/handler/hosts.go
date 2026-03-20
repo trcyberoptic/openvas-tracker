@@ -24,6 +24,16 @@ func (h *HostHandler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, hosts)
 }
 
+func (h *HostHandler) Vulns(c echo.Context) error {
+	host := c.Param("host")
+	vulns, err := h.q.ListVulnsByHost(c.Request().Context(), host)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list vulnerabilities")
+	}
+	return c.JSON(http.StatusOK, vulns)
+}
+
 func (h *HostHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.List)
+	g.GET("/:host/vulnerabilities", h.Vulns)
 }

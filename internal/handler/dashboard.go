@@ -1,4 +1,3 @@
-// internal/handler/dashboard.go
 package handler
 
 import (
@@ -6,22 +5,27 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type DashboardHandler struct {
 	vulns   *service.VulnerabilityService
 	tickets *service.TicketService
+	q       *queries.Queries
 }
 
-func NewDashboardHandler(vulns *service.VulnerabilityService, tickets *service.TicketService) *DashboardHandler {
-	return &DashboardHandler{vulns: vulns, tickets: tickets}
+func NewDashboardHandler(vulns *service.VulnerabilityService, tickets *service.TicketService, q *queries.Queries) *DashboardHandler {
+	return &DashboardHandler{vulns: vulns, tickets: tickets, q: q}
 }
 
 type dashboardResponse struct {
-	VulnsBySeverity []severityCount `json:"vulns_by_severity"`
-	TicketsByStatus []statusCount   `json:"tickets_by_status"`
-	RecentVulns     int             `json:"recent_vulns"`
+	VulnsBySeverity    []severityCount `json:"vulns_by_severity"`
+	MyTickets          int64           `json:"my_tickets"`
+	UnassignedTickets  int64           `json:"unassigned_tickets"`
+	OpenTicketsTotal   int64           `json:"open_tickets_total"`
+	ResolvedTickets    int64           `json:"resolved_tickets"`
 }
 
 type severityCount struct {
@@ -29,13 +33,9 @@ type severityCount struct {
 	Count    int64  `json:"count"`
 }
 
-type statusCount struct {
-	Status string `json:"status"`
-	Count  int64  `json:"count"`
-}
-
 func (h *DashboardHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
 
 	vulnCounts, err := h.vulns.CountBySeverity(ctx)
 	if err != nil {
@@ -50,8 +50,17 @@ func (h *DashboardHandler) Get(c echo.Context) error {
 		})
 	}
 
+	stats, err := h.q.DashboardTicketStats(ctx, userID)
+	if err != nil {
+		stats = queries.DashboardTicketStatsRow{}
+	}
+
 	return c.JSON(http.StatusOK, dashboardResponse{
-		VulnsBySeverity: sevCounts,
+		VulnsBySeverity:   sevCounts,
+		MyTickets:         stats.MyTickets,
+		UnassignedTickets: stats.UnassignedTickets,
+		OpenTicketsTotal:  stats.OpenTicketsTotal,
+		ResolvedTickets:   stats.ResolvedTickets,
 	})
 }
 
