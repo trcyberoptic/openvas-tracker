@@ -10,12 +10,14 @@ const PRIO_ORDER: Record<string, number> = { critical: 1, high: 2, medium: 3, lo
 
 interface Ticket {
   id: string; title: string; priority: string; priority_order?: number; status: string
-  first_seen_at?: string; last_seen_at?: string; created_at: string
+  assigned_to?: string; first_seen_at?: string; last_seen_at?: string; created_at: string
 }
+interface UserRef { id: string; username: string; email: string }
 
 export function Tickets() {
   const navigate = useNavigate()
   const { data: raw = [] } = useQuery({ queryKey: ['tickets'], queryFn: () => api.get<Ticket[]>('/tickets') })
+  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
   const { values, setValues } = useTableFilter(['search', 'priority', 'status'])
   const { sort, toggle } = useSortable()
 
@@ -48,6 +50,7 @@ export function Tickets() {
             <SortHeader label="Title" sortKey="title" sort={sort} onToggle={toggle} />
             <SortHeader label="Priority" sortKey="priority_order" sort={sort} onToggle={toggle} />
             <SortHeader label="Status" sortKey="status" sort={sort} onToggle={toggle} />
+            <SortHeader label="Assigned To" sortKey="assigned_to" sort={sort} onToggle={toggle} />
             <SortHeader label="First Seen" sortKey="first_seen_at" sort={sort} onToggle={toggle} />
             <SortHeader label="Last Seen" sortKey="last_seen_at" sort={sort} onToggle={toggle} />
           </tr></thead>
@@ -57,11 +60,12 @@ export function Tickets() {
                 <td className="p-3">{t.title}</td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs font-medium text-white ${PRIORITY_COLORS[t.priority] || 'bg-gray-600'}`}>{t.priority}</span></td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[t.status] || 'bg-slate-700 text-slate-300'}`}>{t.status.replace('_', ' ')}</span></td>
+                <td className="p-3 text-slate-400">{t.assigned_to ? users.find(u => u.id === t.assigned_to)?.username || '...' : <span className="text-slate-600">—</span>}</td>
                 <td className="p-3 text-slate-400">{t.first_seen_at ? new Date(t.first_seen_at).toLocaleString() : '-'}</td>
                 <td className="p-3 text-slate-400">{t.last_seen_at ? new Date(t.last_seen_at).toLocaleString() : '-'}</td>
               </tr>
             ))}
-            {sorted.length === 0 && (<tr><td colSpan={5} className="p-6 text-center text-slate-500">{tickets.length > 0 ? 'No matches' : 'No tickets found'}</td></tr>)}
+            {sorted.length === 0 && (<tr><td colSpan={6} className="p-6 text-center text-slate-500">{tickets.length > 0 ? 'No matches' : 'No tickets found'}</td></tr>)}
           </tbody>
         </table>
       </div>

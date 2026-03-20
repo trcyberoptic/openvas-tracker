@@ -72,7 +72,17 @@ func main() {
 
 	// Health
 	e.GET("/api/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		status := "ok"
+		checks := map[string]string{"database": "ok"}
+		code := http.StatusOK
+
+		if err := db.PingContext(c.Request().Context()); err != nil {
+			checks["database"] = err.Error()
+			status = "degraded"
+			code = http.StatusServiceUnavailable
+		}
+
+		return c.JSON(code, map[string]interface{}{"status": status, "checks": checks})
 	})
 
 	// Auth routes (public)
@@ -98,7 +108,7 @@ func main() {
 	handler.NewAssetHandler(assetSvc).RegisterRoutes(p.Group("/assets"))
 	handler.NewAuditHandler(auditSvc).RegisterRoutes(p.Group("/audit"))
 	handler.NewSearchHandler(searchSvc).RegisterRoutes(p.Group("/search"))
-	handler.NewSettingsHandler(cfg.Import.APIKey, cfg.Server.Port).RegisterRoutes(p.Group("/settings"))
+	handler.NewSettingsHandler(cfg.Import.APIKey, cfg.Server.Port, q).RegisterRoutes(p.Group("/settings"))
 
 	// WebSocket
 	wsH := handler.NewWSHandler(hub, cfg.JWT.Secret)
