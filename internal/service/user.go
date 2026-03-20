@@ -34,12 +34,20 @@ func (s *UserService) Register(ctx context.Context, email, username, password st
 	if err != nil {
 		return queries.User{}, err
 	}
+
+	// First user gets admin role, all others get viewer
+	role := queries.UserRole("viewer")
+	count, err := s.q.CountUsers(ctx)
+	if err == nil && count == 0 {
+		role = queries.UserRole("admin")
+	}
+
 	user, err := s.q.CreateUser(ctx, queries.CreateUserParams{
 		ID:       uuid.New().String(),
 		Email:    email,
 		Username: username,
 		Password: hash,
-		Role:     "viewer",
+		Role:     role,
 	})
 	if err != nil {
 		return queries.User{}, ErrDuplicateUser
