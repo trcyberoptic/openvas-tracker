@@ -1,0 +1,33 @@
+# Binaries
+/vulntrack
+/bin/
+*.exe
+
+# Dependencies
+/vendor/
+
+# Frontend build output (committed via go:embed, but not node_modules)
+frontend/node_modules/
+
+# Embedded static (copied during build)
+cmd/vulntrack/static/
+
+# Environment
+.env
+*.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage.out
+*.test
+
+# Database (local dev)
+*.db
