@@ -8,6 +8,7 @@ import { Scans } from '@/pages/Scans'
 import { ScanDetail } from '@/pages/ScanDetail'
 import { Vulnerabilities } from '@/pages/Vulnerabilities'
 import { Tickets } from '@/pages/Tickets'
+import { TicketDetail } from '@/pages/TicketDetail'
 import { Reports } from '@/pages/Reports'
 import { Teams } from '@/pages/Teams'
 import { Settings } from '@/pages/Settings'
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="scans/:id" element={<ScanDetail />} />
             <Route path="vulnerabilities" element={<Vulnerabilities />} />
             <Route path="tickets" element={<Tickets />} />
+            <Route path="tickets/:id" element={<TicketDetail />} />
             <Route path="reports" element={<Reports />} />
             <Route path="teams" element={<Teams />} />
             <Route path="settings" element={<Settings />} />

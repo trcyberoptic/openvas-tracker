@@ -90,7 +90,7 @@ func main() {
 
 	handler.NewHostHandler(q).RegisterRoutes(p.Group("/hosts"))
 	handler.NewVulnHandler(vulnSvc).RegisterRoutes(p.Group("/vulnerabilities"))
-	handler.NewTicketHandler(ticketSvc).RegisterRoutes(p.Group("/tickets"))
+	handler.NewTicketHandler(ticketSvc, q).RegisterRoutes(p.Group("/tickets"))
 	handler.NewReportHandler(reportSvc).RegisterRoutes(p.Group("/reports"))
 	handler.NewDashboardHandler(vulnSvc, ticketSvc, q).RegisterRoutes(p.Group("/dashboard"))
 	handler.NewTeamHandler(teamSvc).RegisterRoutes(p.Group("/teams"))

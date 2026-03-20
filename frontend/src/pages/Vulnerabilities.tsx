@@ -3,16 +3,18 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { TableFilter, useTableFilter } from '@/components/TableFilter'
+import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
 
 const BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
 }
+const SEV_ORDER: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4, info: 5 }
 
 interface Vuln {
   id: string
   scan_id: string
   severity: string
+  severity_order?: number
   title: string
   affected_host: string
   affected_port?: number
@@ -66,8 +68,11 @@ function VulnRow({ v }: { v: Vuln }) {
 }
 
 export function Vulnerabilities() {
-  const { data: vulns = [] } = useQuery({ queryKey: ['vulnerabilities'], queryFn: () => api.get<Vuln[]>('/vulnerabilities') })
+  const { data: raw = [] } = useQuery({ queryKey: ['vulnerabilities'], queryFn: () => api.get<Vuln[]>('/vulnerabilities') })
   const { values, setValues } = useTableFilter(['search', 'severity', 'status'])
+  const { sort, toggle } = useSortable()
+
+  const vulns = useMemo(() => raw.map(v => ({ ...v, severity_order: SEV_ORDER[v.severity] || 9 })), [raw])
 
   const filtered = useMemo(() => {
     let result = vulns
@@ -80,6 +85,8 @@ export function Vulnerabilities() {
     return result
   }, [vulns, values])
 
+  const sorted = useSorted(filtered, sort)
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Vulnerabilities</h1>
@@ -89,25 +96,22 @@ export function Vulnerabilities() {
           { key: 'severity', label: 'Severity', options: ['critical', 'high', 'medium', 'low', 'info'] },
           { key: 'status', label: 'Status', options: ['open', 'confirmed', 'mitigated', 'resolved', 'false_positive'] },
         ]}
-        values={values}
-        onChange={setValues}
+        values={values} onChange={setValues}
       />
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-800">
-              <th className="text-left p-3 text-slate-400">Severity</th>
-              <th className="text-left p-3 text-slate-400">Title</th>
-              <th className="text-left p-3 text-slate-400">Host</th>
-              <th className="text-left p-3 text-slate-400">CVE</th>
-              <th className="text-left p-3 text-slate-400">CVSS</th>
-              <th className="text-left p-3 text-slate-400">Scan</th>
-              <th className="text-left p-3 text-slate-400">Status</th>
-            </tr>
-          </thead>
+          <thead><tr className="border-b border-slate-800">
+            <SortHeader label="Severity" sortKey="severity_order" sort={sort} onToggle={toggle} />
+            <SortHeader label="Title" sortKey="title" sort={sort} onToggle={toggle} />
+            <SortHeader label="Host" sortKey="affected_host" sort={sort} onToggle={toggle} />
+            <SortHeader label="CVE" sortKey="cve_id" sort={sort} onToggle={toggle} />
+            <SortHeader label="CVSS" sortKey="cvss_score" sort={sort} onToggle={toggle} />
+            <th className="text-left p-3 text-slate-400">Scan</th>
+            <SortHeader label="Status" sortKey="status" sort={sort} onToggle={toggle} />
+          </tr></thead>
           <tbody>
-            {filtered.map((v) => <VulnRow key={v.id} v={v} />)}
-            {filtered.length === 0 && (
+            {sorted.map((v) => <VulnRow key={v.id} v={v} />)}
+            {sorted.length === 0 && (
               <tr><td colSpan={7} className="p-6 text-center text-slate-500">{vulns.length > 0 ? 'No matches' : 'No vulnerabilities found'}</td></tr>
             )}
           </tbody>

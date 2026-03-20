@@ -12,11 +12,9 @@ import (
 type TicketStatus string
 
 const (
-	TicketStatusOpen       TicketStatus = "open"
-	TicketStatusInProgress TicketStatus = "in_progress"
-	TicketStatusReview     TicketStatus = "review"
-	TicketStatusResolved   TicketStatus = "resolved"
-	TicketStatusClosed     TicketStatus = "closed"
+	TicketStatusOpen         TicketStatus = "open"
+	TicketStatusFixed        TicketStatus = "fixed"
+	TicketStatusRiskAccepted TicketStatus = "risk_accepted"
 )
 
 type TicketPriority string
@@ -133,7 +131,7 @@ func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Tic
 }
 
 func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (Ticket, error) {
-	const updateTicketStatus = `UPDATE tickets SET status = ?, resolved_at = CASE WHEN ? = 'resolved' THEN NOW() ELSE resolved_at END, updated_at = NOW() WHERE id = ?`
+	const updateTicketStatus = `UPDATE tickets SET status = ?, resolved_at = CASE WHEN ? IN ('fixed', 'risk_accepted') THEN NOW() ELSE resolved_at END, updated_at = NOW() WHERE id = ?`
 	_, err := q.db.ExecContext(ctx, updateTicketStatus, arg.Status, arg.Status, arg.ID)
 	if err != nil {
 		return Ticket{}, err
@@ -207,10 +205,10 @@ type DashboardTicketStatsRow struct {
 
 func (q *Queries) DashboardTicketStats(ctx context.Context, userID string) (DashboardTicketStatsRow, error) {
 	const query = `SELECT
-		COALESCE(SUM(CASE WHEN assigned_to = ? AND status IN ('open','in_progress','review') THEN 1 ELSE 0 END), 0) as my_tickets,
-		COALESCE(SUM(CASE WHEN assigned_to IS NULL AND status IN ('open','in_progress','review') THEN 1 ELSE 0 END), 0) as unassigned_tickets,
-		COALESCE(SUM(CASE WHEN status IN ('open','in_progress','review') THEN 1 ELSE 0 END), 0) as open_tickets_total,
-		COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0) as resolved_tickets
+		COALESCE(SUM(CASE WHEN assigned_to = ? AND status = 'open' THEN 1 ELSE 0 END), 0) as my_tickets,
+		COALESCE(SUM(CASE WHEN assigned_to IS NULL AND status = 'open' THEN 1 ELSE 0 END), 0) as unassigned_tickets,
+		COALESCE(SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END), 0) as open_tickets_total,
+		COALESCE(SUM(CASE WHEN status IN ('fixed', 'risk_accepted') THEN 1 ELSE 0 END), 0) as resolved_tickets
 		FROM tickets`
 	var s DashboardTicketStatsRow
 	err := q.db.QueryRowContext(ctx, query, userID).Scan(&s.MyTickets, &s.UnassignedTickets, &s.OpenTicketsTotal, &s.ResolvedTickets)
@@ -266,13 +264,13 @@ func (q *Queries) TouchTicket(ctx context.Context, arg TouchTicketParams) error 
 
 // AutoResolveStaleTickets resolves open tickets whose findings were not seen in the given scan.
 func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
-	const query = `UPDATE tickets SET status = 'resolved', resolved_at = NOW(), updated_at = NOW() WHERE status IN ('open', 'in_progress', 'review') AND vulnerability_id IS NOT NULL AND vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`
+	const query = `UPDATE tickets SET status = 'fixed', resolved_at = NOW(), updated_at = NOW() WHERE status = 'open' AND vulnerability_id IS NOT NULL AND vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`
 	_, err := q.db.ExecContext(ctx, query, scanID)
 	if err != nil {
 		return nil, err
 	}
 	// Return the just-resolved tickets for activity logging
-	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets WHERE status = 'resolved' AND resolved_at >= NOW() - INTERVAL 5 SECOND AND updated_at >= NOW() - INTERVAL 5 SECOND`)
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets WHERE status = 'fixed' AND resolved_at >= NOW() - INTERVAL 5 SECOND AND updated_at >= NOW() - INTERVAL 5 SECOND`)
 	if err != nil {
 		return nil, err
 	}

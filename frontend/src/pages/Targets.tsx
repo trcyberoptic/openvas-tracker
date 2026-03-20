@@ -2,40 +2,18 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { TableFilter, useTableFilter } from '@/components/TableFilter'
+import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
 
 const BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
 }
 
-interface HostSummary {
-  host: string
-  vuln_count: number
-  critical_count: number
-  high_count: number
-  max_cvss?: number
-}
-
-interface Vuln {
-  id: string
-  severity: string
-  title: string
-  cve_id?: string
-  cvss_score?: number
-  affected_port?: number
-  protocol?: string
-  solution?: string
-  status: string
-}
+interface HostSummary { host: string; vuln_count: number; critical_count: number; high_count: number; max_cvss?: number }
+interface Vuln { id: string; severity: string; title: string; cve_id?: string; cvss_score?: number; affected_port?: number; protocol?: string; solution?: string; status: string }
 
 function HostRow({ h }: { h: HostSummary }) {
   const [open, setOpen] = useState(false)
-  const { data: vulns = [] } = useQuery({
-    queryKey: ['host-vulns', h.host],
-    queryFn: () => api.get<Vuln[]>(`/hosts/${h.host}/vulnerabilities`),
-    enabled: open,
-  })
-
+  const { data: vulns = [] } = useQuery({ queryKey: ['host-vulns', h.host], queryFn: () => api.get<Vuln[]>(`/hosts/${h.host}/vulnerabilities`), enabled: open })
   return (
     <>
       <tr onClick={() => setOpen(!open)} className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer">
@@ -48,7 +26,7 @@ function HostRow({ h }: { h: HostSummary }) {
         <td className="p-3">{h.high_count > 0 ? <span className="px-2 py-1 rounded text-xs bg-orange-600 text-white">{h.high_count}</span> : <span className="text-slate-500">0</span>}</td>
         <td className="p-3">{h.max_cvss?.toFixed(1) ?? '-'}</td>
       </tr>
-      {open && vulns.map((v) => (
+      {open && vulns.map(v => (
         <tr key={v.id} className="bg-slate-800/20 border-b border-slate-800/30">
           <td className="p-3 pl-10">
             <span className={`px-2 py-1 rounded text-xs font-medium text-white ${BADGE_COLORS[v.severity] || 'bg-gray-600'}`}>{v.severity}</span>
@@ -67,6 +45,7 @@ function HostRow({ h }: { h: HostSummary }) {
 export function Targets() {
   const { data: hosts = [] } = useQuery({ queryKey: ['hosts'], queryFn: () => api.get<HostSummary[]>('/hosts') })
   const { values, setValues } = useTableFilter(['search'])
+  const { sort, toggle } = useSortable()
 
   const filtered = useMemo(() => {
     if (!values.search) return hosts
@@ -74,26 +53,24 @@ export function Targets() {
     return hosts.filter(h => h.host.toLowerCase().includes(q))
   }, [hosts, values])
 
+  const sorted = useSorted(filtered, sort)
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Hosts</h1>
-      <TableFilter
-        filters={[{ key: 'search', label: 'Search hosts...' }]}
-        values={values}
-        onChange={setValues}
-      />
+      <TableFilter filters={[{ key: 'search', label: 'Search hosts...' }]} values={values} onChange={setValues} />
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-slate-800">
-            <th className="text-left p-3 text-slate-400">Host</th>
-            <th className="text-left p-3 text-slate-400">Vulns</th>
-            <th className="text-left p-3 text-slate-400">Critical</th>
-            <th className="text-left p-3 text-slate-400">High</th>
-            <th className="text-left p-3 text-slate-400">Max CVSS</th>
+            <SortHeader label="Host" sortKey="host" sort={sort} onToggle={toggle} />
+            <SortHeader label="Vulns" sortKey="vuln_count" sort={sort} onToggle={toggle} />
+            <SortHeader label="Critical" sortKey="critical_count" sort={sort} onToggle={toggle} />
+            <SortHeader label="High" sortKey="high_count" sort={sort} onToggle={toggle} />
+            <SortHeader label="Max CVSS" sortKey="max_cvss" sort={sort} onToggle={toggle} />
           </tr></thead>
           <tbody>
-            {filtered.map((h) => <HostRow key={h.host} h={h} />)}
-            {filtered.length === 0 && (
+            {sorted.map(h => <HostRow key={h.host} h={h} />)}
+            {sorted.length === 0 && (
               <tr><td colSpan={5} className="p-6 text-center text-slate-500">{hosts.length > 0 ? 'No matches' : 'No hosts found'}</td></tr>
             )}
           </tbody>
