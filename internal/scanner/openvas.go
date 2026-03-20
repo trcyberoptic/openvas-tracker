@@ -2,13 +2,10 @@
 package scanner
 
 import (
-	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
-	"os/exec"
 	"strconv"
-	"strings"
 )
 
 type OpenVASResult struct {
@@ -79,25 +76,4 @@ func ParseOpenVASXML(r io.Reader) ([]OpenVASResult, error) {
 		})
 	}
 	return results, nil
-}
-
-type OpenVASScanner struct {
-	BinaryPath string
-}
-
-func NewOpenVASScanner(binaryPath string) *OpenVASScanner {
-	return &OpenVASScanner{BinaryPath: binaryPath}
-}
-
-func (s *OpenVASScanner) Scan(ctx context.Context, target string) ([]OpenVASResult, error) {
-	// GVM CLI: create target, create task, start task, get report
-	// This is a simplified wrapper — real GVM integration requires
-	// multiple API calls via gvm-cli or the GMP protocol
-	cmd := exec.CommandContext(ctx, s.BinaryPath, "socket",
-		"--xml", fmt.Sprintf("<get_reports report_id=\"%s\"/>", target))
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("openvas execution failed: %w", err)
-	}
-	return ParseOpenVASXML(strings.NewReader(string(output)))
 }
