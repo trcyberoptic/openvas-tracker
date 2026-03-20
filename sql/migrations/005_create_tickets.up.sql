@@ -1,28 +1,25 @@
 -- sql/migrations/005_create_tickets.up.sql
-CREATE TYPE ticket_status AS ENUM ('open', 'in_progress', 'review', 'resolved', 'closed');
-CREATE TYPE ticket_priority AS ENUM ('critical', 'high', 'medium', 'low');
-
 CREATE TABLE tickets (
-    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    title             TEXT NOT NULL,
+    id                CHAR(36) PRIMARY KEY,
+    title             VARCHAR(500) NOT NULL,
     description       TEXT,
-    status            ticket_status NOT NULL DEFAULT 'open',
-    priority          ticket_priority NOT NULL DEFAULT 'medium',
-    vulnerability_id  UUID REFERENCES vulnerabilities(id) ON DELETE SET NULL,
-    assigned_to       UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_by        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    due_date          TIMESTAMPTZ,
-    resolved_at       TIMESTAMPTZ,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+    status            ENUM('open', 'in_progress', 'review', 'resolved', 'closed') NOT NULL DEFAULT 'open',
+    priority          ENUM('critical', 'high', 'medium', 'low') NOT NULL DEFAULT 'medium',
+    vulnerability_id  CHAR(36) REFERENCES vulnerabilities(id) ON DELETE SET NULL,
+    assigned_to       CHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    created_by        CHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    due_date          TIMESTAMP NULL,
+    resolved_at       TIMESTAMP NULL,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE ticket_comments (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    ticket_id   UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id          CHAR(36) PRIMARY KEY,
+    ticket_id   CHAR(36) NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    user_id     CHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content     TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_tickets_assigned ON tickets (assigned_to);

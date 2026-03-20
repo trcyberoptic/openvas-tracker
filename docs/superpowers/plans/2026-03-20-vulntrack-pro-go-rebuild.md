@@ -1,8 +1,8 @@
-# VulnTrack Pro (Go) — Full Rebuild Implementation Plan
+﻿# OpenVAS-Tracker (Go) — Full Rebuild Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rebuild VulnTrack-Pro as a single Go binary with embedded SPA frontend, deployable as a systemd service on Debian Trixie, replicating and improving on all features of the original Python implementation.
+**Goal:** Rebuild OpenVAS-Tracker as a single Go binary with embedded SPA frontend, deployable as a systemd service on Debian Trixie, replicating and improving on all features of the original Python implementation.
 
 **Architecture:** Layered Go backend (handlers → services → repositories) with PostgreSQL storage, Redis-backed async job queue (Asynq) for scan orchestration, gorilla/websocket for real-time updates, and a React+Vite SPA embedded via `go:embed`. The binary includes all static assets — deploy is copy + systemd unit.
 
@@ -13,9 +13,9 @@
 ## File Structure
 
 ```
-vulntrack/
+OpenVAS-Tracker/
 ├── cmd/
-│   └── vulntrack/
+│   └── OpenVAS-Tracker/
 │       └── main.go                    # Entry point, wires everything
 ├── internal/
 │   ├── config/
@@ -198,8 +198,8 @@ vulntrack/
 │           ├── Settings.tsx
 │           └── NotFound.tsx
 ├── deploy/
-│   ├── vulntrack.service               # systemd unit file
-│   ├── vulntrack.env.example           # env template
+│   ├── OpenVAS-Tracker.service               # systemd unit file
+│   ├── OpenVAS-Tracker.env.example           # env template
 │   └── install.sh                       # Debian install script
 ├── sqlc.yaml                            # sqlc configuration
 ├── go.mod
@@ -225,7 +225,7 @@ vulntrack/
 
 ```bash
 cd e:/Code/openvas-tracker
-go mod init github.com/cyberoptic/vulntrack
+go mod init github.com/cyberoptic/OpenVAS-Tracker
 ```
 
 - [ ] **Step 2: Add core dependencies**
@@ -250,7 +250,7 @@ go get github.com/xuri/excelize/v2@latest
 
 ```gitignore
 # Binaries
-/vulntrack
+/OpenVAS-Tracker
 /bin/
 *.exe
 
@@ -286,17 +286,17 @@ coverage.out
 ```makefile
 .PHONY: build run test migrate-up migrate-down sqlc frontend dev clean
 
-BINARY=vulntrack
+BINARY=OpenVAS-Tracker
 BUILD_DIR=bin
 
 build: frontend
-	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/vulntrack
+	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/OpenVAS-Tracker
 
 build-linux: frontend
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/vulntrack
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/OpenVAS-Tracker
 
 run:
-	go run ./cmd/vulntrack
+	go run ./cmd/OpenVAS-Tracker
 
 test:
 	go test ./... -v -count=1
@@ -319,7 +319,7 @@ frontend:
 
 dev:
 	cd frontend && npm run dev &
-	go run ./cmd/vulntrack
+	go run ./cmd/OpenVAS-Tracker
 
 clean:
 	rm -rf $(BUILD_DIR) frontend/dist coverage.out
@@ -367,8 +367,8 @@ func TestLoad_Defaults(t *testing.T) {
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
-	os.Setenv("VT_SERVER_PORT", "9090")
-	defer os.Unsetenv("VT_SERVER_PORT")
+	os.Setenv("OT_SERVER_PORT", "9090")
+	defer os.Unsetenv("OT_SERVER_PORT")
 
 	cfg, err := Load()
 	if err != nil {
@@ -438,7 +438,7 @@ func Load() (*Config, error) {
 	// Defaults
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8080)
-	v.SetDefault("database.url", "postgres://vulntrack:vulntrack@localhost:5432/vulntrack?sslmode=disable")
+	v.SetDefault("database.url", "postgres://OpenVAS-Tracker:OpenVAS-Tracker@localhost:5432/OpenVAS-Tracker?sslmode=disable")
 	v.SetDefault("database.maxconns", 25)
 	v.SetDefault("database.minconns", 5)
 	v.SetDefault("redis.addr", "localhost:6379")
@@ -449,7 +449,7 @@ func Load() (*Config, error) {
 	v.SetDefault("scanner.nmappath", "nmap")
 	v.SetDefault("scanner.openvaspath", "gvm-cli")
 
-	// Env vars: VT_SERVER_PORT, VT_DATABASE_URL, etc.
+	// Env vars: OT_SERVER_PORT, OT_DATABASE_URL, etc.
 	v.SetEnvPrefix("VT")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
@@ -476,16 +476,16 @@ Expected: PASS
 - [ ] **Step 5: Create .env.example**
 
 ```env
-VT_SERVER_HOST=0.0.0.0
-VT_SERVER_PORT=8080
-VT_DATABASE_URL=postgres://vulntrack:vulntrack@localhost:5432/vulntrack?sslmode=disable
-VT_DATABASE_MAXCONNS=25
-VT_REDIS_ADDR=localhost:6379
-VT_REDIS_PASSWORD=
-VT_JWT_SECRET=change-me-in-production
-VT_JWT_EXPIREHOURS=24
-VT_SCANNER_NMAPPATH=nmap
-VT_SCANNER_OPENVASPATH=gvm-cli
+OT_SERVER_HOST=0.0.0.0
+OT_SERVER_PORT=8080
+OT_DATABASE_URL=postgres://OpenVAS-Tracker:OpenVAS-Tracker@localhost:5432/OpenVAS-Tracker?sslmode=disable
+OT_DATABASE_MAXCONNS=25
+OT_REDIS_ADDR=localhost:6379
+OT_REDIS_PASSWORD=
+OT_JWT_SECRET=change-me-in-production
+OT_JWT_EXPIREHOURS=24
+OT_SCANNER_NMAPPATH=nmap
+OT_SCANNER_OPENVASPATH=gvm-cli
 ```
 
 - [ ] **Step 6: Commit**
@@ -1142,13 +1142,13 @@ git commit -m "feat: add sqlc config and users query generation"
 ### Task 1.8: Application Entry Point (Minimal Server)
 
 **Files:**
-- Create: `cmd/vulntrack/main.go`
-- Test: Manual — `go run ./cmd/vulntrack` starts and responds on port 8080
+- Create: `cmd/OpenVAS-Tracker/main.go`
+- Test: Manual — `go run ./cmd/OpenVAS-Tracker` starts and responds on port 8080
 
 - [ ] **Step 1: Write main.go**
 
 ```go
-// cmd/vulntrack/main.go
+// cmd/OpenVAS-Tracker/main.go
 package main
 
 import (
@@ -1163,8 +1163,8 @@ import (
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 
-	"github.com/cyberoptic/vulntrack/internal/config"
-	"github.com/cyberoptic/vulntrack/internal/database"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/config"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database"
 )
 
 func main() {
@@ -1218,13 +1218,13 @@ func main() {
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `go build ./cmd/vulntrack`
+Run: `go build ./cmd/OpenVAS-Tracker`
 Expected: Compiles without errors
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add cmd/vulntrack/
+git add cmd/OpenVAS-Tracker/
 git commit -m "feat: add application entry point with Echo server and graceful shutdown"
 ```
 
@@ -1401,7 +1401,7 @@ func GenerateToken(userID uuid.UUID, role, secret string, expiry time.Duration) 
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "vulntrack",
+			Issuer:    "OpenVAS-Tracker",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -1461,7 +1461,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/auth"
 )
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
@@ -1531,7 +1531,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/auth"
 )
 
 const (
@@ -1715,8 +1715,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/auth"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 var (
@@ -1786,8 +1786,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/auth"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type AuthHandler struct {
@@ -2191,7 +2191,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type TargetService struct {
@@ -2239,9 +2239,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type TargetHandler struct {
@@ -2806,8 +2806,8 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/config"
-	"github.com/cyberoptic/vulntrack/internal/scanner"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/config"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/scanner"
 )
 
 const (
@@ -2856,8 +2856,8 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/scanner"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/scanner"
 )
 
 type ScanPayload struct {
@@ -2978,8 +2978,8 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/worker"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/worker"
 )
 
 type ScanService struct {
@@ -3054,9 +3054,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/worker"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/worker"
 )
 
 type ScanHandler struct {
@@ -3241,7 +3241,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type VulnerabilityService struct {
@@ -3289,8 +3289,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type VulnHandler struct {
@@ -3573,7 +3573,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type TicketService struct {
@@ -3626,9 +3626,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type TicketHandler struct {
@@ -3782,7 +3782,7 @@ import (
 	"embed"
 	"html/template"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 //go:embed templates/*.html
@@ -4147,8 +4147,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/report"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/report"
 )
 
 type ReportService struct {
@@ -4233,9 +4233,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type ReportHandler struct {
@@ -4660,8 +4660,8 @@ import (
 	gws "github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
-	"github.com/cyberoptic/vulntrack/internal/websocket"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/auth"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/websocket"
 )
 
 var upgrader = gws.Upgrader{
@@ -4730,8 +4730,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type DashboardHandler struct {
@@ -4818,7 +4818,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type TeamService struct {
@@ -4887,8 +4887,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type TeamHandler struct {
@@ -5011,7 +5011,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type NotificationService struct {
@@ -5053,8 +5053,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type NotificationHandler struct {
@@ -5120,7 +5120,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type ScheduleService struct {
@@ -5162,9 +5162,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type ScheduleHandler struct {
@@ -5249,7 +5249,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type AssetService struct {
@@ -5287,8 +5287,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type AssetHandler struct {
@@ -5346,7 +5346,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type AuditService struct {
@@ -5383,8 +5383,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type AuditHandler struct {
@@ -5423,7 +5423,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database/queries"
 )
 
 type SearchService struct {
@@ -5448,7 +5448,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
 )
 
 type SearchHandler struct {
@@ -5586,10 +5586,10 @@ package plugin
 import (
 	"context"
 
-	"github.com/cyberoptic/vulntrack/internal/scanner"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/scanner"
 )
 
-// Plugin defines the interface for VulnTrack scanner plugins.
+// Plugin defines the interface for OpenVAS-Tracker scanner plugins.
 // Plugins are compiled as Go plugins (.so) and loaded at runtime.
 type Plugin interface {
 	// Name returns the plugin's unique identifier
@@ -5647,13 +5647,13 @@ func (r *Registry) Load(path string) error {
 	if err != nil {
 		return err
 	}
-	sym, err := p.Lookup("VulnTrackPlugin")
+	sym, err := p.Lookup("OpenVASTrackerPlugin")
 	if err != nil {
-		return fmt.Errorf("plugin missing VulnTrackPlugin symbol: %w", err)
+		return fmt.Errorf("plugin missing OpenVASTrackerPlugin symbol: %w", err)
 	}
 	plug, ok := sym.(Plugin)
 	if !ok {
-		return fmt.Errorf("VulnTrackPlugin does not implement Plugin interface")
+		return fmt.Errorf("OpenVASTrackerPlugin does not implement Plugin interface")
 	}
 	r.plugins[plug.Name()] = plug
 	return nil
@@ -5904,7 +5904,7 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950">
       <div className="w-full max-w-md bg-slate-900 rounded-lg border border-slate-800 p-8">
-        <h1 className="text-2xl font-bold text-white mb-6">VulnTrack Pro</h1>
+        <h1 className="text-2xl font-bold text-white mb-6">OpenVAS-Tracker</h1>
         {error && <div className="bg-red-900/50 text-red-300 p-3 rounded mb-4">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
@@ -5949,7 +5949,7 @@ const links = [
 export function Sidebar() {
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 min-h-screen p-4">
-      <div className="text-xl font-bold text-white mb-8 px-2">VulnTrack Pro</div>
+      <div className="text-xl font-bold text-white mb-8 px-2">OpenVAS-Tracker</div>
       <nav className="space-y-1">
         {links.map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} end={to === '/'}
@@ -6367,28 +6367,28 @@ git commit -m "feat: add dashboard, vulnerability, scan, and login pages with We
 ### Task 6.3: Embed Frontend in Go Binary
 
 **Files:**
-- Modify: `cmd/vulntrack/main.go`
-- Create: `cmd/vulntrack/frontend.go`
+- Modify: `cmd/OpenVAS-Tracker/main.go`
+- Create: `cmd/OpenVAS-Tracker/frontend.go`
 
-**Note:** `go:embed` cannot use `..` to escape the package directory. The Makefile `build` target already runs `cd frontend && npm run build` which outputs to `frontend/dist/`. We add a build step that copies `frontend/dist/` into `cmd/vulntrack/static/` before `go build`, so the embed directive references a local path.
+**Note:** `go:embed` cannot use `..` to escape the package directory. The Makefile `build` target already runs `cd frontend && npm run build` which outputs to `frontend/dist/`. We add a build step that copies `frontend/dist/` into `cmd/OpenVAS-Tracker/static/` before `go build`, so the embed directive references a local path.
 
 Update the Makefile `build` and `build-linux` targets to include the copy step:
 ```makefile
 build: frontend
-	rm -rf cmd/vulntrack/static && cp -r frontend/dist cmd/vulntrack/static
-	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/vulntrack
+	rm -rf cmd/OpenVAS-Tracker/static && cp -r frontend/dist cmd/OpenVAS-Tracker/static
+	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/OpenVAS-Tracker
 
 build-linux: frontend
-	rm -rf cmd/vulntrack/static && cp -r frontend/dist cmd/vulntrack/static
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/vulntrack
+	rm -rf cmd/OpenVAS-Tracker/static && cp -r frontend/dist cmd/OpenVAS-Tracker/static
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/OpenVAS-Tracker
 ```
 
-Add `cmd/vulntrack/static/` to `.gitignore`.
+Add `cmd/OpenVAS-Tracker/static/` to `.gitignore`.
 
 - [ ] **Step 1: Create frontend embed file**
 
 ```go
-// cmd/vulntrack/frontend.go
+// cmd/OpenVAS-Tracker/frontend.go
 package main
 
 import (
@@ -6457,7 +6457,7 @@ serveFrontend(e)
 - [ ] **Step 3: Commit**
 
 ```bash
-git add cmd/vulntrack/
+git add cmd/OpenVAS-Tracker/
 git commit -m "feat: embed frontend SPA in Go binary with SPA fallback routing"
 ```
 
@@ -6468,36 +6468,36 @@ git commit -m "feat: embed frontend SPA in Go binary with SPA fallback routing"
 ### Task 7.1: Systemd Service File and Install Script
 
 **Files:**
-- Create: `deploy/vulntrack.service`
-- Create: `deploy/vulntrack.env.example`
+- Create: `deploy/OpenVAS-Tracker.service`
+- Create: `deploy/OpenVAS-Tracker.env.example`
 - Create: `deploy/install.sh`
 
 - [ ] **Step 1: Write systemd unit file**
 
 ```ini
-# deploy/vulntrack.service
+# deploy/OpenVAS-Tracker.service
 [Unit]
-Description=VulnTrack Pro - Vulnerability Management Platform
+Description=OpenVAS-Tracker - Vulnerability Management Platform
 After=network.target postgresql.service redis.service
 Wants=postgresql.service redis.service
 
 [Service]
 Type=simple
-User=vulntrack
-Group=vulntrack
-ExecStart=/usr/local/bin/vulntrack
-EnvironmentFile=/etc/vulntrack/env
+User=OpenVAS-Tracker
+Group=OpenVAS-Tracker
+ExecStart=/usr/local/bin/OpenVAS-Tracker
+EnvironmentFile=/etc/OpenVAS-Tracker/env
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=vulntrack
+SyslogIdentifier=OpenVAS-Tracker
 
 # Security hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/vulntrack
+ReadWritePaths=/var/lib/OpenVAS-Tracker
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -6510,54 +6510,54 @@ WantedBy=multi-user.target
 - [ ] **Step 2: Write env template**
 
 ```env
-# deploy/vulntrack.env.example
-VT_SERVER_HOST=0.0.0.0
-VT_SERVER_PORT=8080
-VT_DATABASE_URL=postgres://vulntrack:CHANGEME@localhost:5432/vulntrack?sslmode=require
-VT_REDIS_ADDR=localhost:6379
-VT_JWT_SECRET=CHANGEME-use-openssl-rand-base64-32
-VT_JWT_EXPIREHOURS=24
-VT_SCANNER_NMAPPATH=/usr/bin/nmap
-VT_SCANNER_OPENVASPATH=/usr/bin/gvm-cli
+# deploy/OpenVAS-Tracker.env.example
+OT_SERVER_HOST=0.0.0.0
+OT_SERVER_PORT=8080
+OT_DATABASE_URL=postgres://OpenVAS-Tracker:CHANGEME@localhost:5432/OpenVAS-Tracker?sslmode=require
+OT_REDIS_ADDR=localhost:6379
+OT_JWT_SECRET=CHANGEME-use-openssl-rand-base64-32
+OT_JWT_EXPIREHOURS=24
+OT_SCANNER_NMAPPATH=/usr/bin/nmap
+OT_SCANNER_OPENVASPATH=/usr/bin/gvm-cli
 ```
 
 - [ ] **Step 3: Write install script**
 
 ```bash
 #!/usr/bin/env bash
-# deploy/install.sh — Install VulnTrack Pro on Debian Trixie
+# deploy/install.sh — Install OpenVAS-Tracker on Debian Trixie
 set -euo pipefail
 
-BINARY_SRC="${1:-bin/vulntrack-linux-amd64}"
+BINARY_SRC="${1:-bin/OpenVAS-Tracker-linux-amd64}"
 
-echo "==> Creating vulntrack user"
-useradd --system --shell /usr/sbin/nologin --home-dir /var/lib/vulntrack vulntrack 2>/dev/null || true
+echo "==> Creating OpenVAS-Tracker user"
+useradd --system --shell /usr/sbin/nologin --home-dir /var/lib/OpenVAS-Tracker OpenVAS-Tracker 2>/dev/null || true
 
 echo "==> Installing binary"
-install -o root -g root -m 0755 "$BINARY_SRC" /usr/local/bin/vulntrack
+install -o root -g root -m 0755 "$BINARY_SRC" /usr/local/bin/OpenVAS-Tracker
 
 echo "==> Creating config directory"
-install -d -o vulntrack -g vulntrack -m 0750 /etc/vulntrack
-install -d -o vulntrack -g vulntrack -m 0750 /var/lib/vulntrack
+install -d -o OpenVAS-Tracker -g OpenVAS-Tracker -m 0750 /etc/OpenVAS-Tracker
+install -d -o OpenVAS-Tracker -g OpenVAS-Tracker -m 0750 /var/lib/OpenVAS-Tracker
 
-if [ ! -f /etc/vulntrack/env ]; then
-    install -o vulntrack -g vulntrack -m 0600 deploy/vulntrack.env.example /etc/vulntrack/env
-    echo "==> Created /etc/vulntrack/env — EDIT THIS FILE with your secrets"
+if [ ! -f /etc/OpenVAS-Tracker/env ]; then
+    install -o OpenVAS-Tracker -g OpenVAS-Tracker -m 0600 deploy/OpenVAS-Tracker.env.example /etc/OpenVAS-Tracker/env
+    echo "==> Created /etc/OpenVAS-Tracker/env — EDIT THIS FILE with your secrets"
 fi
 
 echo "==> Installing systemd unit"
-install -o root -g root -m 0644 deploy/vulntrack.service /etc/systemd/system/vulntrack.service
+install -o root -g root -m 0644 deploy/OpenVAS-Tracker.service /etc/systemd/system/OpenVAS-Tracker.service
 systemctl daemon-reload
 
 echo "==> Running database migrations"
-su -s /bin/bash vulntrack -c "VT_DATABASE_URL=\$(grep VT_DATABASE_URL /etc/vulntrack/env | cut -d= -f2-) /usr/local/bin/vulntrack migrate"
+su -s /bin/bash OpenVAS-Tracker -c "OT_DATABASE_URL=\$(grep OT_DATABASE_URL /etc/OpenVAS-Tracker/env | cut -d= -f2-) /usr/local/bin/OpenVAS-Tracker migrate"
 
 echo "==> Enabling and starting service"
-systemctl enable vulntrack
-systemctl start vulntrack
-systemctl status vulntrack
+systemctl enable OpenVAS-Tracker
+systemctl start OpenVAS-Tracker
+systemctl status OpenVAS-Tracker
 
-echo "==> Done! VulnTrack Pro is running on port 8080"
+echo "==> Done! OpenVAS-Tracker is running on port 8080"
 ```
 
 - [ ] **Step 4: Commit**
@@ -6592,14 +6592,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend /app/frontend/dist ./frontend/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /vulntrack ./cmd/vulntrack
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /OpenVAS-Tracker ./cmd/OpenVAS-Tracker
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates nmap
-COPY --from=backend /vulntrack /usr/local/bin/vulntrack
+COPY --from=backend /OpenVAS-Tracker /usr/local/bin/OpenVAS-Tracker
 COPY sql/migrations /migrations
 EXPOSE 8080
-ENTRYPOINT ["vulntrack"]
+ENTRYPOINT ["OpenVAS-Tracker"]
 ```
 
 - [ ] **Step 2: Commit**
@@ -6614,12 +6614,12 @@ git commit -m "feat: add multi-stage Dockerfile for minimal container image"
 ### Task 7.3: Wire Everything in main.go
 
 **Files:**
-- Modify: `cmd/vulntrack/main.go`
+- Modify: `cmd/OpenVAS-Tracker/main.go`
 
 - [ ] **Step 1: Complete main.go with full dependency wiring**
 
 ```go
-// cmd/vulntrack/main.go
+// cmd/OpenVAS-Tracker/main.go
 package main
 
 import (
@@ -6636,14 +6636,14 @@ import (
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 
-	"github.com/cyberoptic/vulntrack/internal/config"
-	"github.com/cyberoptic/vulntrack/internal/database"
-	"github.com/cyberoptic/vulntrack/internal/handler"
-	mw "github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/scanner"
-	"github.com/cyberoptic/vulntrack/internal/service"
-	"github.com/cyberoptic/vulntrack/internal/websocket"
-	"github.com/cyberoptic/vulntrack/internal/worker"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/config"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/database"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/handler"
+	mw "github.com/cyberoptic/OpenVAS-Tracker/internal/middleware"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/scanner"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/service"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/websocket"
+	"github.com/cyberoptic/OpenVAS-Tracker/internal/worker"
 )
 
 type customValidator struct {
@@ -6753,12 +6753,12 @@ func main() {
 - [ ] **Step 2: Build and verify**
 
 Run: `make build-linux`
-Expected: Single binary produced at `bin/vulntrack-linux-amd64`
+Expected: Single binary produced at `bin/OpenVAS-Tracker-linux-amd64`
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add cmd/vulntrack/main.go
+git add cmd/OpenVAS-Tracker/main.go
 git commit -m "feat: wire all services, handlers, workers, and frontend into single binary"
 ```
 
@@ -6772,7 +6772,7 @@ git commit -m "feat: wire all services, handlers, workers, and frontend into sin
 - [ ] **Step 1: Write README**
 
 ```markdown
-# VulnTrack Pro
+# OpenVAS-Tracker
 
 Single-binary vulnerability management platform built in Go.
 
@@ -6805,14 +6805,14 @@ make dev                # starts backend + frontend dev server
 
 ### Production Build
 ```bash
-make build-linux        # produces bin/vulntrack-linux-amd64
+make build-linux        # produces bin/OpenVAS-Tracker-linux-amd64
 ```
 
 ### Deploy on Debian Trixie
 ```bash
-sudo bash deploy/install.sh bin/vulntrack-linux-amd64
-sudo vim /etc/vulntrack/env   # set secrets
-sudo systemctl restart vulntrack
+sudo bash deploy/install.sh bin/OpenVAS-Tracker-linux-amd64
+sudo vim /etc/OpenVAS-Tracker/env   # set secrets
+sudo systemctl restart OpenVAS-Tracker
 ```
 
 ## API

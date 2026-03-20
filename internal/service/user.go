@@ -3,13 +3,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
+	"github.com/cyberoptic/openvas-tracker/internal/auth"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/cyberoptic/vulntrack/internal/auth"
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
 )
 
 var (
@@ -19,14 +18,14 @@ var (
 )
 
 type UserService struct {
-	q    *queries.Queries
-	pool *pgxpool.Pool
+	q  *queries.Queries
+	db *sql.DB
 }
 
-func NewUserService(pool *pgxpool.Pool) *UserService {
+func NewUserService(db *sql.DB) *UserService {
 	return &UserService{
-		q:    queries.New(pool),
-		pool: pool,
+		q:  queries.New(db),
+		db: db,
 	}
 }
 
@@ -36,6 +35,7 @@ func (s *UserService) Register(ctx context.Context, email, username, password st
 		return queries.User{}, err
 	}
 	user, err := s.q.CreateUser(ctx, queries.CreateUserParams{
+		ID:       uuid.New().String(),
 		Email:    email,
 		Username: username,
 		Password: hash,
@@ -58,7 +58,7 @@ func (s *UserService) Authenticate(ctx context.Context, email, password string) 
 	return user, nil
 }
 
-func (s *UserService) GetByID(ctx context.Context, id uuid.UUID) (queries.User, error) {
+func (s *UserService) GetByID(ctx context.Context, id string) (queries.User, error) {
 	user, err := s.q.GetUserByID(ctx, id)
 	if err != nil {
 		return queries.User{}, ErrUserNotFound

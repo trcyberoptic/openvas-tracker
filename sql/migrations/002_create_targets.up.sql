@@ -1,24 +1,24 @@
 -- sql/migrations/002_create_targets.up.sql
 CREATE TABLE target_groups (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name        TEXT NOT NULL,
+    id          CHAR(36) PRIMARY KEY,
+    name        VARCHAR(255) NOT NULL,
     description TEXT,
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_id     CHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE targets (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    host        TEXT NOT NULL,
-    ip_address  TEXT,
-    hostname    TEXT,
-    os_guess    TEXT,
-    group_id    UUID REFERENCES target_groups(id) ON DELETE SET NULL,
-    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    metadata    JSONB DEFAULT '{}',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id          CHAR(36) PRIMARY KEY,
+    host        VARCHAR(255) NOT NULL,
+    ip_address  VARCHAR(45),
+    hostname    VARCHAR(255),
+    os_guess    VARCHAR(255),
+    group_id    CHAR(36) REFERENCES target_groups(id) ON DELETE SET NULL,
+    user_id     CHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    metadata    JSON,
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_targets_user ON targets (user_id);

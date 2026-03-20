@@ -5,27 +5,13 @@
 package queries
 
 import (
-	"context"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"database/sql"
 )
 
-type DBTX interface {
-	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
-	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
-	QueryRow(context.Context, string, ...interface{}) pgx.Row
-}
-
-func New(db DBTX) *Queries {
+func New(db *sql.DB) *Queries {
 	return &Queries{db: db}
 }
 
-func NewWithPool(pool *pgxpool.Pool) *Queries {
-	return &Queries{db: pool}
-}
-
 type Queries struct {
-	db DBTX
+	db *sql.DB
 }

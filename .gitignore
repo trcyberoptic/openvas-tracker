@@ -1,5 +1,5 @@
 # Binaries
-/vulntrack
+/openvas-tracker
 /bin/
 *.exe
 
@@ -10,7 +10,7 @@
 frontend/node_modules/
 
 # Embedded static (copied during build)
-cmd/vulntrack/static/
+cmd/openvas-tracker/static/
 
 # Environment
 .env

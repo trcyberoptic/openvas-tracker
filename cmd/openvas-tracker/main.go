@@ -1,4 +1,4 @@
-// cmd/vulntrack/main.go
+// cmd/openvas-tracker/main.go
 package main
 
 import (
@@ -15,15 +15,15 @@ import (
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 
-	"github.com/cyberoptic/vulntrack/internal/config"
-	"github.com/cyberoptic/vulntrack/internal/database"
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/handler"
-	mw "github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/scanner"
-	"github.com/cyberoptic/vulntrack/internal/service"
-	"github.com/cyberoptic/vulntrack/internal/websocket"
-	"github.com/cyberoptic/vulntrack/internal/worker"
+	"github.com/cyberoptic/openvas-tracker/internal/config"
+	"github.com/cyberoptic/openvas-tracker/internal/database"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/handler"
+	mw "github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/scanner"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/websocket"
+	"github.com/cyberoptic/openvas-tracker/internal/worker"
 )
 
 type customValidator struct {
@@ -40,11 +40,11 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	pool, err := database.NewPool(cfg.Database.URL)
+	db, err := database.NewPool(cfg.Database.DSN)
 	if err != nil {
 		log.Fatalf("database: %v", err)
 	}
-	defer pool.Close()
+	defer db.Close()
 
 	// Asynq client (enqueue jobs)
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
@@ -53,17 +53,17 @@ func main() {
 	defer asynqClient.Close()
 
 	// Services
-	userSvc := service.NewUserService(pool)
-	targetSvc := service.NewTargetService(pool)
-	vulnSvc := service.NewVulnerabilityService(pool)
-	ticketSvc := service.NewTicketService(pool)
-	reportSvc := service.NewReportService(pool, vulnSvc)
-	teamSvc := service.NewTeamService(pool)
-	notifSvc := service.NewNotificationService(pool)
-	scheduleSvc := service.NewScheduleService(pool)
-	assetSvc := service.NewAssetService(pool)
-	auditSvc := service.NewAuditService(pool)
-	searchSvc := service.NewSearchService(pool)
+	userSvc := service.NewUserService(db)
+	targetSvc := service.NewTargetService(db)
+	vulnSvc := service.NewVulnerabilityService(db)
+	ticketSvc := service.NewTicketService(db)
+	reportSvc := service.NewReportService(db, vulnSvc)
+	teamSvc := service.NewTeamService(db)
+	notifSvc := service.NewNotificationService(db)
+	scheduleSvc := service.NewScheduleService(db)
+	assetSvc := service.NewAssetService(db)
+	auditSvc := service.NewAuditService(db)
+	searchSvc := service.NewSearchService(db)
 
 	// WebSocket hub (no background goroutine needed — hub is mutex-based)
 	hub := websocket.NewHub()
@@ -95,7 +95,7 @@ func main() {
 
 	handler.NewTargetHandler(targetSvc).RegisterRoutes(p.Group("/targets"))
 
-	q := queries.New(pool)
+	q := queries.New(db)
 	handler.NewScanHandler(q, asynqClient).RegisterRoutes(p.Group("/scans"))
 
 	handler.NewVulnHandler(vulnSvc).RegisterRoutes(p.Group("/vulnerabilities"))
@@ -116,8 +116,8 @@ func main() {
 	// Start Asynq worker in background
 	nmapScanner := scanner.NewNmapScanner(cfg.Scanner.NmapPath)
 	openvasScanner := scanner.NewOpenVASScanner(cfg.Scanner.OpenVASPath)
-	workerSrv := worker.NewServer(cfg, pool)
-	workerMux := worker.NewMux(pool, nmapScanner, openvasScanner)
+	workerSrv := worker.NewServer(cfg, db)
+	workerMux := worker.NewMux(db, nmapScanner, openvasScanner)
 	go func() {
 		if err := workerSrv.Run(workerMux); err != nil {
 			log.Printf("worker error: %v", err)

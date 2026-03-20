@@ -7,8 +7,8 @@ import (
 	gws "github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
-	"github.com/cyberoptic/vulntrack/internal/websocket"
+	"github.com/cyberoptic/openvas-tracker/internal/auth"
+	"github.com/cyberoptic/openvas-tracker/internal/websocket"
 )
 
 var upgrader = gws.Upgrader{
@@ -39,7 +39,7 @@ func (h *WSHandler) Handle(c echo.Context) error {
 		return err
 	}
 
-	userID := claims.UserID.String()
+	userID := claims.UserID
 	client := websocket.NewClient(conn)
 	h.hub.Register(userID, client)
 

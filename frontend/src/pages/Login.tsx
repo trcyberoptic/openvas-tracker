@@ -40,7 +40,7 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950">
       <div className="w-full max-w-md bg-slate-900 rounded-lg border border-slate-800 p-8">
-        <h1 className="text-2xl font-bold text-white mb-6">VulnTrack Pro</h1>
+        <h1 className="text-2xl font-bold text-white mb-6">OpenVAS-Tracker</h1>
         {error && <div className="bg-red-900/50 text-red-300 p-3 rounded mb-4">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}

@@ -4,11 +4,10 @@ package handler
 import (
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type TeamHandler struct {
@@ -47,7 +46,7 @@ func (h *TeamHandler) List(c echo.Context) error {
 }
 
 func (h *TeamHandler) Get(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	team, err := h.teams.Get(c.Request().Context(), id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "team not found")
@@ -56,7 +55,7 @@ func (h *TeamHandler) Get(c echo.Context) error {
 }
 
 func (h *TeamHandler) Members(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	members, err := h.teams.ListMembers(c.Request().Context(), id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list members")
@@ -70,13 +69,12 @@ type addMemberRequest struct {
 }
 
 func (h *TeamHandler) AddMember(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	var req addMemberRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
-	uid, _ := uuid.Parse(req.UserID)
-	if err := h.teams.AddMember(c.Request().Context(), id, uid, req.Role); err != nil {
+	if err := h.teams.AddMember(c.Request().Context(), id, req.UserID, req.Role); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to add member")
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -87,7 +85,7 @@ type inviteRequest struct {
 }
 
 func (h *TeamHandler) Invite(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	var req inviteRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
@@ -101,7 +99,7 @@ func (h *TeamHandler) Invite(c echo.Context) error {
 }
 
 func (h *TeamHandler) Delete(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	if err := h.teams.Delete(c.Request().Context(), id); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete team")
 	}

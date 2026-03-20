@@ -10,7 +10,7 @@ import (
 
 func TestGenerateAndValidateToken(t *testing.T) {
 	secret := "test-secret-key"
-	userID := uuid.New()
+	userID := uuid.New().String()
 	role := "admin"
 
 	token, err := GenerateToken(userID, role, secret, 1*time.Hour)
@@ -35,7 +35,7 @@ func TestGenerateAndValidateToken(t *testing.T) {
 
 func TestValidateToken_Expired(t *testing.T) {
 	secret := "test-secret-key"
-	userID := uuid.New()
+	userID := uuid.New().String()
 
 	token, _ := GenerateToken(userID, "viewer", secret, -1*time.Hour)
 	_, err := ValidateToken(token, secret)
@@ -45,7 +45,7 @@ func TestValidateToken_Expired(t *testing.T) {
 }
 
 func TestValidateToken_WrongSecret(t *testing.T) {
-	token, _ := GenerateToken(uuid.New(), "viewer", "secret1", 1*time.Hour)
+	token, _ := GenerateToken(uuid.New().String(), "viewer", "secret1", 1*time.Hour)
 	_, err := ValidateToken(token, "secret2")
 	if err == nil {
 		t.Fatal("expected error for wrong secret")

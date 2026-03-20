@@ -4,12 +4,11 @@ package handler
 import (
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type TargetHandler struct {
@@ -45,10 +44,7 @@ func (h *TargetHandler) Create(c echo.Context) error {
 		params.Hostname = req.Hostname
 	}
 	if req.GroupID != nil {
-		gid, err := uuid.Parse(*req.GroupID)
-		if err == nil {
-			params.GroupID = &gid
-		}
+		params.GroupID = req.GroupID
 	}
 
 	target, err := h.targets.Create(c.Request().Context(), params)
@@ -68,10 +64,7 @@ func (h *TargetHandler) List(c echo.Context) error {
 }
 
 func (h *TargetHandler) Get(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid target ID")
-	}
+	id := c.Param("id")
 	userID := middleware.GetUserID(c)
 	target, err := h.targets.Get(c.Request().Context(), id, userID)
 	if err != nil {
@@ -81,10 +74,7 @@ func (h *TargetHandler) Get(c echo.Context) error {
 }
 
 func (h *TargetHandler) Delete(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid target ID")
-	}
+	id := c.Param("id")
 	userID := middleware.GetUserID(c)
 	if err := h.targets.Delete(c.Request().Context(), id, userID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete target")

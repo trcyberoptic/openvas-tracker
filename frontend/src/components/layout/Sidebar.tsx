@@ -16,7 +16,7 @@ const links = [
 export function Sidebar() {
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 min-h-screen p-4">
-      <div className="text-xl font-bold text-white mb-8 px-2">VulnTrack Pro</div>
+      <div className="text-xl font-bold text-white mb-8 px-2">OpenVAS-Tracker</div>
       <nav className="space-y-1">
         {links.map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} end={to === '/'}

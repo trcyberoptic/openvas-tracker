@@ -7,8 +7,6 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type TeamMemberRole string
@@ -20,49 +18,50 @@ const (
 )
 
 type Team struct {
-	ID          uuid.UUID  `json:"id"`
-	Name        string     `json:"name"`
-	Description *string    `json:"description"`
-	CreatorID   uuid.UUID  `json:"creator_id"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	CreatorID   string    `json:"creator_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type TeamMember struct {
-	TeamID   uuid.UUID      `json:"team_id"`
-	UserID   uuid.UUID      `json:"user_id"`
+	TeamID   string         `json:"team_id"`
+	UserID   string         `json:"user_id"`
 	Role     TeamMemberRole `json:"role"`
 	JoinedAt time.Time      `json:"joined_at"`
 }
 
 type Invitation struct {
-	ID        uuid.UUID `json:"id"`
-	TeamID    uuid.UUID `json:"team_id"`
+	ID        string    `json:"id"`
+	TeamID    string    `json:"team_id"`
 	Email     string    `json:"email"`
-	InvitedBy uuid.UUID `json:"invited_by"`
+	InvitedBy string    `json:"invited_by"`
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type CreateTeamParams struct {
+	ID          string  `json:"id"`
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
-	CreatorID   uuid.UUID `json:"creator_id"`
+	CreatorID   string  `json:"creator_id"`
 }
 
 type AddTeamMemberParams struct {
-	TeamID uuid.UUID      `json:"team_id"`
-	UserID uuid.UUID      `json:"user_id"`
+	TeamID string         `json:"team_id"`
+	UserID string         `json:"user_id"`
 	Role   TeamMemberRole `json:"role"`
 }
 
 type RemoveTeamMemberParams struct {
-	TeamID uuid.UUID `json:"team_id"`
-	UserID uuid.UUID `json:"user_id"`
+	TeamID string `json:"team_id"`
+	UserID string `json:"user_id"`
 }
 
 type ListTeamMembersRow struct {
-	ID       uuid.UUID      `json:"id"`
+	ID       string         `json:"id"`
 	Email    string         `json:"email"`
 	Username string         `json:"username"`
 	Role     UserRole       `json:"role"`
@@ -71,34 +70,33 @@ type ListTeamMembersRow struct {
 }
 
 type CreateInvitationParams struct {
-	TeamID    uuid.UUID `json:"team_id"`
+	ID        string    `json:"id"`
+	TeamID    string    `json:"team_id"`
 	Email     string    `json:"email"`
-	InvitedBy uuid.UUID `json:"invited_by"`
+	InvitedBy string    `json:"invited_by"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, error) {
-	const createTeam = `-- name: CreateTeam :one
-INSERT INTO teams (name, description, creator_id) VALUES ($1, $2, $3) RETURNING id, name, description, creator_id, created_at, updated_at`
-	row := q.db.QueryRow(ctx, createTeam, arg.Name, arg.Description, arg.CreatorID)
+	const createTeam = `INSERT INTO teams (id, name, description, creator_id) VALUES (?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createTeam, arg.ID, arg.Name, arg.Description, arg.CreatorID)
+	if err != nil {
+		return Team{}, err
+	}
+	return q.GetTeam(ctx, arg.ID)
+}
+
+func (q *Queries) GetTeam(ctx context.Context, id string) (Team, error) {
+	const getTeam = `SELECT id, name, description, creator_id, created_at, updated_at FROM teams WHERE id = ?`
+	row := q.db.QueryRowContext(ctx, getTeam, id)
 	var i Team
 	err := row.Scan(&i.ID, &i.Name, &i.Description, &i.CreatorID, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
 
-func (q *Queries) GetTeam(ctx context.Context, id uuid.UUID) (Team, error) {
-	const getTeam = `-- name: GetTeam :one
-SELECT id, name, description, creator_id, created_at, updated_at FROM teams WHERE id = $1`
-	row := q.db.QueryRow(ctx, getTeam, id)
-	var i Team
-	err := row.Scan(&i.ID, &i.Name, &i.Description, &i.CreatorID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-func (q *Queries) ListTeamsByUser(ctx context.Context, userID uuid.UUID) ([]Team, error) {
-	const listTeamsByUser = `-- name: ListTeamsByUser :many
-SELECT t.id, t.name, t.description, t.creator_id, t.created_at, t.updated_at FROM teams t JOIN team_members tm ON t.id = tm.team_id WHERE tm.user_id = $1 ORDER BY t.name`
-	rows, err := q.db.Query(ctx, listTeamsByUser, userID)
+func (q *Queries) ListTeamsByUser(ctx context.Context, userID string) ([]Team, error) {
+	const listTeamsByUser = `SELECT t.id, t.name, t.description, t.creator_id, t.created_at, t.updated_at FROM teams t JOIN team_members tm ON t.id = tm.team_id WHERE tm.user_id = ? ORDER BY t.name`
+	rows, err := q.db.QueryContext(ctx, listTeamsByUser, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -115,25 +113,20 @@ SELECT t.id, t.name, t.description, t.creator_id, t.created_at, t.updated_at FRO
 }
 
 func (q *Queries) AddTeamMember(ctx context.Context, arg AddTeamMemberParams) error {
-	const addTeamMember = `-- name: AddTeamMember :exec
-INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, $3)`
-	_, err := q.db.Exec(ctx, addTeamMember, arg.TeamID, arg.UserID, arg.Role)
+	const addTeamMember = `INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, addTeamMember, arg.TeamID, arg.UserID, arg.Role)
 	return err
 }
 
 func (q *Queries) RemoveTeamMember(ctx context.Context, arg RemoveTeamMemberParams) error {
-	const removeTeamMember = `-- name: RemoveTeamMember :exec
-DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`
-	_, err := q.db.Exec(ctx, removeTeamMember, arg.TeamID, arg.UserID)
+	const removeTeamMember = `DELETE FROM team_members WHERE team_id = ? AND user_id = ?`
+	_, err := q.db.ExecContext(ctx, removeTeamMember, arg.TeamID, arg.UserID)
 	return err
 }
 
-func (q *Queries) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]ListTeamMembersRow, error) {
-	const listTeamMembers = `-- name: ListTeamMembers :many
-SELECT u.id, u.email, u.username, u.role, tm.role as team_role, tm.joined_at
-FROM users u JOIN team_members tm ON u.id = tm.user_id
-WHERE tm.team_id = $1`
-	rows, err := q.db.Query(ctx, listTeamMembers, teamID)
+func (q *Queries) ListTeamMembers(ctx context.Context, teamID string) ([]ListTeamMembersRow, error) {
+	const listTeamMembers = `SELECT u.id, u.email, u.username, u.role, tm.role as team_role, tm.joined_at FROM users u JOIN team_members tm ON u.id = tm.user_id WHERE tm.team_id = ?`
+	rows, err := q.db.QueryContext(ctx, listTeamMembers, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -150,17 +143,19 @@ WHERE tm.team_id = $1`
 }
 
 func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (Invitation, error) {
-	const createInvitation = `-- name: CreateInvitation :one
-INSERT INTO invitations (team_id, email, invited_by, expires_at) VALUES ($1, $2, $3, $4) RETURNING id, team_id, email, invited_by, expires_at, created_at`
-	row := q.db.QueryRow(ctx, createInvitation, arg.TeamID, arg.Email, arg.InvitedBy, arg.ExpiresAt)
+	const createInvitation = `INSERT INTO invitations (id, team_id, email, invited_by, expires_at) VALUES (?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createInvitation, arg.ID, arg.TeamID, arg.Email, arg.InvitedBy, arg.ExpiresAt)
+	if err != nil {
+		return Invitation{}, err
+	}
+	row := q.db.QueryRowContext(ctx, `SELECT id, team_id, email, invited_by, expires_at, created_at FROM invitations WHERE id = ?`, arg.ID)
 	var i Invitation
-	err := row.Scan(&i.ID, &i.TeamID, &i.Email, &i.InvitedBy, &i.ExpiresAt, &i.CreatedAt)
+	err = row.Scan(&i.ID, &i.TeamID, &i.Email, &i.InvitedBy, &i.ExpiresAt, &i.CreatedAt)
 	return i, err
 }
 
-func (q *Queries) DeleteTeam(ctx context.Context, id uuid.UUID) error {
-	const deleteTeam = `-- name: DeleteTeam :exec
-DELETE FROM teams WHERE id = $1`
-	_, err := q.db.Exec(ctx, deleteTeam, id)
+func (q *Queries) DeleteTeam(ctx context.Context, id string) error {
+	const deleteTeam = `DELETE FROM teams WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, deleteTeam, id)
 	return err
 }

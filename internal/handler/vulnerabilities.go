@@ -4,11 +4,10 @@ package handler
 import (
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type VulnHandler struct {
@@ -29,10 +28,7 @@ func (h *VulnHandler) List(c echo.Context) error {
 }
 
 func (h *VulnHandler) Get(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid ID")
-	}
+	id := c.Param("id")
 	vuln, err := h.vulns.Get(c.Request().Context(), id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "vulnerability not found")
@@ -45,10 +41,7 @@ type updateVulnStatusRequest struct {
 }
 
 func (h *VulnHandler) UpdateStatus(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid ID")
-	}
+	id := c.Param("id")
 	var req updateVulnStatusRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")

@@ -13,11 +13,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend /app/frontend/dist ./frontend/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /vulntrack ./cmd/vulntrack
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /openvas-tracker ./cmd/openvas-tracker
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates nmap
-COPY --from=backend /vulntrack /usr/local/bin/vulntrack
+RUN apk add --no-cache ca-certificates nmap mariadb-client
+COPY --from=backend /openvas-tracker /usr/local/bin/openvas-tracker
 COPY sql/migrations /migrations
 EXPOSE 8080
-ENTRYPOINT ["vulntrack"]
+ENTRYPOINT ["openvas-tracker"]

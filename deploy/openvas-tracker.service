@@ -1,0 +1,30 @@
+# deploy/openvas-tracker.service
+[Unit]
+Description=OpenVAS-Tracker - Vulnerability Management Platform
+After=network.target mariadb.service redis.service
+Wants=mariadb.service redis.service
+
+[Service]
+Type=simple
+User=openvas-tracker
+Group=openvas-tracker
+ExecStart=/usr/local/bin/openvas-tracker
+EnvironmentFile=/etc/openvas-tracker/env
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openvas-tracker
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/openvas-tracker
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

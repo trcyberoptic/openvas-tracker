@@ -1,18 +1,18 @@
 .PHONY: build run test migrate-up migrate-down sqlc frontend dev clean
 
-BINARY=vulntrack
+BINARY=openvas-tracker
 BUILD_DIR=bin
 
 build: frontend
-	rm -rf cmd/vulntrack/static && cp -r frontend/dist cmd/vulntrack/static
-	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/vulntrack
+	rm -rf cmd/openvas-tracker/static && cp -r frontend/dist cmd/openvas-tracker/static
+	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/openvas-tracker
 
 build-linux: frontend
-	rm -rf cmd/vulntrack/static && cp -r frontend/dist cmd/vulntrack/static
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/vulntrack
+	rm -rf cmd/openvas-tracker/static && cp -r frontend/dist cmd/openvas-tracker/static
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/openvas-tracker
 
 run:
-	go run ./cmd/vulntrack
+	go run ./cmd/openvas-tracker
 
 test:
 	go test ./... -v -count=1
@@ -35,7 +35,7 @@ frontend:
 
 dev:
 	cd frontend && npm run dev &
-	go run ./cmd/vulntrack
+	go run ./cmd/openvas-tracker
 
 clean:
-	rm -rf $(BUILD_DIR) frontend/dist cmd/vulntrack/static coverage.out
+	rm -rf $(BUILD_DIR) frontend/dist cmd/openvas-tracker/static coverage.out

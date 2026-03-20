@@ -19,8 +19,8 @@ func TestLoad_Defaults(t *testing.T) {
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
-	os.Setenv("VT_SERVER_PORT", "9090")
-	defer os.Unsetenv("VT_SERVER_PORT")
+	os.Setenv("OT_SERVER_PORT", "9090")
+	defer os.Unsetenv("OT_SERVER_PORT")
 
 	cfg, err := Load()
 	if err != nil {

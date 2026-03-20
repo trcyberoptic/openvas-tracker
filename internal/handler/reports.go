@@ -2,14 +2,14 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type ReportHandler struct {
@@ -35,28 +35,21 @@ func (h *ReportHandler) Generate(c echo.Context) error {
 
 	userID := middleware.GetUserID(c)
 
-	var scanIDs []uuid.UUID
-	for _, s := range req.ScanIDs {
-		id, err := uuid.Parse(s)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid scan ID: "+s)
-		}
-		scanIDs = append(scanIDs, id)
-	}
+	scanIDsJSON, _ := json.Marshal(req.ScanIDs)
 
 	rpt, err := h.reports.Create(c.Request().Context(), queries.CreateReportParams{
 		Name:       req.Name,
 		ReportType: queries.ReportType(req.ReportType),
 		Format:     queries.ReportFormat(req.Format),
 		Status:     "generating",
-		ScanIds:    scanIDs,
+		ScanIds:    scanIDsJSON,
 		UserID:     userID,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create report")
 	}
 
-	data, err := h.reports.Generate(c.Request().Context(), rpt.ID, scanIDs, req.Format, userID)
+	data, err := h.reports.Generate(c.Request().Context(), rpt.ID, req.ScanIDs, req.Format, userID)
 	if err != nil {
 		h.reports.UpdateStatus(c.Request().Context(), rpt.ID, "failed", nil)
 		return echo.NewHTTPError(http.StatusInternalServerError, "report generation failed: "+err.Error())
@@ -83,10 +76,7 @@ func (h *ReportHandler) List(c echo.Context) error {
 }
 
 func (h *ReportHandler) Get(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid report ID")
-	}
+	id := c.Param("id")
 	rpt, err := h.reports.Get(c.Request().Context(), id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "report not found")

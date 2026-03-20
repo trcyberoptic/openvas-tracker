@@ -3,14 +3,14 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/report"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/report"
 )
 
 type ReportService struct {
@@ -18,23 +18,26 @@ type ReportService struct {
 	vulns *VulnerabilityService
 }
 
-func NewReportService(pool *pgxpool.Pool, vulns *VulnerabilityService) *ReportService {
-	return &ReportService{q: queries.New(pool), vulns: vulns}
+func NewReportService(db *sql.DB, vulns *VulnerabilityService) *ReportService {
+	return &ReportService{q: queries.New(db), vulns: vulns}
 }
 
 func (s *ReportService) Create(ctx context.Context, params queries.CreateReportParams) (queries.Report, error) {
+	if params.ID == "" {
+		params.ID = uuid.New().String()
+	}
 	return s.q.CreateReport(ctx, params)
 }
 
-func (s *ReportService) Get(ctx context.Context, id uuid.UUID) (queries.Report, error) {
+func (s *ReportService) Get(ctx context.Context, id string) (queries.Report, error) {
 	return s.q.GetReport(ctx, id)
 }
 
-func (s *ReportService) List(ctx context.Context, userID uuid.UUID, limit, offset int32) ([]queries.Report, error) {
+func (s *ReportService) List(ctx context.Context, userID string, limit, offset int32) ([]queries.Report, error) {
 	return s.q.ListReports(ctx, queries.ListReportsParams{UserID: userID, Limit: limit, Offset: offset})
 }
 
-func (s *ReportService) UpdateStatus(ctx context.Context, id uuid.UUID, status string, data []byte) error {
+func (s *ReportService) UpdateStatus(ctx context.Context, id string, status string, data []byte) error {
 	return s.q.UpdateReportStatus(ctx, queries.UpdateReportStatusParams{
 		ID:       id,
 		Status:   queries.ReportStatus(status),
@@ -42,7 +45,7 @@ func (s *ReportService) UpdateStatus(ctx context.Context, id uuid.UUID, status s
 	})
 }
 
-func (s *ReportService) Generate(ctx context.Context, reportID uuid.UUID, scanIDs []uuid.UUID, format string, userID uuid.UUID) ([]byte, error) {
+func (s *ReportService) Generate(ctx context.Context, reportID string, scanIDs []string, format string, userID string) ([]byte, error) {
 	// Gather vulnerabilities from all scans
 	var allVulns []queries.Vulnerability
 	for _, sid := range scanIDs {

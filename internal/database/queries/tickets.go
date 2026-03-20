@@ -7,8 +7,6 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type TicketStatus string
@@ -31,14 +29,14 @@ const (
 )
 
 type Ticket struct {
-	ID              uuid.UUID      `json:"id"`
+	ID              string         `json:"id"`
 	Title           string         `json:"title"`
 	Description     *string        `json:"description"`
 	Status          TicketStatus   `json:"status"`
 	Priority        TicketPriority `json:"priority"`
-	VulnerabilityID *uuid.UUID     `json:"vulnerability_id"`
-	AssignedTo      *uuid.UUID     `json:"assigned_to"`
-	CreatedBy       uuid.UUID      `json:"created_by"`
+	VulnerabilityID *string        `json:"vulnerability_id"`
+	AssignedTo      *string        `json:"assigned_to"`
+	CreatedBy       string         `json:"created_by"`
 	DueDate         *time.Time     `json:"due_date"`
 	ResolvedAt      *time.Time     `json:"resolved_at"`
 	CreatedAt       time.Time      `json:"created_at"`
@@ -46,43 +44,45 @@ type Ticket struct {
 }
 
 type TicketComment struct {
-	ID        uuid.UUID `json:"id"`
-	TicketID  uuid.UUID `json:"ticket_id"`
-	UserID    uuid.UUID `json:"user_id"`
+	ID        string    `json:"id"`
+	TicketID  string    `json:"ticket_id"`
+	UserID    string    `json:"user_id"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type CreateTicketParams struct {
+	ID              string         `json:"id"`
 	Title           string         `json:"title"`
 	Description     *string        `json:"description"`
 	Priority        TicketPriority `json:"priority"`
-	VulnerabilityID *uuid.UUID     `json:"vulnerability_id"`
-	AssignedTo      *uuid.UUID     `json:"assigned_to"`
-	CreatedBy       uuid.UUID      `json:"created_by"`
+	VulnerabilityID *string        `json:"vulnerability_id"`
+	AssignedTo      *string        `json:"assigned_to"`
+	CreatedBy       string         `json:"created_by"`
 	DueDate         *time.Time     `json:"due_date"`
 }
 
 type ListTicketsParams struct {
-	CreatedBy uuid.UUID `json:"created_by"`
-	Limit     int32     `json:"limit"`
-	Offset    int32     `json:"offset"`
+	CreatedBy string `json:"created_by"`
+	Limit     int32  `json:"limit"`
+	Offset    int32  `json:"offset"`
 }
 
 type UpdateTicketStatusParams struct {
-	ID     uuid.UUID    `json:"id"`
+	ID     string       `json:"id"`
 	Status TicketStatus `json:"status"`
 }
 
 type AssignTicketParams struct {
-	ID         uuid.UUID  `json:"id"`
-	AssignedTo *uuid.UUID `json:"assigned_to"`
+	ID         string  `json:"id"`
+	AssignedTo *string `json:"assigned_to"`
 }
 
 type AddTicketCommentParams struct {
-	TicketID uuid.UUID `json:"ticket_id"`
-	UserID   uuid.UUID `json:"user_id"`
-	Content  string    `json:"content"`
+	ID       string `json:"id"`
+	TicketID string `json:"ticket_id"`
+	UserID   string `json:"user_id"`
+	Content  string `json:"content"`
 }
 
 type CountTicketsByStatusRow struct {
@@ -90,41 +90,31 @@ type CountTicketsByStatusRow struct {
 	Count  int64        `json:"count"`
 }
 
-func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
-	const createTicket = `-- name: CreateTicket :one
-INSERT INTO tickets (title, description, priority, vulnerability_id, assigned_to, created_by, due_date)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, created_at, updated_at`
-	row := q.db.QueryRow(ctx, createTicket,
-		arg.Title, arg.Description, arg.Priority, arg.VulnerabilityID, arg.AssignedTo, arg.CreatedBy, arg.DueDate)
-	var i Ticket
-	err := row.Scan(
-		&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority,
-		&i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy,
-		&i.DueDate, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-	)
-	return i, err
+const ticketCols = `id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, created_at, updated_at`
+
+func scanTicket(row interface{ Scan(...any) error }, i *Ticket) error {
+	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt)
 }
 
-func (q *Queries) GetTicket(ctx context.Context, id uuid.UUID) (Ticket, error) {
-	const getTicket = `-- name: GetTicket :one
-SELECT id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, created_at, updated_at FROM tickets WHERE id = $1`
-	row := q.db.QueryRow(ctx, getTicket, id)
+func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
+	const createTicket = `INSERT INTO tickets (id, title, description, priority, vulnerability_id, assigned_to, created_by, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createTicket, arg.ID, arg.Title, arg.Description, arg.Priority, arg.VulnerabilityID, arg.AssignedTo, arg.CreatedBy, arg.DueDate)
+	if err != nil {
+		return Ticket{}, err
+	}
+	return q.GetTicket(ctx, arg.ID)
+}
+
+func (q *Queries) GetTicket(ctx context.Context, id string) (Ticket, error) {
+	row := q.db.QueryRowContext(ctx, `SELECT `+ticketCols+` FROM tickets WHERE id = ?`, id)
 	var i Ticket
-	err := row.Scan(
-		&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority,
-		&i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy,
-		&i.DueDate, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-	)
+	err := scanTicket(row, &i)
 	return i, err
 }
 
 func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Ticket, error) {
-	const listTickets = `-- name: ListTickets :many
-SELECT id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, created_at, updated_at FROM tickets WHERE created_by = $1 OR assigned_to = $1
-ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, created_at DESC
-LIMIT $2 OFFSET $3`
-	rows, err := q.db.Query(ctx, listTickets, arg.CreatedBy, arg.Limit, arg.Offset)
+	const listTickets = `SELECT ` + ticketCols + ` FROM tickets WHERE created_by = ? OR assigned_to = ? ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, created_at DESC LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listTickets, arg.CreatedBy, arg.CreatedBy, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -132,11 +122,7 @@ LIMIT $2 OFFSET $3`
 	var items []Ticket
 	for rows.Next() {
 		var i Ticket
-		if err := rows.Scan(
-			&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority,
-			&i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy,
-			&i.DueDate, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-		); err != nil {
+		if err := scanTicket(rows, &i); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -145,52 +131,38 @@ LIMIT $2 OFFSET $3`
 }
 
 func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (Ticket, error) {
-	const updateTicketStatus = `-- name: UpdateTicketStatus :one
-UPDATE tickets SET
-    status = $2,
-    resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE resolved_at END,
-    updated_at = now()
-WHERE id = $1
-RETURNING id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, created_at, updated_at`
-	row := q.db.QueryRow(ctx, updateTicketStatus, arg.ID, arg.Status)
-	var i Ticket
-	err := row.Scan(
-		&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority,
-		&i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy,
-		&i.DueDate, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-	)
-	return i, err
+	const updateTicketStatus = `UPDATE tickets SET status = ?, resolved_at = CASE WHEN ? = 'resolved' THEN NOW() ELSE resolved_at END, updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, updateTicketStatus, arg.Status, arg.Status, arg.ID)
+	if err != nil {
+		return Ticket{}, err
+	}
+	return q.GetTicket(ctx, arg.ID)
 }
 
 func (q *Queries) AssignTicket(ctx context.Context, arg AssignTicketParams) (Ticket, error) {
-	const assignTicket = `-- name: AssignTicket :one
-UPDATE tickets SET assigned_to = $2, updated_at = now() WHERE id = $1
-RETURNING id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, created_at, updated_at`
-	row := q.db.QueryRow(ctx, assignTicket, arg.ID, arg.AssignedTo)
-	var i Ticket
-	err := row.Scan(
-		&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority,
-		&i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy,
-		&i.DueDate, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-	)
-	return i, err
+	const assignTicket = `UPDATE tickets SET assigned_to = ?, updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, assignTicket, arg.AssignedTo, arg.ID)
+	if err != nil {
+		return Ticket{}, err
+	}
+	return q.GetTicket(ctx, arg.ID)
 }
 
 func (q *Queries) AddTicketComment(ctx context.Context, arg AddTicketCommentParams) (TicketComment, error) {
-	const addTicketComment = `-- name: AddTicketComment :one
-INSERT INTO ticket_comments (ticket_id, user_id, content)
-VALUES ($1, $2, $3)
-RETURNING id, ticket_id, user_id, content, created_at`
-	row := q.db.QueryRow(ctx, addTicketComment, arg.TicketID, arg.UserID, arg.Content)
+	const addTicketComment = `INSERT INTO ticket_comments (id, ticket_id, user_id, content) VALUES (?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, addTicketComment, arg.ID, arg.TicketID, arg.UserID, arg.Content)
+	if err != nil {
+		return TicketComment{}, err
+	}
+	row := q.db.QueryRowContext(ctx, `SELECT id, ticket_id, user_id, content, created_at FROM ticket_comments WHERE id = ?`, arg.ID)
 	var i TicketComment
-	err := row.Scan(&i.ID, &i.TicketID, &i.UserID, &i.Content, &i.CreatedAt)
+	err = row.Scan(&i.ID, &i.TicketID, &i.UserID, &i.Content, &i.CreatedAt)
 	return i, err
 }
 
-func (q *Queries) ListTicketComments(ctx context.Context, ticketID uuid.UUID) ([]TicketComment, error) {
-	const listTicketComments = `-- name: ListTicketComments :many
-SELECT id, ticket_id, user_id, content, created_at FROM ticket_comments WHERE ticket_id = $1 ORDER BY created_at`
-	rows, err := q.db.Query(ctx, listTicketComments, ticketID)
+func (q *Queries) ListTicketComments(ctx context.Context, ticketID string) ([]TicketComment, error) {
+	const listTicketComments = `SELECT id, ticket_id, user_id, content, created_at FROM ticket_comments WHERE ticket_id = ? ORDER BY created_at`
+	rows, err := q.db.QueryContext(ctx, listTicketComments, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -206,12 +178,9 @@ SELECT id, ticket_id, user_id, content, created_at FROM ticket_comments WHERE ti
 	return items, rows.Err()
 }
 
-func (q *Queries) CountTicketsByStatus(ctx context.Context, userID uuid.UUID) ([]CountTicketsByStatusRow, error) {
-	const countTicketsByStatus = `-- name: CountTicketsByStatus :many
-SELECT status, count(*) as count FROM tickets
-WHERE created_by = $1 OR assigned_to = $1
-GROUP BY status`
-	rows, err := q.db.Query(ctx, countTicketsByStatus, userID)
+func (q *Queries) CountTicketsByStatus(ctx context.Context, userID string) ([]CountTicketsByStatusRow, error) {
+	const countTicketsByStatus = `SELECT status, count(*) as count FROM tickets WHERE created_by = ? OR assigned_to = ? GROUP BY status`
+	rows, err := q.db.QueryContext(ctx, countTicketsByStatus, userID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -227,9 +196,8 @@ GROUP BY status`
 	return items, rows.Err()
 }
 
-func (q *Queries) DeleteTicket(ctx context.Context, id uuid.UUID) error {
-	const deleteTicket = `-- name: DeleteTicket :exec
-DELETE FROM tickets WHERE id = $1`
-	_, err := q.db.Exec(ctx, deleteTicket, id)
+func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
+	const deleteTicket = `DELETE FROM tickets WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, deleteTicket, id)
 	return err
 }

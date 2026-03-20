@@ -3,14 +3,14 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/worker"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/worker"
 )
 
 type ScanService struct {
@@ -18,19 +18,22 @@ type ScanService struct {
 	client *asynq.Client
 }
 
-func NewScanService(pool *pgxpool.Pool, client *asynq.Client) *ScanService {
-	return &ScanService{q: queries.New(pool), client: client}
+func NewScanService(db *sql.DB, client *asynq.Client) *ScanService {
+	return &ScanService{q: queries.New(db), client: client}
 }
 
 func (s *ScanService) Create(ctx context.Context, params queries.CreateScanParams) (queries.Scan, error) {
+	if params.ID == "" {
+		params.ID = uuid.New().String()
+	}
 	return s.q.CreateScan(ctx, params)
 }
 
-func (s *ScanService) Get(ctx context.Context, id uuid.UUID) (queries.Scan, error) {
+func (s *ScanService) Get(ctx context.Context, id string) (queries.Scan, error) {
 	return s.q.GetScan(ctx, id)
 }
 
-func (s *ScanService) List(ctx context.Context, userID uuid.UUID, limit, offset int32) ([]queries.Scan, error) {
+func (s *ScanService) List(ctx context.Context, userID string, limit, offset int32) ([]queries.Scan, error) {
 	return s.q.ListScans(ctx, queries.ListScansParams{UserID: userID, Limit: limit, Offset: offset})
 }
 
@@ -51,7 +54,7 @@ func (s *ScanService) Launch(ctx context.Context, scan queries.Scan, target stri
 	return err
 }
 
-func (s *ScanService) Delete(ctx context.Context, id, userID uuid.UUID) error {
+func (s *ScanService) Delete(ctx context.Context, id, userID string) error {
 	return s.q.DeleteScan(ctx, queries.DeleteScanParams{ID: id, UserID: userID})
 }
 

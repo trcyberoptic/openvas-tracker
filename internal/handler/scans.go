@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/worker"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/worker"
 )
 
 type ScanHandler struct {
@@ -37,7 +36,7 @@ func (h *ScanHandler) Launch(c echo.Context) error {
 	}
 
 	userID := middleware.GetUserID(c)
-	targetID, _ := uuid.Parse(req.TargetID)
+	targetID := req.TargetID
 
 	optJSON, _ := json.Marshal(req.Options)
 
@@ -92,10 +91,7 @@ func (h *ScanHandler) List(c echo.Context) error {
 }
 
 func (h *ScanHandler) Get(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid scan ID")
-	}
+	id := c.Param("id")
 	scan, err := h.q.GetScan(c.Request().Context(), id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "scan not found")

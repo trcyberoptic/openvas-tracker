@@ -20,7 +20,7 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL      string
+	DSN      string
 	MaxConns int
 	MinConns int
 }
@@ -46,7 +46,7 @@ func Load() (*Config, error) {
 
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8080)
-	v.SetDefault("database.url", "postgres://vulntrack:vulntrack@localhost:5432/vulntrack?sslmode=disable")
+	v.SetDefault("database.dsn", "openvas-tracker:openvas-tracker@tcp(localhost:3306)/openvas-tracker?parseTime=true")
 	v.SetDefault("database.maxconns", 25)
 	v.SetDefault("database.minconns", 5)
 	v.SetDefault("redis.addr", "localhost:6379")
@@ -57,7 +57,7 @@ func Load() (*Config, error) {
 	v.SetDefault("scanner.nmappath", "nmap")
 	v.SetDefault("scanner.openvaspath", "gvm-cli")
 
-	v.SetEnvPrefix("VT")
+	v.SetEnvPrefix("OT")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 

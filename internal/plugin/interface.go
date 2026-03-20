@@ -4,10 +4,10 @@ package plugin
 import (
 	"context"
 
-	"github.com/cyberoptic/vulntrack/internal/scanner"
+	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 )
 
-// Plugin defines the interface for VulnTrack scanner plugins.
+// Plugin defines the interface for OpenVAS-Tracker scanner plugins.
 // Plugins are compiled as Go plugins (.so) and loaded at runtime.
 type Plugin interface {
 	// Name returns the plugin's unique identifier
