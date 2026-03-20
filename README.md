@@ -51,6 +51,64 @@ Response includes ticket statistics:
 }
 ```
 
+## Quick Start without Docker (Bare Metal)
+
+### Prerequisites
+
+- Go 1.23+
+- Node.js 22+ and npm
+- MariaDB 10.6+ (or MySQL 8+)
+- [golang-migrate](https://github.com/golang-migrate/migrate) CLI (for migrations)
+
+### 1. Set up MariaDB
+
+```sql
+CREATE DATABASE `openvas-tracker` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'otracker'@'localhost' IDENTIFIED BY 'your-db-password';
+GRANT ALL PRIVILEGES ON `openvas-tracker`.* TO 'otracker'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+### 2. Run migrations
+
+```bash
+export DATABASE_URL="mysql://otracker:your-db-password@tcp(localhost:3306)/openvas-tracker"
+make migrate-up
+```
+
+### 3. Configure environment
+
+```bash
+export OT_DATABASE_DSN="otracker:your-db-password@tcp(localhost:3306)/openvas-tracker?parseTime=true"
+export OT_JWT_SECRET="$(openssl rand -hex 32)"
+export OT_IMPORT_APIKEY="$(openssl rand -hex 32)"
+```
+
+Or create an `.env` file — Viper reads it automatically.
+
+### 4. Build and run
+
+```bash
+make build          # builds frontend + Go binary → bin/openvas-tracker
+./bin/openvas-tracker
+```
+
+The UI is at http://localhost:8080.
+
+### Development mode
+
+```bash
+make dev            # runs Go backend + Vite dev server with HMR
+```
+
+Frontend dev server on port 5173 proxies API calls to the backend on port 8080.
+
+### Cross-compile for Linux
+
+```bash
+make build-linux    # produces bin/openvas-tracker-linux-amd64
+```
+
 ## Configuration
 
 All config via environment variables with `OT_` prefix:
