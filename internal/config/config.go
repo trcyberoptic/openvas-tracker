@@ -37,8 +37,8 @@ type JWTConfig struct {
 }
 
 type ScannerConfig struct {
-	NmapPath    string
-	OpenVASPath string
+	NmapPath     string
+	ImportAPIKey string
 }
 
 func Load() (*Config, error) {
@@ -55,7 +55,7 @@ func Load() (*Config, error) {
 	v.SetDefault("jwt.secret", "change-me-in-production")
 	v.SetDefault("jwt.expirehours", 24)
 	v.SetDefault("scanner.nmappath", "nmap")
-	v.SetDefault("scanner.openvaspath", "gvm-cli")
+	v.SetDefault("scanner.importapikey", "")
 
 	v.SetEnvPrefix("OT")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
