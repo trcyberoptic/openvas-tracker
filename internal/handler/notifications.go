@@ -4,11 +4,10 @@ package handler
 import (
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type NotificationHandler struct {
@@ -38,7 +37,7 @@ func (h *NotificationHandler) Unread(c echo.Context) error {
 }
 
 func (h *NotificationHandler) MarkRead(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	userID := middleware.GetUserID(c)
 	if err := h.notifications.MarkRead(c.Request().Context(), id, userID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to mark read")

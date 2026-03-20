@@ -7,8 +7,6 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type ScanStatus string
@@ -30,40 +28,41 @@ const (
 )
 
 type Scan struct {
-	ID             uuid.UUID  `json:"id"`
-	Name           string     `json:"name"`
-	ScanType       ScanType   `json:"scan_type"`
-	Status         ScanStatus `json:"status"`
-	TargetID       *uuid.UUID `json:"target_id"`
-	TargetGroupID  *uuid.UUID `json:"target_group_id"`
-	UserID         uuid.UUID  `json:"user_id"`
-	Options        []byte     `json:"options"`
-	RawOutput      *string    `json:"raw_output"`
-	StartedAt      *time.Time `json:"started_at"`
-	CompletedAt    *time.Time `json:"completed_at"`
-	ErrorMessage   *string    `json:"error_message"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-}
-
-type CreateScanParams struct {
+	ID            string     `json:"id"`
 	Name          string     `json:"name"`
 	ScanType      ScanType   `json:"scan_type"`
 	Status        ScanStatus `json:"status"`
-	TargetID      *uuid.UUID `json:"target_id"`
-	TargetGroupID *uuid.UUID `json:"target_group_id"`
-	UserID        uuid.UUID  `json:"user_id"`
+	TargetID      *string    `json:"target_id"`
+	TargetGroupID *string    `json:"target_group_id"`
+	UserID        string     `json:"user_id"`
+	Options       []byte     `json:"options"`
+	RawOutput     *string    `json:"raw_output"`
+	StartedAt     *time.Time `json:"started_at"`
+	CompletedAt   *time.Time `json:"completed_at"`
+	ErrorMessage  *string    `json:"error_message"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type CreateScanParams struct {
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	ScanType      ScanType   `json:"scan_type"`
+	Status        ScanStatus `json:"status"`
+	TargetID      *string    `json:"target_id"`
+	TargetGroupID *string    `json:"target_group_id"`
+	UserID        string     `json:"user_id"`
 	Options       []byte     `json:"options"`
 }
 
 type ListScansParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Limit  int32     `json:"limit"`
-	Offset int32     `json:"offset"`
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 type UpdateScanStatusParams struct {
-	ID           uuid.UUID  `json:"id"`
+	ID           string     `json:"id"`
 	Status       ScanStatus `json:"status"`
 	StartedAt    *time.Time `json:"started_at"`
 	CompletedAt  *time.Time `json:"completed_at"`
@@ -72,45 +71,34 @@ type UpdateScanStatusParams struct {
 }
 
 type DeleteScanParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
 }
+
+func scanRow(row interface{ Scan(...any) error }, i *Scan) error {
+	return row.Scan(&i.ID, &i.Name, &i.ScanType, &i.Status, &i.TargetID, &i.TargetGroupID, &i.UserID, &i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt, &i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt)
+}
+
+const scanCols = `id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at`
 
 func (q *Queries) CreateScan(ctx context.Context, arg CreateScanParams) (Scan, error) {
-	const createScan = `-- name: CreateScan :one
-INSERT INTO scans (name, scan_type, status, target_id, target_group_id, user_id, options)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at`
-	row := q.db.QueryRow(ctx, createScan,
-		arg.Name, arg.ScanType, arg.Status, arg.TargetID, arg.TargetGroupID, arg.UserID, arg.Options)
-	var i Scan
-	err := row.Scan(
-		&i.ID, &i.Name, &i.ScanType, &i.Status,
-		&i.TargetID, &i.TargetGroupID, &i.UserID,
-		&i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt,
-		&i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt,
-	)
-	return i, err
+	const createScan = `INSERT INTO scans (id, name, scan_type, status, target_id, target_group_id, user_id, options) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createScan, arg.ID, arg.Name, arg.ScanType, arg.Status, arg.TargetID, arg.TargetGroupID, arg.UserID, arg.Options)
+	if err != nil {
+		return Scan{}, err
+	}
+	return q.GetScan(ctx, arg.ID)
 }
 
-func (q *Queries) GetScan(ctx context.Context, id uuid.UUID) (Scan, error) {
-	const getScan = `-- name: GetScan :one
-SELECT id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at FROM scans WHERE id = $1`
-	row := q.db.QueryRow(ctx, getScan, id)
+func (q *Queries) GetScan(ctx context.Context, id string) (Scan, error) {
+	row := q.db.QueryRowContext(ctx, `SELECT `+scanCols+` FROM scans WHERE id = ?`, id)
 	var i Scan
-	err := row.Scan(
-		&i.ID, &i.Name, &i.ScanType, &i.Status,
-		&i.TargetID, &i.TargetGroupID, &i.UserID,
-		&i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt,
-		&i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt,
-	)
+	err := scanRow(row, &i)
 	return i, err
 }
 
 func (q *Queries) ListScans(ctx context.Context, arg ListScansParams) ([]Scan, error) {
-	const listScans = `-- name: ListScans :many
-SELECT id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at FROM scans WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
-	rows, err := q.db.Query(ctx, listScans, arg.UserID, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, `SELECT `+scanCols+` FROM scans WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +106,7 @@ SELECT id, name, scan_type, status, target_id, target_group_id, user_id, options
 	var items []Scan
 	for rows.Next() {
 		var i Scan
-		if err := rows.Scan(
-			&i.ID, &i.Name, &i.ScanType, &i.Status,
-			&i.TargetID, &i.TargetGroupID, &i.UserID,
-			&i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt,
-			&i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt,
-		); err != nil {
+		if err := scanRow(rows, &i); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -132,31 +115,16 @@ SELECT id, name, scan_type, status, target_id, target_group_id, user_id, options
 }
 
 func (q *Queries) UpdateScanStatus(ctx context.Context, arg UpdateScanStatusParams) (Scan, error) {
-	const updateScanStatus = `-- name: UpdateScanStatus :one
-UPDATE scans SET
-    status = $2,
-    started_at = COALESCE($3, started_at),
-    completed_at = COALESCE($4, completed_at),
-    error_message = COALESCE($5, error_message),
-    raw_output = COALESCE($6, raw_output),
-    updated_at = now()
-WHERE id = $1
-RETURNING id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at`
-	row := q.db.QueryRow(ctx, updateScanStatus,
-		arg.ID, arg.Status, arg.StartedAt, arg.CompletedAt, arg.ErrorMessage, arg.RawOutput)
-	var i Scan
-	err := row.Scan(
-		&i.ID, &i.Name, &i.ScanType, &i.Status,
-		&i.TargetID, &i.TargetGroupID, &i.UserID,
-		&i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt,
-		&i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt,
-	)
-	return i, err
+	const updateScanStatus = `UPDATE scans SET status = ?, started_at = COALESCE(?, started_at), completed_at = COALESCE(?, completed_at), error_message = COALESCE(?, error_message), raw_output = COALESCE(?, raw_output), updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, updateScanStatus, arg.Status, arg.StartedAt, arg.CompletedAt, arg.ErrorMessage, arg.RawOutput, arg.ID)
+	if err != nil {
+		return Scan{}, err
+	}
+	return q.GetScan(ctx, arg.ID)
 }
 
 func (q *Queries) DeleteScan(ctx context.Context, arg DeleteScanParams) error {
-	const deleteScan = `-- name: DeleteScan :exec
-DELETE FROM scans WHERE id = $1 AND user_id = $2`
-	_, err := q.db.Exec(ctx, deleteScan, arg.ID, arg.UserID)
+	const deleteScan = `DELETE FROM scans WHERE id = ? AND user_id = ?`
+	_, err := q.db.ExecContext(ctx, deleteScan, arg.ID, arg.UserID)
 	return err
 }

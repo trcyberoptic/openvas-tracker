@@ -6,8 +6,6 @@ package queries
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type UserRole string
@@ -19,7 +17,7 @@ const (
 )
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
+	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Username  string    `json:"username"`
 	Password  string    `json:"password"`

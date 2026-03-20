@@ -5,10 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
+	"github.com/cyberoptic/openvas-tracker/internal/auth"
 )
 
 const (
@@ -41,8 +40,8 @@ func JWTAuth(secret string) echo.MiddlewareFunc {
 	}
 }
 
-func GetUserID(c echo.Context) uuid.UUID {
-	id, _ := c.Get(contextKeyUserID).(uuid.UUID)
+func GetUserID(c echo.Context) string {
+	id, _ := c.Get(contextKeyUserID).(string)
 	return id
 }
 

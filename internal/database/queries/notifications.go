@@ -7,13 +7,11 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Notification struct {
-	ID        uuid.UUID `json:"id"`
-	UserID    uuid.UUID `json:"user_id"`
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
 	Type      string    `json:"type"`
 	Title     string    `json:"title"`
 	Message   string    `json:"message"`
@@ -23,37 +21,40 @@ type Notification struct {
 }
 
 type CreateNotificationParams struct {
-	UserID  uuid.UUID `json:"user_id"`
-	Type    string    `json:"type"`
-	Title   string    `json:"title"`
-	Message string    `json:"message"`
-	Data    []byte    `json:"data"`
+	ID      string `json:"id"`
+	UserID  string `json:"user_id"`
+	Type    string `json:"type"`
+	Title   string `json:"title"`
+	Message string `json:"message"`
+	Data    []byte `json:"data"`
 }
 
 type ListNotificationsParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Limit  int32     `json:"limit"`
-	Offset int32     `json:"offset"`
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 type MarkReadParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
 }
 
 func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error) {
-	const createNotification = `-- name: CreateNotification :one
-INSERT INTO notifications (user_id, type, title, message, data) VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, type, title, message, data, read, created_at`
-	row := q.db.QueryRow(ctx, createNotification, arg.UserID, arg.Type, arg.Title, arg.Message, arg.Data)
+	const createNotification = `INSERT INTO notifications (id, user_id, type, title, message, data) VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createNotification, arg.ID, arg.UserID, arg.Type, arg.Title, arg.Message, arg.Data)
+	if err != nil {
+		return Notification{}, err
+	}
+	row := q.db.QueryRowContext(ctx, `SELECT id, user_id, type, title, message, data, read, created_at FROM notifications WHERE id = ?`, arg.ID)
 	var i Notification
-	err := row.Scan(&i.ID, &i.UserID, &i.Type, &i.Title, &i.Message, &i.Data, &i.Read, &i.CreatedAt)
+	err = row.Scan(&i.ID, &i.UserID, &i.Type, &i.Title, &i.Message, &i.Data, &i.Read, &i.CreatedAt)
 	return i, err
 }
 
 func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error) {
-	const listNotifications = `-- name: ListNotifications :many
-SELECT id, user_id, type, title, message, data, read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
-	rows, err := q.db.Query(ctx, listNotifications, arg.UserID, arg.Limit, arg.Offset)
+	const listNotifications = `SELECT id, user_id, type, title, message, data, read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listNotifications, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -69,25 +70,22 @@ SELECT id, user_id, type, title, message, data, read, created_at FROM notificati
 	return items, rows.Err()
 }
 
-func (q *Queries) CountUnread(ctx context.Context, userID uuid.UUID) (int64, error) {
-	const countUnread = `-- name: CountUnread :one
-SELECT count(*) FROM notifications WHERE user_id = $1 AND NOT read`
-	row := q.db.QueryRow(ctx, countUnread, userID)
+func (q *Queries) CountUnread(ctx context.Context, userID string) (int64, error) {
+	const countUnread = `SELECT count(*) FROM notifications WHERE user_id = ? AND read = 0`
+	row := q.db.QueryRowContext(ctx, countUnread, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 func (q *Queries) MarkRead(ctx context.Context, arg MarkReadParams) error {
-	const markRead = `-- name: MarkRead :exec
-UPDATE notifications SET read = true WHERE id = $1 AND user_id = $2`
-	_, err := q.db.Exec(ctx, markRead, arg.ID, arg.UserID)
+	const markRead = `UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?`
+	_, err := q.db.ExecContext(ctx, markRead, arg.ID, arg.UserID)
 	return err
 }
 
-func (q *Queries) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
-	const markAllRead = `-- name: MarkAllRead :exec
-UPDATE notifications SET read = true WHERE user_id = $1`
-	_, err := q.db.Exec(ctx, markAllRead, userID)
+func (q *Queries) MarkAllRead(ctx context.Context, userID string) error {
+	const markAllRead = `UPDATE notifications SET read = 1 WHERE user_id = ?`
+	_, err := q.db.ExecContext(ctx, markAllRead, userID)
 	return err
 }

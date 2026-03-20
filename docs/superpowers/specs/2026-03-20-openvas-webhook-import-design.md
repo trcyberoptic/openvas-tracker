@@ -1,12 +1,12 @@
-# OpenVAS Webhook Import Design
+﻿# OpenVAS Webhook Import Design
 
 ## Summary
 
-Replace the OpenVAS scan orchestration (gvm-cli execution, async task queue) with a passive webhook-based import endpoint. OpenVAS pushes completed scan reports to VulnTrack via an HTTP Alert. VulnTrack parses the XML, creates a scan record, and stores vulnerabilities. Nmap scanning remains unchanged.
+Replace the OpenVAS scan orchestration (gvm-cli execution, async task queue) with a passive webhook-based import endpoint. OpenVAS pushes completed scan reports to OpenVAS-Tracker via an HTTP Alert. OpenVAS-Tracker parses the XML, creates a scan record, and stores vulnerabilities. Nmap scanning remains unchanged.
 
 ## Motivation
 
-VulnTrack does not need to control OpenVAS directly. The existing `OpenVASScanner.Scan()` is a simplified stub that only calls `gvm-cli` for report retrieval. Instead, OpenVAS should push results automatically via its built-in Alert mechanism, keeping VulnTrack as a results tracker rather than a scan orchestrator.
+OpenVAS-Tracker does not need to control OpenVAS directly. The existing `OpenVASScanner.Scan()` is a simplified stub that only calls `gvm-cli` for report retrieval. Instead, OpenVAS should push results automatically via its built-in Alert mechanism, keeping OpenVAS-Tracker as a results tracker rather than a scan orchestrator.
 
 ## Design
 
@@ -42,7 +42,7 @@ VulnTrack does not need to control OpenVAS directly. The existing `OpenVASScanne
 **Config:** New field `ImportAPIKey string` in `ScannerConfig`, replacing `OpenVASPath`.
 
 - Config key: `scanner.importapikey` — must be explicitly registered via `v.SetDefault("scanner.importapikey", "")` in `config.go`'s `Load()` function. The old `v.SetDefault("scanner.openvaspath", "gvm-cli")` line is removed at the same time.
-- Env variable: `VT_SCANNER_IMPORTAPIKEY`
+- Env variable: `OT_SCANNER_IMPORTAPIKEY`
 - No default value — must be explicitly configured
 - **Minimum requirement:** key must be at least 32 characters. The middleware rejects startup if configured key is shorter.
 - **The key must not be logged at startup or in error messages.**
@@ -92,7 +92,7 @@ Each import creates one scan record in the `scans` table. Because `CreateScanPar
 
 **Severity:** Based on `OpenVASResult.Severity` (string, from `Threat` field) and `OpenVASResult.CVSSScore` (float64):
 
-| OpenVASResult.Severity (string) | OpenVASResult.CVSSScore | VulnTrack SeverityLevel |
+| OpenVASResult.Severity (string) | OpenVASResult.CVSSScore | OpenVAS-Tracker SeverityLevel |
 |---|---|---|
 | `"High"` | >= 9.0 | `critical` |
 | `"High"` | < 9.0 | `high` |
@@ -104,7 +104,7 @@ Each import creates one scan record in the `scans` table. Because `CreateScanPar
 
 **Fields per Vulnerability:**
 
-| VulnTrack Field | Source |
+| OpenVAS-Tracker Field | Source |
 |---|---|
 | `title` | `OpenVASResult.Title` |
 | `description` | `OpenVASResult.Description` |
@@ -130,7 +130,7 @@ The following OpenVAS orchestration code is removed:
 | `internal/worker/scan_task.go` | `HandleOpenVASScan()` | `HandleNmapScan()`, `ScanPayload`, `NewScanTask()` |
 | `internal/worker/server.go` | `TaskScanOpenVAS` constant, mux registration | `TaskScanNmap`, nmap mux registration |
 | `internal/config/config.go` | `ScannerConfig.OpenVASPath`, default `gvm-cli` | `ScannerConfig.NmapPath` |
-| `cmd/vulntrack/main.go` | `openvasScanner` instantiation, passing to `NewMux` | Everything else |
+| `cmd/OpenVAS-Tracker/main.go` | `openvasScanner` instantiation, passing to `NewMux` | Everything else |
 | `internal/handler/scans.go` | `oneof=nmap openvas` validation, `TaskScanOpenVAS` branch in `Launch()` | Changed to `oneof=nmap`, OpenVAS task-type selection removed |
 | `internal/handler/schedules.go` | `oneof=nmap openvas` validation | Changed to `oneof=nmap` |
 
@@ -146,9 +146,9 @@ The following OpenVAS orchestration code is removed:
 On the OpenVAS/GVM side, the user configures an Alert:
 
 - **Type:** HTTP Get (or a custom script using `curl`)
-- **URL:** `http://<vulntrack-host>:8080/api/import/openvas`
+- **URL:** `http://<OpenVAS-Tracker-host>:8080/api/import/openvas`
 - **Header:** `X-API-Key: <configured-secret>`
 - **Condition:** Task completed
 - **Method:** Send full XML report in POST body
 
-This is documented but not implemented by VulnTrack.
+This is documented but not implemented by OpenVAS-Tracker.

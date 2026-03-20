@@ -10,13 +10,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
+	"github.com/cyberoptic/openvas-tracker/internal/auth"
 )
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
 	e := echo.New()
 	secret := "test-secret"
-	userID := uuid.New()
+	userID := uuid.New().String()
 
 	token, _ := auth.GenerateToken(userID, "admin", secret, 1*time.Hour)
 

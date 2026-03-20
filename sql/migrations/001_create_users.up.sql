@@ -1,18 +1,13 @@
 -- sql/migrations/001_create_users.up.sql
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-
-CREATE TYPE user_role AS ENUM ('admin', 'analyst', 'viewer');
-
 CREATE TABLE users (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email       TEXT NOT NULL UNIQUE,
-    username    TEXT NOT NULL UNIQUE,
+    id          CHAR(36) PRIMARY KEY,
+    email       VARCHAR(255) NOT NULL UNIQUE,
+    username    VARCHAR(50) NOT NULL UNIQUE,
     password    TEXT NOT NULL,
-    role        user_role NOT NULL DEFAULT 'viewer',
-    is_active   BOOLEAN NOT NULL DEFAULT true,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    role        ENUM('admin', 'analyst', 'viewer') NOT NULL DEFAULT 'viewer',
+    is_active   TINYINT(1) NOT NULL DEFAULT 1,
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_users_email ON users (email);

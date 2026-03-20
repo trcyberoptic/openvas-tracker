@@ -4,12 +4,11 @@ package handler
 import (
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type ScheduleHandler struct {
@@ -33,7 +32,7 @@ func (h *ScheduleHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 	userID := middleware.GetUserID(c)
-	tid, _ := uuid.Parse(req.TargetID)
+	tid := req.TargetID
 	sched, err := h.schedules.Create(c.Request().Context(), queries.CreateScheduleParams{
 		Name: req.Name, CronExpr: req.CronExpr,
 		ScanType: queries.ScanType(req.ScanType), TargetID: &tid, UserID: userID,
@@ -54,7 +53,7 @@ func (h *ScheduleHandler) List(c echo.Context) error {
 }
 
 func (h *ScheduleHandler) Toggle(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -68,7 +67,7 @@ func (h *ScheduleHandler) Toggle(c echo.Context) error {
 }
 
 func (h *ScheduleHandler) Delete(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	userID := middleware.GetUserID(c)
 	if err := h.schedules.Delete(c.Request().Context(), id, userID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete schedule")

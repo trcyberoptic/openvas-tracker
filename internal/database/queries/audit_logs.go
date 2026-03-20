@@ -7,30 +7,29 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type AuditLog struct {
-	ID         uuid.UUID  `json:"id"`
-	UserID     *uuid.UUID `json:"user_id"`
-	Action     string     `json:"action"`
-	Resource   string     `json:"resource"`
-	ResourceID *uuid.UUID `json:"resource_id"`
-	Details    []byte     `json:"details"`
-	IPAddress  *string    `json:"ip_address"`
-	UserAgent  *string    `json:"user_agent"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID         string    `json:"id"`
+	UserID     *string   `json:"user_id"`
+	Action     string    `json:"action"`
+	Resource   string    `json:"resource"`
+	ResourceID *string   `json:"resource_id"`
+	Details    []byte    `json:"details"`
+	IPAddress  *string   `json:"ip_address"`
+	UserAgent  *string   `json:"user_agent"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type CreateAuditLogParams struct {
-	UserID     *uuid.UUID `json:"user_id"`
-	Action     string     `json:"action"`
-	Resource   string     `json:"resource"`
-	ResourceID *uuid.UUID `json:"resource_id"`
-	Details    []byte     `json:"details"`
-	IPAddress  *string    `json:"ip_address"`
-	UserAgent  *string    `json:"user_agent"`
+	ID         string  `json:"id"`
+	UserID     *string `json:"user_id"`
+	Action     string  `json:"action"`
+	Resource   string  `json:"resource"`
+	ResourceID *string `json:"resource_id"`
+	Details    []byte  `json:"details"`
+	IPAddress  *string `json:"ip_address"`
+	UserAgent  *string `json:"user_agent"`
 }
 
 type ListAuditLogsParams struct {
@@ -39,24 +38,20 @@ type ListAuditLogsParams struct {
 }
 
 type ListAuditLogsByUserParams struct {
-	UserID *uuid.UUID `json:"user_id"`
-	Limit  int32      `json:"limit"`
-	Offset int32      `json:"offset"`
+	UserID *string `json:"user_id"`
+	Limit  int32   `json:"limit"`
+	Offset int32   `json:"offset"`
 }
 
 func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) error {
-	const createAuditLog = `-- name: CreateAuditLog :exec
-INSERT INTO audit_logs (user_id, action, resource, resource_id, details, ip_address, user_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	_, err := q.db.Exec(ctx, createAuditLog,
-		arg.UserID, arg.Action, arg.Resource, arg.ResourceID, arg.Details, arg.IPAddress, arg.UserAgent)
+	const createAuditLog = `INSERT INTO audit_logs (id, user_id, action, resource, resource_id, details, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createAuditLog, arg.ID, arg.UserID, arg.Action, arg.Resource, arg.ResourceID, arg.Details, arg.IPAddress, arg.UserAgent)
 	return err
 }
 
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
-	const listAuditLogs = `-- name: ListAuditLogs :many
-SELECT id, user_id, action, resource, resource_id, details, ip_address, user_agent, created_at FROM audit_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2`
-	rows, err := q.db.Query(ctx, listAuditLogs, arg.Limit, arg.Offset)
+	const listAuditLogs = `SELECT id, user_id, action, resource, resource_id, details, ip_address, user_agent, created_at FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listAuditLogs, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +59,7 @@ SELECT id, user_id, action, resource, resource_id, details, ip_address, user_age
 	var items []AuditLog
 	for rows.Next() {
 		var i AuditLog
-		if err := rows.Scan(&i.ID, &i.UserID, &i.Action, &i.Resource, &i.ResourceID,
-			&i.Details, &i.IPAddress, &i.UserAgent, &i.CreatedAt); err != nil {
+		if err := rows.Scan(&i.ID, &i.UserID, &i.Action, &i.Resource, &i.ResourceID, &i.Details, &i.IPAddress, &i.UserAgent, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -74,9 +68,8 @@ SELECT id, user_id, action, resource, resource_id, details, ip_address, user_age
 }
 
 func (q *Queries) ListAuditLogsByUser(ctx context.Context, arg ListAuditLogsByUserParams) ([]AuditLog, error) {
-	const listAuditLogsByUser = `-- name: ListAuditLogsByUser :many
-SELECT id, user_id, action, resource, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
-	rows, err := q.db.Query(ctx, listAuditLogsByUser, arg.UserID, arg.Limit, arg.Offset)
+	const listAuditLogsByUser = `SELECT id, user_id, action, resource, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listAuditLogsByUser, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +77,7 @@ SELECT id, user_id, action, resource, resource_id, details, ip_address, user_age
 	var items []AuditLog
 	for rows.Next() {
 		var i AuditLog
-		if err := rows.Scan(&i.ID, &i.UserID, &i.Action, &i.Resource, &i.ResourceID,
-			&i.Details, &i.IPAddress, &i.UserAgent, &i.CreatedAt); err != nil {
+		if err := rows.Scan(&i.ID, &i.UserID, &i.Action, &i.Resource, &i.ResourceID, &i.Details, &i.IPAddress, &i.UserAgent, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -6,17 +6,10 @@ package queries
 
 import (
 	"context"
-
-	"github.com/google/uuid"
 )
 
-const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, username, password, role)
-VALUES ($1, $2, $3, $4)
-RETURNING id, email, username, password, role, is_active, created_at, updated_at
-`
-
 type CreateUserParams struct {
+	ID       string   `json:"id"`
 	Email    string   `json:"email"`
 	Username string   `json:"username"`
 	Password string   `json:"password"`
@@ -24,84 +17,37 @@ type CreateUserParams struct {
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.Username, arg.Password, arg.Role)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Username,
-		&i.Password,
-		&i.Role,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+	const createUser = `INSERT INTO users (id, email, username, password, role) VALUES (?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createUser, arg.ID, arg.Email, arg.Username, arg.Password, arg.Role)
+	if err != nil {
+		return User{}, err
+	}
+	return q.GetUserByID(ctx, arg.ID)
 }
-
-const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users WHERE email = $1
-`
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByEmail, email)
+	const getUserByEmail = `SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users WHERE email = ?`
+	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
 	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Username,
-		&i.Password,
-		&i.Role,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+	err := row.Scan(&i.ID, &i.Email, &i.Username, &i.Password, &i.Role, &i.IsActive, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
 
-const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users WHERE id = $1
-`
-
-func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
+func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
+	const getUserByID = `SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users WHERE id = ?`
+	row := q.db.QueryRowContext(ctx, getUserByID, id)
 	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Username,
-		&i.Password,
-		&i.Role,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+	err := row.Scan(&i.ID, &i.Email, &i.Username, &i.Password, &i.Role, &i.IsActive, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
-
-const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users WHERE username = $1
-`
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByUsername, username)
+	const getUserByUsername = `SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users WHERE username = ?`
+	row := q.db.QueryRowContext(ctx, getUserByUsername, username)
 	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Username,
-		&i.Password,
-		&i.Role,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+	err := row.Scan(&i.ID, &i.Email, &i.Username, &i.Password, &i.Role, &i.IsActive, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
-
-const listUsers = `-- name: ListUsers :many
-SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2
-`
 
 type ListUsersParams struct {
 	Limit  int32 `json:"limit"`
@@ -109,7 +55,8 @@ type ListUsersParams struct {
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
-	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset)
+	const listUsers = `SELECT id, email, username, password, role, is_active, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listUsers, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -117,16 +64,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 	var items []User
 	for rows.Next() {
 		var i User
-		if err := rows.Scan(
-			&i.ID,
-			&i.Email,
-			&i.Username,
-			&i.Password,
-			&i.Role,
-			&i.IsActive,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.Email, &i.Username, &i.Password, &i.Role, &i.IsActive, &i.CreatedAt, &i.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -137,35 +75,26 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 	return items, nil
 }
 
-const updatePassword = `-- name: UpdatePassword :exec
-UPDATE users SET password = $2, updated_at = now() WHERE id = $1
-`
-
 type UpdatePasswordParams struct {
-	ID       uuid.UUID `json:"id"`
-	Password string    `json:"password"`
+	ID       string `json:"id"`
+	Password string `json:"password"`
 }
 
 func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
-	_, err := q.db.Exec(ctx, updatePassword, arg.ID, arg.Password)
+	const updatePassword = `UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, updatePassword, arg.Password, arg.ID)
 	return err
 }
 
-const deleteUser = `-- name: DeleteUser :exec
-DELETE FROM users WHERE id = $1
-`
-
-func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteUser, id)
+func (q *Queries) DeleteUser(ctx context.Context, id string) error {
+	const deleteUser = `DELETE FROM users WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
 	return err
 }
-
-const countUsers = `-- name: CountUsers :one
-SELECT count(*) FROM users
-`
 
 func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countUsers)
+	const countUsers = `SELECT count(*) FROM users`
+	row := q.db.QueryRowContext(ctx, countUsers)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

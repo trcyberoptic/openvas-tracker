@@ -2,11 +2,12 @@
 package worker
 
 import (
-	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"database/sql"
 
-	"github.com/cyberoptic/vulntrack/internal/config"
-	"github.com/cyberoptic/vulntrack/internal/scanner"
+	"github.com/hibiken/asynq"
+
+	"github.com/cyberoptic/openvas-tracker/internal/config"
+	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 )
 
 const (
@@ -16,7 +17,7 @@ const (
 	TaskEnrich      = "vuln:enrich"
 )
 
-func NewServer(cfg *config.Config, pool *pgxpool.Pool) *asynq.Server {
+func NewServer(cfg *config.Config, db *sql.DB) *asynq.Server {
 	return asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: cfg.Redis.DB},
 		asynq.Config{
@@ -30,9 +31,9 @@ func NewServer(cfg *config.Config, pool *pgxpool.Pool) *asynq.Server {
 	)
 }
 
-func NewMux(pool *pgxpool.Pool, nmapScanner *scanner.NmapScanner, openvasScanner *scanner.OpenVASScanner) *asynq.ServeMux {
+func NewMux(db *sql.DB, nmapScanner *scanner.NmapScanner, openvasScanner *scanner.OpenVASScanner) *asynq.ServeMux {
 	mux := asynq.NewServeMux()
-	scanHandler := NewScanHandler(pool, nmapScanner, openvasScanner)
+	scanHandler := NewScanHandler(db, nmapScanner, openvasScanner)
 	mux.HandleFunc(TaskScanNmap, scanHandler.HandleNmapScan)
 	mux.HandleFunc(TaskScanOpenVAS, scanHandler.HandleOpenVASScan)
 	return mux

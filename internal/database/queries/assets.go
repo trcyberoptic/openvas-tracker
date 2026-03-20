@@ -7,99 +7,88 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Asset struct {
-	ID         uuid.UUID  `json:"id"`
-	Hostname   *string    `json:"hostname"`
-	IPAddress  string     `json:"ip_address"`
-	MACAddress *string    `json:"mac_address"`
-	OS         *string    `json:"os"`
-	OSVersion  *string    `json:"os_version"`
-	OpenPorts  []byte     `json:"open_ports"`
-	Services   []byte     `json:"services"`
-	UserID     uuid.UUID  `json:"user_id"`
-	TargetID   *uuid.UUID `json:"target_id"`
-	VulnCount  int32      `json:"vuln_count"`
-	RiskScore  *float64   `json:"risk_score"`
-	LastSeen   time.Time  `json:"last_seen"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID         string    `json:"id"`
+	Hostname   *string   `json:"hostname"`
+	IPAddress  string    `json:"ip_address"`
+	MACAddress *string   `json:"mac_address"`
+	OS         *string   `json:"os"`
+	OSVersion  *string   `json:"os_version"`
+	OpenPorts  []byte    `json:"open_ports"`
+	Services   []byte    `json:"services"`
+	UserID     string    `json:"user_id"`
+	TargetID   *string   `json:"target_id"`
+	VulnCount  int32     `json:"vuln_count"`
+	RiskScore  *float64  `json:"risk_score"`
+	LastSeen   time.Time `json:"last_seen"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type UpsertAssetParams struct {
-	Hostname   *string    `json:"hostname"`
-	IPAddress  string     `json:"ip_address"`
-	MACAddress *string    `json:"mac_address"`
-	OS         *string    `json:"os"`
-	OSVersion  *string    `json:"os_version"`
-	OpenPorts  []byte     `json:"open_ports"`
-	Services   []byte     `json:"services"`
-	UserID     uuid.UUID  `json:"user_id"`
-	TargetID   *uuid.UUID `json:"target_id"`
+	ID         string   `json:"id"`
+	Hostname   *string  `json:"hostname"`
+	IPAddress  string   `json:"ip_address"`
+	MACAddress *string  `json:"mac_address"`
+	OS         *string  `json:"os"`
+	OSVersion  *string  `json:"os_version"`
+	OpenPorts  []byte   `json:"open_ports"`
+	Services   []byte   `json:"services"`
+	UserID     string   `json:"user_id"`
+	TargetID   *string  `json:"target_id"`
 }
 
 type GetAssetParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
 }
 
 type ListAssetsParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Limit  int32     `json:"limit"`
-	Offset int32     `json:"offset"`
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 type UpdateAssetRiskParams struct {
-	ID        uuid.UUID `json:"id"`
-	VulnCount int32     `json:"vuln_count"`
-	RiskScore *float64  `json:"risk_score"`
+	ID        string   `json:"id"`
+	VulnCount int32    `json:"vuln_count"`
+	RiskScore *float64 `json:"risk_score"`
 }
 
 type DeleteAssetParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
+}
+
+const assetCols = `id, hostname, ip_address, mac_address, os, os_version, open_ports, services, user_id, target_id, vuln_count, risk_score, last_seen, created_at, updated_at`
+
+func scanAsset(row interface{ Scan(...any) error }, i *Asset) error {
+	return row.Scan(&i.ID, &i.Hostname, &i.IPAddress, &i.MACAddress, &i.OS, &i.OSVersion, &i.OpenPorts, &i.Services, &i.UserID, &i.TargetID, &i.VulnCount, &i.RiskScore, &i.LastSeen, &i.CreatedAt, &i.UpdatedAt)
 }
 
 func (q *Queries) UpsertAsset(ctx context.Context, arg UpsertAssetParams) (Asset, error) {
-	const upsertAsset = `-- name: UpsertAsset :one
-INSERT INTO assets (hostname, ip_address, mac_address, os, os_version, open_ports, services, user_id, target_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (user_id, ip_address) DO UPDATE SET
-    hostname = COALESCE(EXCLUDED.hostname, assets.hostname),
-    os = COALESCE(EXCLUDED.os, assets.os),
-    open_ports = EXCLUDED.open_ports,
-    services = EXCLUDED.services,
-    last_seen = now(),
-    updated_at = now()
-RETURNING id, hostname, ip_address, mac_address, os, os_version, open_ports, services, user_id, target_id, vuln_count, risk_score, last_seen, created_at, updated_at`
-	row := q.db.QueryRow(ctx, upsertAsset,
-		arg.Hostname, arg.IPAddress, arg.MACAddress, arg.OS, arg.OSVersion,
-		arg.OpenPorts, arg.Services, arg.UserID, arg.TargetID)
+	const upsertAsset = `INSERT INTO assets (id, hostname, ip_address, mac_address, os, os_version, open_ports, services, user_id, target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE hostname = COALESCE(VALUES(hostname), hostname), os = COALESCE(VALUES(os), os), open_ports = VALUES(open_ports), services = VALUES(services), last_seen = NOW(), updated_at = NOW()`
+	_, err := q.db.ExecContext(ctx, upsertAsset, arg.ID, arg.Hostname, arg.IPAddress, arg.MACAddress, arg.OS, arg.OSVersion, arg.OpenPorts, arg.Services, arg.UserID, arg.TargetID)
+	if err != nil {
+		return Asset{}, err
+	}
+	row := q.db.QueryRowContext(ctx, `SELECT `+assetCols+` FROM assets WHERE user_id = ? AND ip_address = ?`, arg.UserID, arg.IPAddress)
 	var i Asset
-	err := row.Scan(&i.ID, &i.Hostname, &i.IPAddress, &i.MACAddress, &i.OS, &i.OSVersion,
-		&i.OpenPorts, &i.Services, &i.UserID, &i.TargetID, &i.VulnCount, &i.RiskScore,
-		&i.LastSeen, &i.CreatedAt, &i.UpdatedAt)
+	err = scanAsset(row, &i)
 	return i, err
 }
 
 func (q *Queries) GetAsset(ctx context.Context, arg GetAssetParams) (Asset, error) {
-	const getAsset = `-- name: GetAsset :one
-SELECT id, hostname, ip_address, mac_address, os, os_version, open_ports, services, user_id, target_id, vuln_count, risk_score, last_seen, created_at, updated_at FROM assets WHERE id = $1 AND user_id = $2`
-	row := q.db.QueryRow(ctx, getAsset, arg.ID, arg.UserID)
+	row := q.db.QueryRowContext(ctx, `SELECT `+assetCols+` FROM assets WHERE id = ? AND user_id = ?`, arg.ID, arg.UserID)
 	var i Asset
-	err := row.Scan(&i.ID, &i.Hostname, &i.IPAddress, &i.MACAddress, &i.OS, &i.OSVersion,
-		&i.OpenPorts, &i.Services, &i.UserID, &i.TargetID, &i.VulnCount, &i.RiskScore,
-		&i.LastSeen, &i.CreatedAt, &i.UpdatedAt)
+	err := scanAsset(row, &i)
 	return i, err
 }
 
 func (q *Queries) ListAssets(ctx context.Context, arg ListAssetsParams) ([]Asset, error) {
-	const listAssets = `-- name: ListAssets :many
-SELECT id, hostname, ip_address, mac_address, os, os_version, open_ports, services, user_id, target_id, vuln_count, risk_score, last_seen, created_at, updated_at FROM assets WHERE user_id = $1 ORDER BY last_seen DESC LIMIT $2 OFFSET $3`
-	rows, err := q.db.Query(ctx, listAssets, arg.UserID, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, `SELECT `+assetCols+` FROM assets WHERE user_id = ? ORDER BY last_seen DESC LIMIT ? OFFSET ?`, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +96,7 @@ SELECT id, hostname, ip_address, mac_address, os, os_version, open_ports, servic
 	var items []Asset
 	for rows.Next() {
 		var i Asset
-		if err := rows.Scan(&i.ID, &i.Hostname, &i.IPAddress, &i.MACAddress, &i.OS, &i.OSVersion,
-			&i.OpenPorts, &i.Services, &i.UserID, &i.TargetID, &i.VulnCount, &i.RiskScore,
-			&i.LastSeen, &i.CreatedAt, &i.UpdatedAt); err != nil {
+		if err := scanAsset(rows, &i); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -118,15 +105,13 @@ SELECT id, hostname, ip_address, mac_address, os, os_version, open_ports, servic
 }
 
 func (q *Queries) UpdateAssetRisk(ctx context.Context, arg UpdateAssetRiskParams) error {
-	const updateAssetRisk = `-- name: UpdateAssetRisk :exec
-UPDATE assets SET vuln_count = $2, risk_score = $3, updated_at = now() WHERE id = $1`
-	_, err := q.db.Exec(ctx, updateAssetRisk, arg.ID, arg.VulnCount, arg.RiskScore)
+	const updateAssetRisk = `UPDATE assets SET vuln_count = ?, risk_score = ?, updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, updateAssetRisk, arg.VulnCount, arg.RiskScore, arg.ID)
 	return err
 }
 
 func (q *Queries) DeleteAsset(ctx context.Context, arg DeleteAssetParams) error {
-	const deleteAsset = `-- name: DeleteAsset :exec
-DELETE FROM assets WHERE id = $1 AND user_id = $2`
-	_, err := q.db.Exec(ctx, deleteAsset, arg.ID, arg.UserID)
+	const deleteAsset = `DELETE FROM assets WHERE id = ? AND user_id = ?`
+	_, err := q.db.ExecContext(ctx, deleteAsset, arg.ID, arg.UserID)
 	return err
 }

@@ -7,8 +7,6 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type ReportType string
@@ -40,13 +38,13 @@ const (
 )
 
 type Report struct {
-	ID          uuid.UUID    `json:"id"`
+	ID          string       `json:"id"`
 	Name        string       `json:"name"`
 	ReportType  ReportType   `json:"report_type"`
 	Format      ReportFormat `json:"format"`
 	Status      ReportStatus `json:"status"`
-	ScanIds     []uuid.UUID  `json:"scan_ids"`
-	UserID      uuid.UUID    `json:"user_id"`
+	ScanIds     []byte       `json:"scan_ids"`
+	UserID      string       `json:"user_id"`
 	FilePath    *string      `json:"file_path"`
 	FileData    []byte       `json:"file_data"`
 	Metadata    []byte       `json:"metadata"`
@@ -55,60 +53,53 @@ type Report struct {
 }
 
 type CreateReportParams struct {
+	ID         string       `json:"id"`
 	Name       string       `json:"name"`
 	ReportType ReportType   `json:"report_type"`
 	Format     ReportFormat `json:"format"`
 	Status     ReportStatus `json:"status"`
-	ScanIds    []uuid.UUID  `json:"scan_ids"`
-	UserID     uuid.UUID    `json:"user_id"`
+	ScanIds    []byte       `json:"scan_ids"`
+	UserID     string       `json:"user_id"`
 	Metadata   []byte       `json:"metadata"`
 }
 
 type ListReportsParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Limit  int32     `json:"limit"`
-	Offset int32     `json:"offset"`
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 type UpdateReportStatusParams struct {
-	ID       uuid.UUID    `json:"id"`
+	ID       string       `json:"id"`
 	Status   ReportStatus `json:"status"`
 	FileData []byte       `json:"file_data"`
 }
 
-func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Report, error) {
-	const createReport = `-- name: CreateReport :one
-INSERT INTO reports (name, report_type, format, status, scan_ids, user_id, metadata)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, name, report_type, format, status, scan_ids, user_id, file_path, file_data, metadata, generated_at, created_at`
-	row := q.db.QueryRow(ctx, createReport,
-		arg.Name, arg.ReportType, arg.Format, arg.Status, arg.ScanIds, arg.UserID, arg.Metadata)
-	var i Report
-	err := row.Scan(
-		&i.ID, &i.Name, &i.ReportType, &i.Format, &i.Status,
-		&i.ScanIds, &i.UserID, &i.FilePath, &i.FileData,
-		&i.Metadata, &i.GeneratedAt, &i.CreatedAt,
-	)
-	return i, err
+const reportCols = `id, name, report_type, format, status, scan_ids, user_id, file_path, file_data, metadata, generated_at, created_at`
+
+func scanReport(row interface{ Scan(...any) error }, i *Report) error {
+	return row.Scan(&i.ID, &i.Name, &i.ReportType, &i.Format, &i.Status, &i.ScanIds, &i.UserID, &i.FilePath, &i.FileData, &i.Metadata, &i.GeneratedAt, &i.CreatedAt)
 }
 
-func (q *Queries) GetReport(ctx context.Context, id uuid.UUID) (Report, error) {
-	const getReport = `-- name: GetReport :one
-SELECT id, name, report_type, format, status, scan_ids, user_id, file_path, file_data, metadata, generated_at, created_at FROM reports WHERE id = $1`
-	row := q.db.QueryRow(ctx, getReport, id)
+func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Report, error) {
+	const createReport = `INSERT INTO reports (id, name, report_type, format, status, scan_ids, user_id, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createReport, arg.ID, arg.Name, arg.ReportType, arg.Format, arg.Status, arg.ScanIds, arg.UserID, arg.Metadata)
+	if err != nil {
+		return Report{}, err
+	}
+	return q.GetReport(ctx, arg.ID)
+}
+
+func (q *Queries) GetReport(ctx context.Context, id string) (Report, error) {
+	row := q.db.QueryRowContext(ctx, `SELECT `+reportCols+` FROM reports WHERE id = ?`, id)
 	var i Report
-	err := row.Scan(
-		&i.ID, &i.Name, &i.ReportType, &i.Format, &i.Status,
-		&i.ScanIds, &i.UserID, &i.FilePath, &i.FileData,
-		&i.Metadata, &i.GeneratedAt, &i.CreatedAt,
-	)
+	err := scanReport(row, &i)
 	return i, err
 }
 
 func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Report, error) {
-	const listReports = `-- name: ListReports :many
-SELECT id, name, report_type, format, status, scan_ids, user_id, file_path, file_data, metadata, generated_at, created_at FROM reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
-	rows, err := q.db.Query(ctx, listReports, arg.UserID, arg.Limit, arg.Offset)
+	const listReports = `SELECT ` + reportCols + ` FROM reports WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listReports, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -116,11 +107,7 @@ SELECT id, name, report_type, format, status, scan_ids, user_id, file_path, file
 	var items []Report
 	for rows.Next() {
 		var i Report
-		if err := rows.Scan(
-			&i.ID, &i.Name, &i.ReportType, &i.Format, &i.Status,
-			&i.ScanIds, &i.UserID, &i.FilePath, &i.FileData,
-			&i.Metadata, &i.GeneratedAt, &i.CreatedAt,
-		); err != nil {
+		if err := scanReport(rows, &i); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -129,12 +116,7 @@ SELECT id, name, report_type, format, status, scan_ids, user_id, file_path, file
 }
 
 func (q *Queries) UpdateReportStatus(ctx context.Context, arg UpdateReportStatusParams) error {
-	const updateReportStatus = `-- name: UpdateReportStatus :exec
-UPDATE reports SET
-    status = $2,
-    file_data = $3,
-    generated_at = CASE WHEN $2 = 'completed' THEN now() ELSE generated_at END
-WHERE id = $1`
-	_, err := q.db.Exec(ctx, updateReportStatus, arg.ID, arg.Status, arg.FileData)
+	const updateReportStatus = `UPDATE reports SET status = ?, file_data = ?, generated_at = CASE WHEN ? = 'completed' THEN NOW() ELSE generated_at END WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, updateReportStatus, arg.Status, arg.FileData, arg.Status, arg.ID)
 	return err
 }

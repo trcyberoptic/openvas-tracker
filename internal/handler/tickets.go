@@ -5,12 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/middleware"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type TicketHandler struct {
@@ -44,12 +43,10 @@ func (h *TicketHandler) Create(c echo.Context) error {
 		CreatedBy:   userID,
 	}
 	if req.VulnerabilityID != nil {
-		vid, _ := uuid.Parse(*req.VulnerabilityID)
-		params.VulnerabilityID = &vid
+		params.VulnerabilityID = req.VulnerabilityID
 	}
 	if req.AssignedTo != nil {
-		aid, _ := uuid.Parse(*req.AssignedTo)
-		params.AssignedTo = &aid
+		params.AssignedTo = req.AssignedTo
 	}
 	if req.DueDate != nil {
 		t, _ := time.Parse(time.RFC3339, *req.DueDate)
@@ -73,7 +70,7 @@ func (h *TicketHandler) List(c echo.Context) error {
 }
 
 func (h *TicketHandler) Get(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	ticket, err := h.tickets.Get(c.Request().Context(), id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "ticket not found")
@@ -86,7 +83,7 @@ type addCommentRequest struct {
 }
 
 func (h *TicketHandler) AddComment(c echo.Context) error {
-	id, _ := uuid.Parse(c.Param("id"))
+	id := c.Param("id")
 	var req addCommentRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")

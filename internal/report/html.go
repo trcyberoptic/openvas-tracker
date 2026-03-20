@@ -6,7 +6,7 @@ import (
 	"embed"
 	"html/template"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
 )
 
 //go:embed templates/*.html

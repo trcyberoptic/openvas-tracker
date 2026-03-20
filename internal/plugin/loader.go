@@ -41,13 +41,13 @@ func (r *Registry) Load(path string) error {
 	if err != nil {
 		return err
 	}
-	sym, err := p.Lookup("VulnTrackPlugin")
+	sym, err := p.Lookup("OpenVASTrackerPlugin")
 	if err != nil {
-		return fmt.Errorf("plugin missing VulnTrackPlugin symbol: %w", err)
+		return fmt.Errorf("plugin missing OpenVASTrackerPlugin symbol: %w", err)
 	}
 	plug, ok := sym.(Plugin)
 	if !ok {
-		return fmt.Errorf("VulnTrackPlugin does not implement Plugin interface")
+		return fmt.Errorf("OpenVASTrackerPlugin does not implement Plugin interface")
 	}
 	r.plugins[plug.Name()] = plug
 	return nil

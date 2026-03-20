@@ -1,4 +1,4 @@
-# VulnTrack Pro
+# OpenVAS-Tracker
 
 Single-binary vulnerability management platform built in Go.
 
@@ -31,14 +31,14 @@ make dev                # starts backend + frontend dev server
 
 ### Production Build
 ```bash
-make build-linux        # produces bin/vulntrack-linux-amd64
+make build-linux        # produces bin/openvas-tracker-linux-amd64
 ```
 
 ### Deploy on Debian Trixie
 ```bash
-sudo bash deploy/install.sh bin/vulntrack-linux-amd64
-sudo vim /etc/vulntrack/env   # set secrets
-sudo systemctl restart vulntrack
+sudo bash deploy/install.sh bin/openvas-tracker-linux-amd64
+sudo vim /etc/openvas-tracker/env   # set secrets
+sudo systemctl restart openvas-tracker
 ```
 
 ## API

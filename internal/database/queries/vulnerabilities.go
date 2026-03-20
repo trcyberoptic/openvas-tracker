@@ -7,8 +7,6 @@ package queries
 import (
 	"context"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type SeverityLevel string
@@ -33,35 +31,36 @@ const (
 )
 
 type Vulnerability struct {
-	ID              uuid.UUID      `json:"id"`
-	ScanID          uuid.UUID      `json:"scan_id"`
-	TargetID        *uuid.UUID     `json:"target_id"`
-	UserID          uuid.UUID      `json:"user_id"`
-	Title           string         `json:"title"`
-	Description     *string        `json:"description"`
-	Severity        SeverityLevel  `json:"severity"`
-	Status          VulnStatus     `json:"status"`
-	CvssScore       *float64       `json:"cvss_score"`
-	CveID           *string        `json:"cve_id"`
-	CweID           *string        `json:"cwe_id"`
-	AffectedHost    *string        `json:"affected_host"`
-	AffectedPort    *int32         `json:"affected_port"`
-	Protocol        *string        `json:"protocol"`
-	Service         *string        `json:"service"`
-	Solution        *string        `json:"solution"`
-	References      []byte         `json:"references"`
-	EnrichmentData  []byte         `json:"enrichment_data"`
-	RiskScore       *float64       `json:"risk_score"`
-	DiscoveredAt    time.Time      `json:"discovered_at"`
-	ResolvedAt      *time.Time     `json:"resolved_at"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID             string        `json:"id"`
+	ScanID         string        `json:"scan_id"`
+	TargetID       *string       `json:"target_id"`
+	UserID         string        `json:"user_id"`
+	Title          string        `json:"title"`
+	Description    *string       `json:"description"`
+	Severity       SeverityLevel `json:"severity"`
+	Status         VulnStatus    `json:"status"`
+	CvssScore      *float64      `json:"cvss_score"`
+	CveID          *string       `json:"cve_id"`
+	CweID          *string       `json:"cwe_id"`
+	AffectedHost   *string       `json:"affected_host"`
+	AffectedPort   *int32        `json:"affected_port"`
+	Protocol       *string       `json:"protocol"`
+	Service        *string       `json:"service"`
+	Solution       *string       `json:"solution"`
+	VulnReferences []byte        `json:"vuln_references"`
+	EnrichmentData []byte        `json:"enrichment_data"`
+	RiskScore      *float64      `json:"risk_score"`
+	DiscoveredAt   time.Time     `json:"discovered_at"`
+	ResolvedAt     *time.Time    `json:"resolved_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 type CreateVulnerabilityParams struct {
-	ScanID       uuid.UUID     `json:"scan_id"`
-	TargetID     *uuid.UUID    `json:"target_id"`
-	UserID       uuid.UUID     `json:"user_id"`
+	ID           string        `json:"id"`
+	ScanID       string        `json:"scan_id"`
+	TargetID     *string       `json:"target_id"`
+	UserID       string        `json:"user_id"`
 	Title        string        `json:"title"`
 	Description  *string       `json:"description"`
 	Severity     SeverityLevel `json:"severity"`
@@ -73,29 +72,29 @@ type CreateVulnerabilityParams struct {
 	Protocol     *string       `json:"protocol"`
 	Service      *string       `json:"service"`
 	Solution     *string       `json:"solution"`
-	References   []byte        `json:"references"`
+	VulnReferences []byte      `json:"vuln_references"`
 }
 
 type ListVulnerabilitiesParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Limit  int32     `json:"limit"`
-	Offset int32     `json:"offset"`
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
 }
 
 type UpdateVulnStatusParams struct {
-	ID     uuid.UUID  `json:"id"`
+	ID     string     `json:"id"`
 	Status VulnStatus `json:"status"`
 }
 
 type UpdateVulnEnrichmentParams struct {
-	ID             uuid.UUID `json:"id"`
-	EnrichmentData []byte    `json:"enrichment_data"`
-	RiskScore      *float64  `json:"risk_score"`
+	ID             string   `json:"id"`
+	EnrichmentData []byte   `json:"enrichment_data"`
+	RiskScore      *float64 `json:"risk_score"`
 }
 
 type DeleteVulnerabilityParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
 }
 
 type CountVulnsBySeverityRow struct {
@@ -103,51 +102,31 @@ type CountVulnsBySeverityRow struct {
 	Count    int64         `json:"count"`
 }
 
-func (q *Queries) CreateVulnerability(ctx context.Context, arg CreateVulnerabilityParams) (Vulnerability, error) {
-	const createVulnerability = `-- name: CreateVulnerability :one
-INSERT INTO vulnerabilities (
-    scan_id, target_id, user_id, title, description, severity,
-    cvss_score, cve_id, cwe_id, affected_host, affected_port,
-    protocol, service, solution, references
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, affected_port, protocol, service, solution, references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at`
-	row := q.db.QueryRow(ctx, createVulnerability,
-		arg.ScanID, arg.TargetID, arg.UserID, arg.Title, arg.Description, arg.Severity,
-		arg.CvssScore, arg.CveID, arg.CweID, arg.AffectedHost, arg.AffectedPort,
-		arg.Protocol, arg.Service, arg.Solution, arg.References)
-	var i Vulnerability
-	err := row.Scan(
-		&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description,
-		&i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID,
-		&i.AffectedHost, &i.AffectedPort, &i.Protocol, &i.Service,
-		&i.Solution, &i.References, &i.EnrichmentData, &i.RiskScore,
-		&i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-	)
-	return i, err
+const vulnCols = `id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, affected_port, protocol, service, solution, vuln_references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at`
+
+func scanVuln(row interface{ Scan(...any) error }, i *Vulnerability) error {
+	return row.Scan(&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description, &i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID, &i.AffectedHost, &i.AffectedPort, &i.Protocol, &i.Service, &i.Solution, &i.VulnReferences, &i.EnrichmentData, &i.RiskScore, &i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt)
 }
 
-func (q *Queries) GetVulnerability(ctx context.Context, id uuid.UUID) (Vulnerability, error) {
-	const getVulnerability = `-- name: GetVulnerability :one
-SELECT id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, affected_port, protocol, service, solution, references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at FROM vulnerabilities WHERE id = $1`
-	row := q.db.QueryRow(ctx, getVulnerability, id)
+func (q *Queries) CreateVulnerability(ctx context.Context, arg CreateVulnerabilityParams) (Vulnerability, error) {
+	const createVulnerability = `INSERT INTO vulnerabilities (id, scan_id, target_id, user_id, title, description, severity, cvss_score, cve_id, cwe_id, affected_host, affected_port, protocol, service, solution, vuln_references) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createVulnerability, arg.ID, arg.ScanID, arg.TargetID, arg.UserID, arg.Title, arg.Description, arg.Severity, arg.CvssScore, arg.CveID, arg.CweID, arg.AffectedHost, arg.AffectedPort, arg.Protocol, arg.Service, arg.Solution, arg.VulnReferences)
+	if err != nil {
+		return Vulnerability{}, err
+	}
+	return q.GetVulnerability(ctx, arg.ID)
+}
+
+func (q *Queries) GetVulnerability(ctx context.Context, id string) (Vulnerability, error) {
+	row := q.db.QueryRowContext(ctx, `SELECT `+vulnCols+` FROM vulnerabilities WHERE id = ?`, id)
 	var i Vulnerability
-	err := row.Scan(
-		&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description,
-		&i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID,
-		&i.AffectedHost, &i.AffectedPort, &i.Protocol, &i.Service,
-		&i.Solution, &i.References, &i.EnrichmentData, &i.RiskScore,
-		&i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-	)
+	err := scanVuln(row, &i)
 	return i, err
 }
 
 func (q *Queries) ListVulnerabilities(ctx context.Context, arg ListVulnerabilitiesParams) ([]Vulnerability, error) {
-	const listVulnerabilities = `-- name: ListVulnerabilities :many
-SELECT id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, affected_port, protocol, service, solution, references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at FROM vulnerabilities WHERE user_id = $1
-ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 END
-LIMIT $2 OFFSET $3`
-	rows, err := q.db.Query(ctx, listVulnerabilities, arg.UserID, arg.Limit, arg.Offset)
+	const listVulnerabilities = `SELECT ` + vulnCols + ` FROM vulnerabilities WHERE user_id = ? ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 END LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listVulnerabilities, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -155,13 +134,7 @@ LIMIT $2 OFFSET $3`
 	var items []Vulnerability
 	for rows.Next() {
 		var i Vulnerability
-		if err := rows.Scan(
-			&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description,
-			&i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID,
-			&i.AffectedHost, &i.AffectedPort, &i.Protocol, &i.Service,
-			&i.Solution, &i.References, &i.EnrichmentData, &i.RiskScore,
-			&i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-		); err != nil {
+		if err := scanVuln(rows, &i); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -169,10 +142,9 @@ LIMIT $2 OFFSET $3`
 	return items, rows.Err()
 }
 
-func (q *Queries) ListVulnsByScan(ctx context.Context, scanID uuid.UUID) ([]Vulnerability, error) {
-	const listVulnsByScan = `-- name: ListVulnsByScan :many
-SELECT id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, affected_port, protocol, service, solution, references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at FROM vulnerabilities WHERE scan_id = $1 ORDER BY severity, cvss_score DESC`
-	rows, err := q.db.Query(ctx, listVulnsByScan, scanID)
+func (q *Queries) ListVulnsByScan(ctx context.Context, scanID string) ([]Vulnerability, error) {
+	const listVulnsByScan = `SELECT ` + vulnCols + ` FROM vulnerabilities WHERE scan_id = ? ORDER BY severity, cvss_score DESC`
+	rows, err := q.db.QueryContext(ctx, listVulnsByScan, scanID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,13 +152,7 @@ SELECT id, scan_id, target_id, user_id, title, description, severity, status, cv
 	var items []Vulnerability
 	for rows.Next() {
 		var i Vulnerability
-		if err := rows.Scan(
-			&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description,
-			&i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID,
-			&i.AffectedHost, &i.AffectedPort, &i.Protocol, &i.Service,
-			&i.Solution, &i.References, &i.EnrichmentData, &i.RiskScore,
-			&i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-		); err != nil {
+		if err := scanVuln(rows, &i); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -195,42 +161,23 @@ SELECT id, scan_id, target_id, user_id, title, description, severity, status, cv
 }
 
 func (q *Queries) UpdateVulnStatus(ctx context.Context, arg UpdateVulnStatusParams) (Vulnerability, error) {
-	const updateVulnStatus = `-- name: UpdateVulnStatus :one
-UPDATE vulnerabilities SET
-    status = $2,
-    resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE resolved_at END,
-    updated_at = now()
-WHERE id = $1
-RETURNING id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, affected_port, protocol, service, solution, references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at`
-	row := q.db.QueryRow(ctx, updateVulnStatus, arg.ID, arg.Status)
-	var i Vulnerability
-	err := row.Scan(
-		&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description,
-		&i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID,
-		&i.AffectedHost, &i.AffectedPort, &i.Protocol, &i.Service,
-		&i.Solution, &i.References, &i.EnrichmentData, &i.RiskScore,
-		&i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt,
-	)
-	return i, err
+	const updateVulnStatus = `UPDATE vulnerabilities SET status = ?, resolved_at = CASE WHEN ? = 'resolved' THEN NOW() ELSE resolved_at END, updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, updateVulnStatus, arg.Status, arg.Status, arg.ID)
+	if err != nil {
+		return Vulnerability{}, err
+	}
+	return q.GetVulnerability(ctx, arg.ID)
 }
 
 func (q *Queries) UpdateVulnEnrichment(ctx context.Context, arg UpdateVulnEnrichmentParams) error {
-	const updateVulnEnrichment = `-- name: UpdateVulnEnrichment :exec
-UPDATE vulnerabilities SET
-    enrichment_data = $2,
-    risk_score = $3,
-    updated_at = now()
-WHERE id = $1`
-	_, err := q.db.Exec(ctx, updateVulnEnrichment, arg.ID, arg.EnrichmentData, arg.RiskScore)
+	const updateVulnEnrichment = `UPDATE vulnerabilities SET enrichment_data = ?, risk_score = ?, updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, updateVulnEnrichment, arg.EnrichmentData, arg.RiskScore, arg.ID)
 	return err
 }
 
-func (q *Queries) CountVulnsBySeverity(ctx context.Context, userID uuid.UUID) ([]CountVulnsBySeverityRow, error) {
-	const countVulnsBySeverity = `-- name: CountVulnsBySeverity :many
-SELECT severity, count(*) as count FROM vulnerabilities
-WHERE user_id = $1 AND status NOT IN ('resolved', 'false_positive')
-GROUP BY severity`
-	rows, err := q.db.Query(ctx, countVulnsBySeverity, userID)
+func (q *Queries) CountVulnsBySeverity(ctx context.Context, userID string) ([]CountVulnsBySeverityRow, error) {
+	const countVulnsBySeverity = `SELECT severity, count(*) as count FROM vulnerabilities WHERE user_id = ? AND status NOT IN ('resolved', 'false_positive') GROUP BY severity`
+	rows, err := q.db.QueryContext(ctx, countVulnsBySeverity, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -247,8 +194,7 @@ GROUP BY severity`
 }
 
 func (q *Queries) DeleteVulnerability(ctx context.Context, arg DeleteVulnerabilityParams) error {
-	const deleteVulnerability = `-- name: DeleteVulnerability :exec
-DELETE FROM vulnerabilities WHERE id = $1 AND user_id = $2`
-	_, err := q.db.Exec(ctx, deleteVulnerability, arg.ID, arg.UserID)
+	const deleteVulnerability = `DELETE FROM vulnerabilities WHERE id = ? AND user_id = ?`
+	_, err := q.db.ExecContext(ctx, deleteVulnerability, arg.ID, arg.UserID)
 	return err
 }

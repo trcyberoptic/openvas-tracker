@@ -3,22 +3,21 @@ package worker
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/cyberoptic/vulntrack/internal/database/queries"
-	"github.com/cyberoptic/vulntrack/internal/scanner"
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 )
 
 type ScanPayload struct {
-	ScanID  uuid.UUID `json:"scan_id"`
-	Target  string    `json:"target"`
-	Options []string  `json:"options"`
+	ScanID  string   `json:"scan_id"`
+	Target  string   `json:"target"`
+	Options []string `json:"options"`
 }
 
 type ScanHandler struct {
@@ -27,9 +26,9 @@ type ScanHandler struct {
 	openvas *scanner.OpenVASScanner
 }
 
-func NewScanHandler(pool *pgxpool.Pool, nmap *scanner.NmapScanner, openvas *scanner.OpenVASScanner) *ScanHandler {
+func NewScanHandler(db *sql.DB, nmap *scanner.NmapScanner, openvas *scanner.OpenVASScanner) *ScanHandler {
 	return &ScanHandler{
-		q:       queries.New(pool),
+		q:       queries.New(db),
 		nmap:    nmap,
 		openvas: openvas,
 	}

@@ -7,8 +7,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/vulntrack/internal/auth"
-	"github.com/cyberoptic/vulntrack/internal/service"
+	"github.com/cyberoptic/openvas-tracker/internal/auth"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type AuthHandler struct {
@@ -68,7 +68,7 @@ func (h *AuthHandler) Register(c echo.Context) error {
 
 	return c.JSON(http.StatusCreated, authResponse{
 		Token: token,
-		User:  userDTO{ID: user.ID.String(), Email: user.Email, Username: user.Username, Role: string(user.Role)},
+		User:  userDTO{ID: user.ID, Email: user.Email, Username: user.Username, Role: string(user.Role)},
 	})
 }
 
@@ -90,7 +90,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, authResponse{
 		Token: token,
-		User:  userDTO{ID: user.ID.String(), Email: user.Email, Username: user.Username, Role: string(user.Role)},
+		User:  userDTO{ID: user.ID, Email: user.Email, Username: user.Username, Role: string(user.Role)},
 	})
 }
 

@@ -1,10 +1,11 @@
 -- sql/queries/audit_logs.sql
+
 -- name: CreateAuditLog :exec
-INSERT INTO audit_logs (user_id, action, resource, resource_id, details, ip_address, user_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO audit_logs (id, user_id, action, resource, resource_id, details, ip_address, user_agent)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListAuditLogs :many
-SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2;
+SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?;
 
 -- name: ListAuditLogsByUser :many
-SELECT * FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;
+SELECT * FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?;

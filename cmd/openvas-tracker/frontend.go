@@ -1,4 +1,4 @@
-// cmd/vulntrack/frontend.go
+// cmd/openvas-tracker/frontend.go
 package main
 
 import (
