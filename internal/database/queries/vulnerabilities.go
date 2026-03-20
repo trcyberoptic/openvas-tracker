@@ -236,6 +236,45 @@ func (q *Queries) ListVulnsByHost(ctx context.Context, host string) ([]Vulnerabi
 	return items, rows.Err()
 }
 
+type TrendPoint struct {
+	ScanID    string  `json:"scan_id"`
+	ScanName  string  `json:"scan_name"`
+	ScanDate  time.Time `json:"scan_date"`
+	Total     int64   `json:"total"`
+	Critical  int64   `json:"critical"`
+	High      int64   `json:"high"`
+	Medium    int64   `json:"medium"`
+	Low       int64   `json:"low"`
+}
+
+func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
+	const query = `
+		SELECT s.id, s.name, s.created_at,
+			COUNT(*) as total,
+			SUM(CASE WHEN v.severity = 'critical' THEN 1 ELSE 0 END) as critical,
+			SUM(CASE WHEN v.severity = 'high' THEN 1 ELSE 0 END) as high,
+			SUM(CASE WHEN v.severity = 'medium' THEN 1 ELSE 0 END) as medium,
+			SUM(CASE WHEN v.severity = 'low' THEN 1 ELSE 0 END) as low
+		FROM scans s
+		JOIN vulnerabilities v ON v.scan_id = s.id
+		GROUP BY s.id, s.name, s.created_at
+		ORDER BY s.created_at ASC`
+	rows, err := q.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TrendPoint
+	for rows.Next() {
+		var i TrendPoint
+		if err := rows.Scan(&i.ScanID, &i.ScanName, &i.ScanDate, &i.Total, &i.Critical, &i.High, &i.Medium, &i.Low); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
 func (q *Queries) DeleteVulnerability(ctx context.Context, arg DeleteVulnerabilityParams) error {
 	const deleteVulnerability = `DELETE FROM vulnerabilities WHERE id = ? AND user_id = ?`
 	_, err := q.db.ExecContext(ctx, deleteVulnerability, arg.ID, arg.UserID)

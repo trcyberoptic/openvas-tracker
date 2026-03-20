@@ -64,6 +64,15 @@ func (h *DashboardHandler) Get(c echo.Context) error {
 	})
 }
 
+func (h *DashboardHandler) Trend(c echo.Context) error {
+	trend, err := h.q.VulnTrend(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load trend")
+	}
+	return c.JSON(http.StatusOK, trend)
+}
+
 func (h *DashboardHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.Get)
+	g.GET("/trend", h.Trend)
 }

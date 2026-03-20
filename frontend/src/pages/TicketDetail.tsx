@@ -8,10 +8,11 @@ const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300',
 
 interface Ticket {
   id: string; title: string; description?: string; priority: string; status: string
-  vulnerability_id?: string; first_seen_at?: string; last_seen_at?: string; created_at: string
+  vulnerability_id?: string; assigned_to?: string; first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface Comment { id: string; user_id: string; content: string; created_at: string }
 interface Activity { id: string; action: string; old_value?: string; new_value?: string; changed_by: string; note?: string; created_at: string }
+interface UserRef { id: string; username: string; email: string }
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
@@ -21,10 +22,21 @@ export function TicketDetail() {
   const { data: ticket } = useQuery({ queryKey: ['ticket', id], queryFn: () => api.get<Ticket>(`/tickets/${id}`) })
   const { data: comments = [] } = useQuery({ queryKey: ['ticket-comments', id], queryFn: () => api.get<Comment[]>(`/tickets/${id}/comments`) })
   const { data: activity = [] } = useQuery({ queryKey: ['ticket-activity', id], queryFn: () => api.get<Activity[]>(`/tickets/${id}/activity`) })
+  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
+
+  const invalidateTicket = () => {
+    qc.invalidateQueries({ queryKey: ['ticket', id] })
+    qc.invalidateQueries({ queryKey: ['ticket-activity', id] })
+  }
 
   const statusMut = useMutation({
     mutationFn: (status: string) => api.patch(`/tickets/${id}/status`, { status }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ticket', id] }); qc.invalidateQueries({ queryKey: ['ticket-activity', id] }) },
+    onSuccess: invalidateTicket,
+  })
+
+  const assignMut = useMutation({
+    mutationFn: (assigned_to: string | null) => api.patch(`/tickets/${id}/assign`, { assigned_to }),
+    onSuccess: invalidateTicket,
   })
 
   const commentMut = useMutation({
@@ -33,6 +45,8 @@ export function TicketDetail() {
   })
 
   if (!ticket) return null
+
+  const assignedUser = users.find(u => u.id === ticket.assigned_to)
 
   return (
     <div className="max-w-4xl">
@@ -51,19 +65,37 @@ export function TicketDetail() {
         </div>
       </div>
 
-      {/* Status actions */}
-      <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
-        <h3 className="text-sm font-medium text-slate-400 mb-3">Change Status</h3>
-        <div className="flex gap-2">
-          {ticket.status !== 'open' && (
-            <button onClick={() => statusMut.mutate('open')} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Reopen</button>
-          )}
-          {ticket.status === 'open' && (
-            <>
-              <button onClick={() => statusMut.mutate('fixed')} className="px-3 py-1.5 rounded text-sm bg-green-900 text-green-300 hover:bg-green-800">Mark Fixed</button>
-              <button onClick={() => statusMut.mutate('risk_accepted')} className="px-3 py-1.5 rounded text-sm bg-yellow-900 text-yellow-300 hover:bg-yellow-800">Accept Risk</button>
-            </>
-          )}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {/* Status actions */}
+        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+          <h3 className="text-sm font-medium text-slate-400 mb-3">Status</h3>
+          <div className="flex gap-2">
+            {ticket.status !== 'open' && (
+              <button onClick={() => statusMut.mutate('open')} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Reopen</button>
+            )}
+            {ticket.status === 'open' && (
+              <>
+                <button onClick={() => statusMut.mutate('fixed')} className="px-3 py-1.5 rounded text-sm bg-green-900 text-green-300 hover:bg-green-800">Mark Fixed</button>
+                <button onClick={() => statusMut.mutate('risk_accepted')} className="px-3 py-1.5 rounded text-sm bg-yellow-900 text-yellow-300 hover:bg-yellow-800">Accept Risk</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Assignment */}
+        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+          <h3 className="text-sm font-medium text-slate-400 mb-3">Assigned To</h3>
+          <select
+            value={ticket.assigned_to || ''}
+            onChange={e => assignMut.mutate(e.target.value || null)}
+            className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-blue-500 w-full"
+          >
+            <option value="">Unassigned</option>
+            {users.filter(u => u.username !== 'openvas-import').map(u => (
+              <option key={u.id} value={u.id}>{u.username} ({u.email})</option>
+            ))}
+          </select>
+          {assignedUser && <p className="text-xs text-slate-500 mt-1">{assignedUser.email}</p>}
         </div>
       </div>
 
@@ -90,7 +122,7 @@ export function TicketDetail() {
           {comments.map(c => (
             <div key={c.id} className="bg-slate-800/50 rounded p-3">
               <div className="flex justify-between text-xs text-slate-500 mb-1">
-                <span>{c.user_id.slice(0, 8)}...</span>
+                <span>{users.find(u => u.id === c.user_id)?.username || c.user_id.slice(0, 8) + '...'}</span>
                 <span>{new Date(c.created_at).toLocaleString()}</span>
               </div>
               <p className="text-sm text-slate-300">{c.content}</p>
@@ -123,9 +155,13 @@ export function TicketDetail() {
             <div key={a.id} className="flex items-start gap-3 text-xs">
               <span className="text-slate-500 whitespace-nowrap">{new Date(a.created_at).toLocaleString()}</span>
               <span className="text-slate-400">
-                <span className="font-medium text-slate-300">{a.changed_by === 'Automatic' ? 'Automatic' : a.changed_by.slice(0, 8) + '...'}</span>
+                <span className="font-medium text-slate-300">
+                  {a.changed_by === 'Automatic' ? 'Automatic' : users.find(u => u.id === a.changed_by)?.username || a.changed_by.slice(0, 8) + '...'}
+                </span>
                 {' '}{a.action.replace('_', ' ')}
-                {a.old_value && a.new_value && <> from <span className="text-slate-300">{a.old_value}</span> to <span className="text-slate-300">{a.new_value}</span></>}
+                {a.old_value && a.new_value && (
+                  <> from <span className="text-slate-300">{users.find(u => u.id === a.old_value)?.username || a.old_value}</span> to <span className="text-slate-300">{users.find(u => u.id === a.new_value)?.username || a.new_value}</span></>
+                )}
                 {a.note && <span className="text-slate-500 ml-1">— {a.note}</span>}
               </span>
             </div>

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts'
 
 const COLORS: Record<string, string> = {
   critical: '#dc2626', high: '#ea580c', medium: '#d97706', low: '#2563eb', info: '#6b7280',
@@ -15,10 +15,26 @@ interface DashboardData {
   resolved_tickets: number
 }
 
+interface TrendPoint {
+  scan_id: string
+  scan_name: string
+  scan_date: string
+  total: number
+  critical: number
+  high: number
+  medium: number
+  low: number
+}
+
 export function Dashboard() {
   const { data } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get<DashboardData>('/dashboard'),
+  })
+
+  const { data: trend = [] } = useQuery({
+    queryKey: ['dashboard-trend'],
+    queryFn: () => api.get<TrendPoint[]>('/dashboard/trend'),
   })
 
   const chartData = data?.vulns_by_severity?.map(v => ({
@@ -26,6 +42,11 @@ export function Dashboard() {
   })) || []
 
   const totalVulns = chartData.reduce((sum, d) => sum + d.value, 0)
+
+  const trendData = trend.map(t => ({
+    ...t,
+    date: new Date(t.scan_date).toLocaleDateString(),
+  }))
 
   return (
     <div>
@@ -45,7 +66,6 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-3 gap-6 mb-8">
-        {/* Ticket stats */}
         <Link to="/tickets" className="bg-slate-900 rounded-lg border border-slate-800 p-6 hover:border-slate-600 transition-colors">
           <h2 className="text-lg font-semibold mb-4">My Tickets</h2>
           <p className="text-4xl font-bold text-blue-400">{data?.my_tickets ?? 0}</p>
@@ -63,6 +83,32 @@ export function Dashboard() {
             <div className="flex justify-between"><span className="text-slate-400">Resolved</span><span className="font-bold text-green-400">{data?.resolved_tickets ?? 0}</span></div>
           </div>
         </div>
+      </div>
+
+      {/* Trend Chart */}
+      <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 mb-8">
+        <h2 className="text-lg font-semibold mb-4">Vulnerability Trend</h2>
+        {trendData.length > 1 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="date" stroke="#94a3b8" tick={{ fontSize: 12 }} />
+              <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                labelStyle={{ color: '#e2e8f0' }}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="critical" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="high" stroke="#ea580c" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="medium" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="low" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="total" stroke="#e2e8f0" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="text-slate-500">{trendData.length === 1 ? 'Need at least 2 scans to show trend' : 'No scan data yet'}</p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-6">

@@ -112,6 +112,47 @@ func (h *TicketHandler) UpdateStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, ticket)
 }
 
+type assignTicketRequest struct {
+	AssignedTo *string `json:"assigned_to"`
+}
+
+func (h *TicketHandler) Assign(c echo.Context) error {
+	id := c.Param("id")
+	var req assignTicketRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+
+	old, err := h.tickets.Get(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "ticket not found")
+	}
+
+	_, err = h.q.AssignTicket(c.Request().Context(), queries.AssignTicketParams{
+		ID: id, AssignedTo: req.AssignedTo,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to assign ticket")
+	}
+
+	userID := middleware.GetUserID(c)
+	oldVal := "unassigned"
+	if old.AssignedTo != nil {
+		oldVal = *old.AssignedTo
+	}
+	newVal := "unassigned"
+	if req.AssignedTo != nil {
+		newVal = *req.AssignedTo
+	}
+	h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
+		ID: uuid.New().String(), TicketID: id, Action: "assigned",
+		OldValue: &oldVal, NewValue: &newVal, ChangedBy: userID,
+	})
+
+	ticket, _ := h.tickets.Get(c.Request().Context(), id)
+	return c.JSON(http.StatusOK, ticket)
+}
+
 type addCommentRequest struct {
 	Content string `json:"content" validate:"required"`
 }
@@ -160,6 +201,7 @@ func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
 	g.PATCH("/:id/status", h.UpdateStatus)
+	g.PATCH("/:id/assign", h.Assign)
 	g.POST("/:id/comments", h.AddComment)
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
