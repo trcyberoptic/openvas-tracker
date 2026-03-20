@@ -62,6 +62,82 @@ All config via environment variables with `OT_` prefix:
 | `OT_JWT_SECRET` | `change-me-in-production` | JWT signing key |
 | `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars) |
 
+## OpenVAS Configuration
+
+OpenVAS-Tracker does not control OpenVAS — it only receives scan results. You configure OpenVAS to push reports to the tracker via its built-in Alert system.
+
+### Prerequisites
+
+- A running OpenVAS/GVM installation (Greenbone Community Edition or Greenbone Enterprise)
+- Network access from the OpenVAS host to the tracker's import endpoint
+
+### Step 1: Set the API key
+
+In your `.env` or environment config, set a strong API key (min 32 characters):
+
+```
+OT_IMPORT_APIKEY=your-secret-import-key-at-least-32-chars
+```
+
+### Step 2: Create an Alert in OpenVAS
+
+1. Log in to the **Greenbone Security Assistant (GSA)** web UI
+2. Go to **Configuration → Alerts → New Alert**
+3. Configure:
+
+| Field | Value |
+|-------|-------|
+| Name | `OpenVAS-Tracker Import` |
+| Event | Task run status changed → Done |
+| Method | HTTP Get |
+| HTTP Get URL | `http://<tracker-host>:8080/api/import/openvas` |
+
+> **Note:** The built-in "HTTP Get" alert method in GVM sends the report as XML in the request body. If your GVM version doesn't support sending the report body via HTTP alerts, use the **SCP** or **Send to host** method to write the XML file, then use a small cron script to POST it:
+>
+> ```bash
+> #!/bin/bash
+> # /opt/openvas-tracker/push-report.sh
+> REPORT_DIR="/var/lib/gvm/reports"
+> API_URL="http://tracker-host:8080/api/import/openvas"
+> API_KEY="your-secret-import-key-at-least-32-chars"
+>
+> for f in "$REPORT_DIR"/*.xml; do
+>   curl -s -X POST "$API_URL" \
+>     -H "X-API-Key: $API_KEY" \
+>     -H "Content-Type: application/xml" \
+>     --data-binary "@$f" && rm "$f"
+> done
+> ```
+
+### Step 3: Attach the Alert to a Scan Task
+
+1. Go to **Scans → Tasks**
+2. Edit your scan task (or create a new one)
+3. Under **Alerts**, select the `OpenVAS-Tracker Import` alert
+4. Save
+
+Now every time this scan completes, the results are automatically sent to the tracker.
+
+### Manual Import
+
+You can also import reports manually via curl:
+
+```bash
+curl -X POST http://localhost:8080/api/import/openvas \
+  -H 'X-API-Key: your-secret-import-key-at-least-32-chars' \
+  -H 'Content-Type: application/xml' \
+  --data-binary @scan-report.xml
+```
+
+### Exporting from OpenVAS manually
+
+If you prefer manual exports:
+
+1. In GSA, go to **Scans → Reports**
+2. Select a completed report
+3. Click the download icon → choose **XML** format
+4. Import the downloaded file using the curl command above
+
 ## Ticket Lifecycle
 
 ```
