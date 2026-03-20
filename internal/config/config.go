@@ -9,9 +9,8 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
-	Redis    RedisConfig
 	JWT      JWTConfig
-	Scanner  ScannerConfig
+	Import   ImportConfig
 }
 
 type ServerConfig struct {
@@ -25,20 +24,13 @@ type DatabaseConfig struct {
 	MinConns int
 }
 
-type RedisConfig struct {
-	Addr     string
-	Password string
-	DB       int
-}
-
 type JWTConfig struct {
 	Secret      string
 	ExpireHours int
 }
 
-type ScannerConfig struct {
-	NmapPath     string
-	ImportAPIKey string
+type ImportConfig struct {
+	APIKey string
 }
 
 func Load() (*Config, error) {
@@ -49,13 +41,9 @@ func Load() (*Config, error) {
 	v.SetDefault("database.dsn", "openvas-tracker:openvas-tracker@tcp(localhost:3306)/openvas-tracker?parseTime=true")
 	v.SetDefault("database.maxconns", 25)
 	v.SetDefault("database.minconns", 5)
-	v.SetDefault("redis.addr", "localhost:6379")
-	v.SetDefault("redis.password", "")
-	v.SetDefault("redis.db", 0)
 	v.SetDefault("jwt.secret", "change-me-in-production")
 	v.SetDefault("jwt.expirehours", 24)
-	v.SetDefault("scanner.nmappath", "nmap")
-	v.SetDefault("scanner.importapikey", "")
+	v.SetDefault("import.apikey", "")
 
 	v.SetEnvPrefix("OT")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
