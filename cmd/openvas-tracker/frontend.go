@@ -5,6 +5,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
@@ -14,22 +15,29 @@ var frontendFS embed.FS
 
 func serveFrontend(e *echo.Echo) {
 	distFS, _ := fs.Sub(frontendFS, "static")
+
+	// Read index.html once at startup
+	indexHTML, _ := fs.ReadFile(distFS, "index.html")
+
 	fileServer := http.FileServer(http.FS(distFS))
 
-	// Serve static files, fall back to index.html for SPA routing
 	e.GET("/*", echo.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Try to serve the file directly
-		path := r.URL.Path[1:] // strip leading /
-		if path == "" {
-			path = "index.html"
+		path := r.URL.Path
+		if path == "/" {
+			path = "/index.html"
 		}
-		f, err := distFS.Open(path)
-		if err != nil {
-			// Fall back to index.html for SPA client-side routing
-			r.URL.Path = "/index.html"
-		} else {
+
+		// Try to serve the actual file (JS, CSS, images, etc.)
+		clean := strings.TrimPrefix(path, "/")
+		if f, err := distFS.Open(clean); err == nil {
 			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
 		}
-		fileServer.ServeHTTP(w, r)
+
+		// SPA fallback: serve index.html for all unknown routes
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(indexHTML)
 	})))
 }
