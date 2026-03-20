@@ -104,6 +104,15 @@ func main() {
 	wsH := handler.NewWSHandler(hub, cfg.JWT.Secret)
 	e.GET("/ws", wsH.Handle)
 
+	// OpenVAS import webhook (API-Key auth, outside JWT group)
+	if cfg.Import.APIKey != "" {
+		if len(cfg.Import.APIKey) < 32 {
+			log.Fatal("OT_IMPORT_APIKEY must be at least 32 characters")
+		}
+		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("10M"))
+		handler.NewImportHandler(db).RegisterRoutes(importG)
+	}
+
 	// Embedded frontend (catch-all, must be last)
 	serveFrontend(e)
 
