@@ -2,12 +2,9 @@
 package scanner
 
 import (
-	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
-	"os/exec"
-	"strings"
 )
 
 type NmapResult struct {
@@ -122,22 +119,4 @@ func ParseNmapXML(r io.Reader) (*NmapResult, error) {
 		result.Hosts = append(result.Hosts, host)
 	}
 	return result, nil
-}
-
-type NmapScanner struct {
-	BinaryPath string
-}
-
-func NewNmapScanner(binaryPath string) *NmapScanner {
-	return &NmapScanner{BinaryPath: binaryPath}
-}
-
-func (s *NmapScanner) Scan(ctx context.Context, target string, args ...string) (*NmapResult, error) {
-	cmdArgs := append([]string{"-oX", "-", target}, args...)
-	cmd := exec.CommandContext(ctx, s.BinaryPath, cmdArgs...)
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("nmap execution failed: %w", err)
-	}
-	return ParseNmapXML(strings.NewReader(string(output)))
 }
