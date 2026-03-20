@@ -125,8 +125,8 @@ func (q *Queries) GetVulnerability(ctx context.Context, id string) (Vulnerabilit
 }
 
 func (q *Queries) ListVulnerabilities(ctx context.Context, arg ListVulnerabilitiesParams) ([]Vulnerability, error) {
-	const listVulnerabilities = `SELECT ` + vulnCols + ` FROM vulnerabilities WHERE user_id = ? ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 END LIMIT ? OFFSET ?`
-	rows, err := q.db.QueryContext(ctx, listVulnerabilities, arg.UserID, arg.Limit, arg.Offset)
+	const listVulnerabilities = `SELECT ` + vulnCols + ` FROM vulnerabilities ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 END LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listVulnerabilities, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -175,9 +175,9 @@ func (q *Queries) UpdateVulnEnrichment(ctx context.Context, arg UpdateVulnEnrich
 	return err
 }
 
-func (q *Queries) CountVulnsBySeverity(ctx context.Context, userID string) ([]CountVulnsBySeverityRow, error) {
-	const countVulnsBySeverity = `SELECT severity, count(*) as count FROM vulnerabilities WHERE user_id = ? AND status NOT IN ('resolved', 'false_positive') GROUP BY severity`
-	rows, err := q.db.QueryContext(ctx, countVulnsBySeverity, userID)
+func (q *Queries) CountVulnsBySeverity(ctx context.Context) ([]CountVulnsBySeverityRow, error) {
+	const countVulnsBySeverity = `SELECT severity, count(*) as count FROM vulnerabilities WHERE status NOT IN ('resolved', 'false_positive') GROUP BY severity`
+	rows, err := q.db.QueryContext(ctx, countVulnsBySeverity)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +186,32 @@ func (q *Queries) CountVulnsBySeverity(ctx context.Context, userID string) ([]Co
 	for rows.Next() {
 		var i CountVulnsBySeverityRow
 		if err := rows.Scan(&i.Severity, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+type HostSummaryRow struct {
+	Host          string `json:"host"`
+	VulnCount     int64  `json:"vuln_count"`
+	CriticalCount int64  `json:"critical_count"`
+	HighCount     int64  `json:"high_count"`
+	MaxCVSS       *float64 `json:"max_cvss"`
+}
+
+func (q *Queries) ListHostSummaries(ctx context.Context) ([]HostSummaryRow, error) {
+	const query = `SELECT affected_host, COUNT(*) as vuln_count, SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as critical_count, SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END) as high_count, MAX(cvss_score) as max_cvss FROM vulnerabilities WHERE affected_host IS NOT NULL AND affected_host != '' GROUP BY affected_host ORDER BY critical_count DESC, high_count DESC, vuln_count DESC`
+	rows, err := q.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []HostSummaryRow
+	for rows.Next() {
+		var i HostSummaryRow
+		if err := rows.Scan(&i.Host, &i.VulnCount, &i.CriticalCount, &i.HighCount, &i.MaxCVSS); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

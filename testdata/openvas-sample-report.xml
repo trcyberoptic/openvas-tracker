@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report id="a1b2c3d4-e5f6-7890-abcd-ef1234567890" format_id="a994b278-1f62-11e1-96ac-406186ea4fc5" content_type="text/xml">
+  <results max="100" start="1">
+    <result id="r001">
+      <name>SSL/TLS: Certificate Expired</name>
+      <host>192.168.1.10</host>
+      <port>443/tcp</port>
+      <threat>High</threat>
+      <severity>7.5</severity>
+      <description>The SSL/TLS certificate on this host has expired on 2025-12-01. Expired certificates are no longer trusted and may allow man-in-the-middle attacks.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.103955">
+        <name>SSL/TLS: Certificate Expired</name>
+        <cvss_base>7.5</cvss_base>
+        <cve>CVE-2024-0001</cve>
+        <solution type="VendorFix">Renew the SSL/TLS certificate from your certificate authority and deploy it on the affected host.</solution>
+      </nvt>
+    </result>
+    <result id="r002">
+      <name>Apache HTTP Server: Multiple Vulnerabilities (Apr 2025)</name>
+      <host>192.168.1.20</host>
+      <port>80/tcp</port>
+      <threat>High</threat>
+      <severity>9.8</severity>
+      <description>Apache HTTP Server versions prior to 2.4.59 are affected by multiple vulnerabilities including remote code execution via mod_rewrite and server-side request forgery.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.170201">
+        <name>Apache HTTP Server: Multiple Vulnerabilities (Apr 2025)</name>
+        <cvss_base>9.8</cvss_base>
+        <cve>CVE-2025-31826</cve>
+        <solution type="VendorFix">Update Apache HTTP Server to version 2.4.59 or later.</solution>
+      </nvt>
+    </result>
+    <result id="r003">
+      <name>OpenSSH: User Enumeration Vulnerability</name>
+      <host>192.168.1.10</host>
+      <port>22/tcp</port>
+      <threat>Medium</threat>
+      <severity>5.3</severity>
+      <description>OpenSSH before 9.6 allows remote attackers to enumerate valid usernames by observing timing differences in authentication responses.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.114422">
+        <name>OpenSSH: User Enumeration Vulnerability</name>
+        <cvss_base>5.3</cvss_base>
+        <cve>CVE-2024-39894</cve>
+        <solution type="VendorFix">Upgrade OpenSSH to version 9.6 or later.</solution>
+      </nvt>
+    </result>
+    <result id="r004">
+      <name>PostgreSQL: Privilege Escalation via Row Security Policies</name>
+      <host>192.168.1.30</host>
+      <port>5432/tcp</port>
+      <threat>High</threat>
+      <severity>8.8</severity>
+      <description>PostgreSQL versions before 16.2, 15.6, 14.11, 13.14, and 12.18 contain a vulnerability where authenticated users can escalate privileges through crafted row security policies.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.118503">
+        <name>PostgreSQL: Privilege Escalation via Row Security Policies</name>
+        <cvss_base>8.8</cvss_base>
+        <cve>CVE-2024-0985</cve>
+        <solution type="VendorFix">Update PostgreSQL to version 16.2, 15.6, 14.11, 13.14, or 12.18 respectively.</solution>
+      </nvt>
+    </result>
+    <result id="r005">
+      <name>TLS: Weak Cipher Suites Supported</name>
+      <host>192.168.1.20</host>
+      <port>443/tcp</port>
+      <threat>Medium</threat>
+      <severity>4.3</severity>
+      <description>The remote host supports weak SSL/TLS cipher suites including RC4 and DES-based ciphers which are considered cryptographically weak.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.105042">
+        <name>TLS: Weak Cipher Suites Supported</name>
+        <cvss_base>4.3</cvss_base>
+        <cve>NOCVE</cve>
+        <solution type="Mitigation">Disable weak cipher suites in the TLS configuration. Only allow AES-GCM, ChaCha20-Poly1305, and other modern ciphers.</solution>
+      </nvt>
+    </result>
+    <result id="r006">
+      <name>SMB: Signing Not Required</name>
+      <host>192.168.1.40</host>
+      <port>445/tcp</port>
+      <threat>Medium</threat>
+      <severity>5.9</severity>
+      <description>The remote SMB server does not require message signing. An attacker could exploit this to perform man-in-the-middle attacks against SMB connections.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.100396">
+        <name>SMB: Signing Not Required</name>
+        <cvss_base>5.9</cvss_base>
+        <cve>NOCVE</cve>
+        <solution type="Mitigation">Enable mandatory SMB signing via Group Policy: Computer Configuration &gt; Policies &gt; Windows Settings &gt; Security Settings &gt; Local Policies &gt; Security Options &gt; Microsoft network server: Digitally sign communications (always) = Enabled.</solution>
+      </nvt>
+    </result>
+    <result id="r007">
+      <name>DNS Server: Zone Transfer Allowed (AXFR)</name>
+      <host>192.168.1.1</host>
+      <port>53/tcp</port>
+      <threat>High</threat>
+      <severity>7.5</severity>
+      <description>The remote DNS server allows zone transfers to any host. This exposes internal network topology, hostnames, and IP addresses to potential attackers.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.100091">
+        <name>DNS Server: Zone Transfer Allowed (AXFR)</name>
+        <cvss_base>7.5</cvss_base>
+        <cve>NOCVE</cve>
+        <solution type="Mitigation">Restrict zone transfers to authorized secondary DNS servers only using allow-transfer ACLs.</solution>
+      </nvt>
+    </result>
+    <result id="r008">
+      <name>Nginx: Information Disclosure via Server Header</name>
+      <host>192.168.1.50</host>
+      <port>8080/tcp</port>
+      <threat>Low</threat>
+      <severity>2.1</severity>
+      <description>The remote Nginx web server exposes its version number in the Server HTTP response header (nginx/1.18.0). This information can help attackers identify known vulnerabilities for this specific version.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.800109">
+        <name>Nginx: Information Disclosure via Server Header</name>
+        <cvss_base>2.1</cvss_base>
+        <cve>NOCVE</cve>
+        <solution type="Mitigation">Add 'server_tokens off;' to the Nginx configuration to suppress the version number in response headers.</solution>
+      </nvt>
+    </result>
+    <result id="r009">
+      <name>MariaDB: Authentication Bypass (CVE-2025-21490)</name>
+      <host>192.168.1.30</host>
+      <port>3306/tcp</port>
+      <threat>High</threat>
+      <severity>9.1</severity>
+      <description>MariaDB Server versions before 11.4.5 and 10.11.12 are vulnerable to an authentication bypass that allows remote unauthenticated attackers to gain access to the database server.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.201025">
+        <name>MariaDB: Authentication Bypass (CVE-2025-21490)</name>
+        <cvss_base>9.1</cvss_base>
+        <cve>CVE-2025-21490</cve>
+        <solution type="VendorFix">Update MariaDB to version 11.4.5 or 10.11.12 or later.</solution>
+      </nvt>
+    </result>
+    <result id="r010">
+      <name>ICMP Timestamp Reply Information Disclosure</name>
+      <host>192.168.1.1</host>
+      <port>general/icmp</port>
+      <threat>Log</threat>
+      <severity>0.0</severity>
+      <description>The remote host responds to ICMP timestamp requests. This allows an attacker to determine the date and time set on the target machine, which may assist in further attacks.</description>
+      <nvt oid="1.3.6.1.4.1.25623.1.0.103190">
+        <name>ICMP Timestamp Reply Information Disclosure</name>
+        <cvss_base>0.0</cvss_base>
+        <cve>NOCVE</cve>
+        <solution type="Mitigation">Filter incoming ICMP timestamp requests (type 13) at the firewall level.</solution>
+      </nvt>
+    </result>
+  </results>
+</report>

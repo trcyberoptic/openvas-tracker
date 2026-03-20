@@ -39,6 +39,8 @@ type Ticket struct {
 	CreatedBy       string         `json:"created_by"`
 	DueDate         *time.Time     `json:"due_date"`
 	ResolvedAt      *time.Time     `json:"resolved_at"`
+	FirstSeenAt     *time.Time     `json:"first_seen_at"`
+	LastSeenAt      *time.Time     `json:"last_seen_at"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 }
@@ -90,14 +92,14 @@ type CountTicketsByStatusRow struct {
 	Count  int64        `json:"count"`
 }
 
-const ticketCols = `id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, created_at, updated_at`
+const ticketCols = `id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, first_seen_at, last_seen_at, created_at, updated_at`
 
 func scanTicket(row interface{ Scan(...any) error }, i *Ticket) error {
-	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt)
+	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt)
 }
 
 func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
-	const createTicket = `INSERT INTO tickets (id, title, description, priority, vulnerability_id, assigned_to, created_by, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	const createTicket = `INSERT INTO tickets (id, title, description, priority, vulnerability_id, assigned_to, created_by, due_date, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
 	_, err := q.db.ExecContext(ctx, createTicket, arg.ID, arg.Title, arg.Description, arg.Priority, arg.VulnerabilityID, arg.AssignedTo, arg.CreatedBy, arg.DueDate)
 	if err != nil {
 		return Ticket{}, err
@@ -113,8 +115,8 @@ func (q *Queries) GetTicket(ctx context.Context, id string) (Ticket, error) {
 }
 
 func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Ticket, error) {
-	const listTickets = `SELECT ` + ticketCols + ` FROM tickets WHERE created_by = ? OR assigned_to = ? ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, created_at DESC LIMIT ? OFFSET ?`
-	rows, err := q.db.QueryContext(ctx, listTickets, arg.CreatedBy, arg.CreatedBy, arg.Limit, arg.Offset)
+	const listTickets = `SELECT ` + ticketCols + ` FROM tickets ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, created_at DESC LIMIT ? OFFSET ?`
+	rows, err := q.db.QueryContext(ctx, listTickets, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -200,4 +202,113 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 	const deleteTicket = `DELETE FROM tickets WHERE id = ?`
 	_, err := q.db.ExecContext(ctx, deleteTicket, id)
 	return err
+}
+
+// FindTicketByFingerprint finds an existing ticket matching a vulnerability fingerprint (host + CVE or host + title).
+const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at`
+
+func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
+	var t Ticket
+	var err error
+	if cveID != "" && cveID != "NOCVE" {
+		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE v.affected_host = ? AND v.cve_id = ? ORDER BY t.created_at DESC LIMIT 1`, host, cveID)
+		err = scanTicket(r, &t)
+	} else {
+		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE v.affected_host = ? AND (v.cve_id IS NULL OR v.cve_id = '') AND v.title = ? ORDER BY t.created_at DESC LIMIT 1`, host, title)
+		err = scanTicket(r, &t)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+type ReopenTicketParams struct {
+	ID              string
+	VulnerabilityID string
+}
+
+func (q *Queries) ReopenTicket(ctx context.Context, arg ReopenTicketParams) error {
+	const query = `UPDATE tickets SET status = 'open', vulnerability_id = ?, resolved_at = NULL, last_seen_at = NOW(), updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, query, arg.VulnerabilityID, arg.ID)
+	return err
+}
+
+type TouchTicketParams struct {
+	ID              string
+	VulnerabilityID string
+}
+
+func (q *Queries) TouchTicket(ctx context.Context, arg TouchTicketParams) error {
+	const query = `UPDATE tickets SET vulnerability_id = ?, last_seen_at = NOW(), updated_at = NOW() WHERE id = ?`
+	_, err := q.db.ExecContext(ctx, query, arg.VulnerabilityID, arg.ID)
+	return err
+}
+
+// AutoResolveStaleTickets resolves open tickets whose findings were not seen in the given scan.
+func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
+	const query = `UPDATE tickets SET status = 'resolved', resolved_at = NOW(), updated_at = NOW() WHERE status IN ('open', 'in_progress', 'review') AND vulnerability_id IS NOT NULL AND vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`
+	_, err := q.db.ExecContext(ctx, query, scanID)
+	if err != nil {
+		return nil, err
+	}
+	// Return the just-resolved tickets for activity logging
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets WHERE status = 'resolved' AND resolved_at >= NOW() - INTERVAL 5 SECOND AND updated_at >= NOW() - INTERVAL 5 SECOND`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Ticket
+	for rows.Next() {
+		var t Ticket
+		if err := scanTicket(rows, &t); err != nil {
+			return nil, err
+		}
+		items = append(items, t)
+	}
+	return items, rows.Err()
+}
+
+type TicketActivity struct {
+	ID        string    `json:"id"`
+	TicketID  string    `json:"ticket_id"`
+	Action    string    `json:"action"`
+	OldValue  *string   `json:"old_value"`
+	NewValue  *string   `json:"new_value"`
+	ChangedBy string    `json:"changed_by"`
+	Note      *string   `json:"note"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type LogTicketActivityParams struct {
+	ID        string
+	TicketID  string
+	Action    string
+	OldValue  *string
+	NewValue  *string
+	ChangedBy string
+	Note      *string
+}
+
+func (q *Queries) LogTicketActivity(ctx context.Context, arg LogTicketActivityParams) error {
+	const query = `INSERT INTO ticket_activity (id, ticket_id, action, old_value, new_value, changed_by, note) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, query, arg.ID, arg.TicketID, arg.Action, arg.OldValue, arg.NewValue, arg.ChangedBy, arg.Note)
+	return err
+}
+
+func (q *Queries) ListTicketActivity(ctx context.Context, ticketID string) ([]TicketActivity, error) {
+	rows, err := q.db.QueryContext(ctx, `SELECT id, ticket_id, action, old_value, new_value, changed_by, note, created_at FROM ticket_activity WHERE ticket_id = ? ORDER BY created_at DESC`, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TicketActivity
+	for rows.Next() {
+		var a TicketActivity
+		if err := rows.Scan(&a.ID, &a.TicketID, &a.Action, &a.OldValue, &a.NewValue, &a.ChangedBy, &a.Note, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, a)
+	}
+	return items, rows.Err()
 }

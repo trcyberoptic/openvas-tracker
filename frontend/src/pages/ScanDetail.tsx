@@ -1,14 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { api } from '@/api/client'
 
 const BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
 }
 
+interface Scan {
+  id: string
+  name: string
+  scan_type: string
+  status: string
+  created_at: string
+}
+
 interface Vuln {
   id: string
-  scan_id: string
   severity: string
   title: string
   affected_host: string
@@ -17,15 +24,18 @@ interface Vuln {
   status: string
 }
 
-export function Vulnerabilities() {
-  const { data: vulns = [] } = useQuery({
-    queryKey: ['vulnerabilities'],
-    queryFn: () => api.get<Vuln[]>('/vulnerabilities'),
-  })
+export function ScanDetail() {
+  const { id } = useParams<{ id: string }>()
+  const { data: scan } = useQuery({ queryKey: ['scan', id], queryFn: () => api.get<Scan>(`/scans/${id}`) })
+  const { data: vulns = [] } = useQuery({ queryKey: ['scan-vulns', id], queryFn: () => api.get<Vuln[]>(`/scans/${id}/vulnerabilities`) })
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Vulnerabilities</h1>
+      <Link to="/scans" className="text-blue-400 hover:underline text-sm mb-4 inline-block">&larr; Back to Scans</Link>
+      <h1 className="text-2xl font-bold mb-2">{scan?.name || 'Scan'}</h1>
+      <p className="text-slate-400 mb-6 text-sm">
+        {scan?.scan_type} &middot; {scan?.status} &middot; {scan ? new Date(scan.created_at).toLocaleString() : ''}
+      </p>
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -35,7 +45,6 @@ export function Vulnerabilities() {
               <th className="text-left p-3 text-slate-400">Host</th>
               <th className="text-left p-3 text-slate-400">CVE</th>
               <th className="text-left p-3 text-slate-400">CVSS</th>
-              <th className="text-left p-3 text-slate-400">Scan</th>
               <th className="text-left p-3 text-slate-400">Status</th>
             </tr>
           </thead>
@@ -51,12 +60,11 @@ export function Vulnerabilities() {
                 <td className="p-3 text-slate-400">{v.affected_host}</td>
                 <td className="p-3 text-slate-400">{v.cve_id || '-'}</td>
                 <td className="p-3">{v.cvss_score ?? '-'}</td>
-                <td className="p-3"><Link to={`/scans/${v.scan_id}`} className="text-blue-400 hover:underline">View Scan</Link></td>
                 <td className="p-3 text-slate-400">{v.status}</td>
               </tr>
             ))}
             {vulns.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-slate-500">No vulnerabilities found</td></tr>
+              <tr><td colSpan={6} className="p-6 text-center text-slate-500">No vulnerabilities in this scan</td></tr>
             )}
           </tbody>
         </table>

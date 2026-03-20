@@ -6,7 +6,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
@@ -37,9 +36,8 @@ type statusCount struct {
 
 func (h *DashboardHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
-	userID := middleware.GetUserID(c)
 
-	vulnCounts, err := h.vulns.CountBySeverity(ctx, userID)
+	vulnCounts, err := h.vulns.CountBySeverity(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load dashboard")
 	}

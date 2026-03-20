@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,9 +51,11 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve system user")
 	}
 
-	scanID := uuid.New().String()
+	ctx := c.Request().Context()
 	now := time.Now()
-	scan, err := h.q.CreateScan(c.Request().Context(), queries.CreateScanParams{
+	scanID := uuid.New().String()
+
+	scan, err := h.q.CreateScan(ctx, queries.CreateScanParams{
 		ID:       scanID,
 		Name:     fmt.Sprintf("OpenVAS Import %s", now.Format("2006-01-02 15:04:05")),
 		ScanType: queries.ScanTypeOpenvas,
@@ -64,7 +67,7 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	}
 
 	rawXML := string(body)
-	h.q.UpdateScanStatus(c.Request().Context(), queries.UpdateScanStatusParams{
+	h.q.UpdateScanStatus(ctx, queries.UpdateScanStatusParams{
 		ID:          scan.ID,
 		Status:      queries.ScanStatusCompleted,
 		StartedAt:   &now,
@@ -73,6 +76,9 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	})
 
 	imported := 0
+	ticketsCreated := 0
+	ticketsReopened := 0
+
 	for _, r := range results {
 		port, proto := parsePort(r.Port)
 		severity := mapSeverity(r.Severity, r.CVSSScore)
@@ -98,8 +104,9 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 			cvss = &r.CVSSScore
 		}
 
-		_, err := h.q.CreateVulnerability(c.Request().Context(), queries.CreateVulnerabilityParams{
-			ID:             uuid.New().String(),
+		vulnID := uuid.New().String()
+		_, err := h.q.CreateVulnerability(ctx, queries.CreateVulnerabilityParams{
+			ID:             vulnID,
 			ScanID:         scan.ID,
 			UserID:         h.systemUserID,
 			Title:          r.Title,
@@ -117,11 +124,122 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 			continue
 		}
 		imported++
+
+		// Auto-ticket logic
+		created, reopened := h.processTicket(ctx, r, vulnID, severity, now)
+		if created {
+			ticketsCreated++
+		}
+		if reopened {
+			ticketsReopened++
+		}
 	}
+
+	// Case 4: auto-resolve open tickets whose findings are NOT in this scan
+	autoResolved := h.autoResolveStale(ctx, scan.ID)
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"scan_id":                  scan.ID,
 		"vulnerabilities_imported": imported,
+		"tickets_created":          ticketsCreated,
+		"tickets_reopened":         ticketsReopened,
+		"tickets_auto_resolved":    autoResolved,
+	})
+}
+
+func (h *ImportHandler) processTicket(ctx context.Context, r scanner.OpenVASResult, vulnID, severity string, now time.Time) (created, reopened bool) {
+	if r.Host == "" {
+		return false, false
+	}
+
+	existing, err := h.q.FindTicketByFingerprint(ctx, r.Host, r.CVE, r.Title)
+	if err != nil {
+		// No existing ticket → create new one (Case 1)
+		return h.createTicket(ctx, r, vulnID, severity, now), false
+	}
+
+	oldStatus := string(existing.Status)
+
+	switch existing.Status {
+	case queries.TicketStatusResolved, queries.TicketStatusClosed:
+		// Case 2: reopen
+		err := h.q.ReopenTicket(ctx, queries.ReopenTicketParams{
+			ID: existing.ID, VulnerabilityID: vulnID,
+		})
+		if err != nil {
+			return false, false
+		}
+		newStatus := "open"
+		note := fmt.Sprintf("Finding reappeared in scan — reopened. CVE: %s, Host: %s", r.CVE, r.Host)
+		h.logActivity(ctx, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		return false, true
+
+	default:
+		// Case 3: ticket still open — touch last_seen_at
+		h.q.TouchTicket(ctx, queries.TouchTicketParams{
+			ID: existing.ID, VulnerabilityID: vulnID,
+		})
+		note := fmt.Sprintf("Finding still present in scan. CVE: %s, Host: %s", r.CVE, r.Host)
+		h.logActivity(ctx, existing.ID, "still_present", nil, nil, "Automatic", &note)
+		return false, false
+	}
+}
+
+func (h *ImportHandler) createTicket(ctx context.Context, r scanner.OpenVASResult, vulnID, severity string, now time.Time) bool {
+	priority := mapSeverityToPriority(severity)
+	title := fmt.Sprintf("[%s] %s — %s", strings.ToUpper(severity), r.Title, r.Host)
+	var desc *string
+	if r.Description != "" {
+		d := fmt.Sprintf("%s\n\nSolution: %s", r.Description, r.Solution)
+		desc = &d
+	}
+
+	ticketID := uuid.New().String()
+	_, err := h.q.CreateTicket(ctx, queries.CreateTicketParams{
+		ID:              ticketID,
+		Title:           title,
+		Description:     desc,
+		Priority:        queries.TicketPriority(priority),
+		VulnerabilityID: &vulnID,
+		CreatedBy:       h.systemUserID,
+	})
+	if err != nil {
+		return false
+	}
+
+	// Set first_seen_at and last_seen_at
+	h.q.TouchTicket(ctx, queries.TouchTicketParams{ID: ticketID, VulnerabilityID: vulnID})
+
+	newStatus := "open"
+	note := fmt.Sprintf("Ticket created from OpenVAS import. CVE: %s, Host: %s, CVSS: %.1f", r.CVE, r.Host, r.CVSSScore)
+	h.logActivity(ctx, ticketID, "created", nil, &newStatus, "Automatic", &note)
+	return true
+}
+
+func (h *ImportHandler) autoResolveStale(ctx context.Context, scanID string) int {
+	resolved, err := h.q.AutoResolveStaleTickets(ctx, scanID)
+	if err != nil {
+		log.Printf("auto-resolve error: %v", err)
+		return 0
+	}
+	for _, t := range resolved {
+		oldStatus := "open"
+		newStatus := "resolved"
+		note := "Finding not present in latest scan — auto-resolved"
+		h.logActivity(ctx, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+	}
+	return len(resolved)
+}
+
+func (h *ImportHandler) logActivity(ctx context.Context, ticketID, action string, oldVal, newVal *string, changedBy string, note *string) {
+	h.q.LogTicketActivity(ctx, queries.LogTicketActivityParams{
+		ID:        uuid.New().String(),
+		TicketID:  ticketID,
+		Action:    action,
+		OldValue:  oldVal,
+		NewValue:  newVal,
+		ChangedBy: changedBy,
+		Note:      note,
 	})
 }
 
@@ -176,6 +294,19 @@ func mapSeverity(threat string, cvss float64) string {
 		return "low"
 	default:
 		return "info"
+	}
+}
+
+func mapSeverityToPriority(severity string) string {
+	switch severity {
+	case "critical":
+		return "critical"
+	case "high":
+		return "high"
+	case "medium":
+		return "medium"
+	default:
+		return "low"
 	}
 }
 

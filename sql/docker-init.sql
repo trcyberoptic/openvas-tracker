@@ -13,3 +13,4 @@ SOURCE /docker-entrypoint-initdb.d/migrations/009_create_schedules.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/010_create_assets.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/011_create_audit_logs.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/012_create_search_indexes.up.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/013_add_ticket_seen_timestamps.up.sql;

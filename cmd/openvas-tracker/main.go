@@ -86,8 +86,9 @@ func main() {
 	handler.NewTargetHandler(targetSvc).RegisterRoutes(p.Group("/targets"))
 
 	q := queries.New(db)
-	handler.NewScanHandler(q).RegisterRoutes(p.Group("/scans"))
+	handler.NewScanHandler(q, vulnSvc).RegisterRoutes(p.Group("/scans"))
 
+	handler.NewHostHandler(q).RegisterRoutes(p.Group("/hosts"))
 	handler.NewVulnHandler(vulnSvc).RegisterRoutes(p.Group("/vulnerabilities"))
 	handler.NewTicketHandler(ticketSvc).RegisterRoutes(p.Group("/tickets"))
 	handler.NewReportHandler(reportSvc).RegisterRoutes(p.Group("/reports"))
