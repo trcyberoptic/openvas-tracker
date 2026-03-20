@@ -1,19 +1,21 @@
-import { useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { useState, useMemo, useCallback } from 'react'
+import { Search, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+
+// --- Filter ---
 
 interface FilterOption {
   label: string
   key: string
-  options?: string[]  // dropdown options; if omitted, treated as text search
+  options?: string[]
 }
 
-interface Props {
+interface FilterProps {
   filters: FilterOption[]
   values: Record<string, string>
   onChange: (values: Record<string, string>) => void
 }
 
-export function TableFilter({ filters, values, onChange }: Props) {
+export function TableFilter({ filters, values, onChange }: FilterProps) {
   const set = (key: string, val: string) => onChange({ ...values, [key]: val })
   const hasActive = Object.values(values).some(v => v !== '')
 
@@ -54,4 +56,69 @@ export function useTableFilter(keys: string[]) {
     Object.fromEntries(keys.map(k => [k, '']))
   )
   return { values, setValues }
+}
+
+// --- Sorting ---
+
+export type SortDir = 'asc' | 'desc' | null
+
+export interface SortState {
+  key: string
+  dir: SortDir
+}
+
+export function useSortable() {
+  const [sort, setSort] = useState<SortState>({ key: '', dir: null })
+
+  const toggle = useCallback((key: string) => {
+    setSort(prev => {
+      if (prev.key !== key) return { key, dir: 'asc' }
+      if (prev.dir === 'asc') return { key, dir: 'desc' }
+      return { key: '', dir: null }
+    })
+  }, [])
+
+  return { sort, toggle }
+}
+
+interface SortHeaderProps {
+  label: string
+  sortKey: string
+  sort: SortState
+  onToggle: (key: string) => void
+  className?: string
+}
+
+export function SortHeader({ label, sortKey, sort, onToggle, className = '' }: SortHeaderProps) {
+  const active = sort.key === sortKey
+  return (
+    <th
+      className={`text-left p-3 text-slate-400 cursor-pointer hover:text-white select-none ${className}`}
+      onClick={() => onToggle(sortKey)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active && sort.dir === 'asc' && <ArrowUp size={14} />}
+        {active && sort.dir === 'desc' && <ArrowDown size={14} />}
+        {!active && <ArrowUpDown size={14} className="opacity-30" />}
+      </span>
+    </th>
+  )
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useSorted<T extends Record<string, any>>(items: T[], sort: SortState): T[] {
+  return useMemo(() => {
+    if (!sort.key || !sort.dir) return items
+    const k = sort.key
+    const dir = sort.dir === 'asc' ? 1 : -1
+    return [...items].sort((a, b) => {
+      const av = a[k], bv = b[k]
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+      return String(av).localeCompare(String(bv)) * dir
+    })
+  }, [items, sort])
 }

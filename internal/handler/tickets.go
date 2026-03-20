@@ -1,10 +1,10 @@
-// internal/handler/tickets.go
 package handler
 
 import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
@@ -14,10 +14,11 @@ import (
 
 type TicketHandler struct {
 	tickets *service.TicketService
+	q       *queries.Queries
 }
 
-func NewTicketHandler(tickets *service.TicketService) *TicketHandler {
-	return &TicketHandler{tickets: tickets}
+func NewTicketHandler(tickets *service.TicketService, q *queries.Queries) *TicketHandler {
+	return &TicketHandler{tickets: tickets, q: q}
 }
 
 type createTicketRequest struct {
@@ -78,6 +79,39 @@ func (h *TicketHandler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, ticket)
 }
 
+type updateStatusRequest struct {
+	Status string `json:"status" validate:"required,oneof=open fixed risk_accepted"`
+}
+
+func (h *TicketHandler) UpdateStatus(c echo.Context) error {
+	id := c.Param("id")
+	var req updateStatusRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+
+	// Get current ticket for activity logging
+	old, err := h.tickets.Get(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "ticket not found")
+	}
+
+	ticket, err := h.tickets.UpdateStatus(c.Request().Context(), id, req.Status)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update status")
+	}
+
+	// Log activity
+	userID := middleware.GetUserID(c)
+	oldStatus := string(old.Status)
+	h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
+		ID: uuid.New().String(), TicketID: id, Action: "status_changed",
+		OldValue: &oldStatus, NewValue: &req.Status, ChangedBy: userID,
+	})
+
+	return c.JSON(http.StatusOK, ticket)
+}
+
 type addCommentRequest struct {
 	Content string `json:"content" validate:"required"`
 }
@@ -93,12 +127,40 @@ func (h *TicketHandler) AddComment(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to add comment")
 	}
+
+	// Log activity
+	h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
+		ID: uuid.New().String(), TicketID: id, Action: "comment_added",
+		ChangedBy: userID, Note: &req.Content,
+	})
+
 	return c.JSON(http.StatusCreated, comment)
+}
+
+func (h *TicketHandler) ListComments(c echo.Context) error {
+	id := c.Param("id")
+	comments, err := h.tickets.ListComments(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list comments")
+	}
+	return c.JSON(http.StatusOK, comments)
+}
+
+func (h *TicketHandler) ListActivity(c echo.Context) error {
+	id := c.Param("id")
+	activity, err := h.q.ListTicketActivity(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list activity")
+	}
+	return c.JSON(http.StatusOK, activity)
 }
 
 func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
+	g.PATCH("/:id/status", h.UpdateStatus)
 	g.POST("/:id/comments", h.AddComment)
+	g.GET("/:id/comments", h.ListComments)
+	g.GET("/:id/activity", h.ListActivity)
 }

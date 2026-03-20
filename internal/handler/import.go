@@ -161,7 +161,7 @@ func (h *ImportHandler) processTicket(ctx context.Context, r scanner.OpenVASResu
 	oldStatus := string(existing.Status)
 
 	switch existing.Status {
-	case queries.TicketStatusResolved, queries.TicketStatusClosed:
+	case queries.TicketStatusFixed, queries.TicketStatusRiskAccepted:
 		// Case 2: reopen
 		err := h.q.ReopenTicket(ctx, queries.ReopenTicketParams{
 			ID: existing.ID, VulnerabilityID: vulnID,
@@ -224,8 +224,8 @@ func (h *ImportHandler) autoResolveStale(ctx context.Context, scanID string) int
 	}
 	for _, t := range resolved {
 		oldStatus := "open"
-		newStatus := "resolved"
-		note := "Finding not present in latest scan — auto-resolved"
+		newStatus := "fixed"
+		note := "Finding not present in latest scan — auto-fixed"
 		h.logActivity(ctx, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 	}
 	return len(resolved)
