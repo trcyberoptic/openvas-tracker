@@ -1,8 +1,8 @@
 # deploy/openvas-tracker.service
 [Unit]
 Description=OpenVAS-Tracker - Vulnerability Management Platform
-After=network.target mariadb.service redis.service
-Wants=mariadb.service redis.service
+After=network.target mariadb.service
+Wants=mariadb.service
 
 [Service]
 Type=simple
