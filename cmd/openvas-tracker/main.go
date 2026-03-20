@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/hibiken/asynq"
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 
@@ -20,10 +19,8 @@ import (
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
 	"github.com/cyberoptic/openvas-tracker/internal/handler"
 	mw "github.com/cyberoptic/openvas-tracker/internal/middleware"
-	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 	"github.com/cyberoptic/openvas-tracker/internal/websocket"
-	"github.com/cyberoptic/openvas-tracker/internal/worker"
 )
 
 type customValidator struct {
@@ -45,12 +42,6 @@ func main() {
 		log.Fatalf("database: %v", err)
 	}
 	defer db.Close()
-
-	// Asynq client (enqueue jobs)
-	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
-		Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: cfg.Redis.DB,
-	})
-	defer asynqClient.Close()
 
 	// Services
 	userSvc := service.NewUserService(db)
@@ -96,7 +87,7 @@ func main() {
 	handler.NewTargetHandler(targetSvc).RegisterRoutes(p.Group("/targets"))
 
 	q := queries.New(db)
-	handler.NewScanHandler(q, asynqClient).RegisterRoutes(p.Group("/scans"))
+	handler.NewScanHandler(q).RegisterRoutes(p.Group("/scans"))
 
 	handler.NewVulnHandler(vulnSvc).RegisterRoutes(p.Group("/vulnerabilities"))
 	handler.NewTicketHandler(ticketSvc).RegisterRoutes(p.Group("/tickets"))
@@ -112,17 +103,6 @@ func main() {
 	// WebSocket
 	wsH := handler.NewWSHandler(hub, cfg.JWT.Secret)
 	e.GET("/ws", wsH.Handle)
-
-	// Start Asynq worker in background
-	nmapScanner := scanner.NewNmapScanner(cfg.Scanner.NmapPath)
-	openvasScanner := scanner.NewOpenVASScanner(cfg.Scanner.OpenVASPath)
-	workerSrv := worker.NewServer(cfg, db)
-	workerMux := worker.NewMux(db, nmapScanner, openvasScanner)
-	go func() {
-		if err := workerSrv.Run(workerMux); err != nil {
-			log.Printf("worker error: %v", err)
-		}
-	}()
 
 	// Embedded frontend (catch-all, must be last)
 	serveFrontend(e)
@@ -141,7 +121,6 @@ func main() {
 	<-quit
 	log.Println("shutting down...")
 
-	workerSrv.Shutdown()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	e.Shutdown(ctx)
