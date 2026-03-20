@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { TableFilter, useTableFilter } from '@/components/TableFilter'
 
 const BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
@@ -50,9 +51,7 @@ function HostRow({ h }: { h: HostSummary }) {
       {open && vulns.map((v) => (
         <tr key={v.id} className="bg-slate-800/20 border-b border-slate-800/30">
           <td className="p-3 pl-10">
-            <span className={`px-2 py-1 rounded text-xs font-medium text-white ${BADGE_COLORS[v.severity] || 'bg-gray-600'}`}>
-              {v.severity}
-            </span>
+            <span className={`px-2 py-1 rounded text-xs font-medium text-white ${BADGE_COLORS[v.severity] || 'bg-gray-600'}`}>{v.severity}</span>
             <span className="ml-3">{v.title}</span>
           </td>
           <td className="p-3 text-slate-400">{v.cve_id || '-'}</td>
@@ -67,9 +66,22 @@ function HostRow({ h }: { h: HostSummary }) {
 
 export function Targets() {
   const { data: hosts = [] } = useQuery({ queryKey: ['hosts'], queryFn: () => api.get<HostSummary[]>('/hosts') })
+  const { values, setValues } = useTableFilter(['search'])
+
+  const filtered = useMemo(() => {
+    if (!values.search) return hosts
+    const q = values.search.toLowerCase()
+    return hosts.filter(h => h.host.toLowerCase().includes(q))
+  }, [hosts, values])
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Hosts</h1>
+      <h1 className="text-2xl font-bold mb-4">Hosts</h1>
+      <TableFilter
+        filters={[{ key: 'search', label: 'Search hosts...' }]}
+        values={values}
+        onChange={setValues}
+      />
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-slate-800">
@@ -80,13 +92,14 @@ export function Targets() {
             <th className="text-left p-3 text-slate-400">Max CVSS</th>
           </tr></thead>
           <tbody>
-            {hosts.map((h) => <HostRow key={h.host} h={h} />)}
-            {hosts.length === 0 && (
-              <tr><td colSpan={5} className="p-6 text-center text-slate-500">No hosts found</td></tr>
+            {filtered.map((h) => <HostRow key={h.host} h={h} />)}
+            {filtered.length === 0 && (
+              <tr><td colSpan={5} className="p-6 text-center text-slate-500">{hosts.length > 0 ? 'No matches' : 'No hosts found'}</td></tr>
             )}
           </tbody>
         </table>
       </div>
+      <p className="text-slate-500 text-xs mt-2">{filtered.length} of {hosts.length} hosts</p>
     </div>
   )
 }

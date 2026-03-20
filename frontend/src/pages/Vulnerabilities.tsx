@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { TableFilter, useTableFilter } from '@/components/TableFilter'
 
 const BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
@@ -25,15 +26,12 @@ interface Vuln {
 
 function VulnRow({ v }: { v: Vuln }) {
   const [open, setOpen] = useState(false)
-
   return (
     <>
       <tr onClick={() => setOpen(!open)} className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer">
         <td className="p-3">
           {open ? <ChevronDown size={16} className="inline mr-1" /> : <ChevronRight size={16} className="inline mr-1" />}
-          <span className={`px-2 py-1 rounded text-xs font-medium text-white ${BADGE_COLORS[v.severity] || 'bg-gray-600'}`}>
-            {v.severity}
-          </span>
+          <span className={`px-2 py-1 rounded text-xs font-medium text-white ${BADGE_COLORS[v.severity] || 'bg-gray-600'}`}>{v.severity}</span>
         </td>
         <td className="p-3">{v.title}</td>
         <td className="p-3 text-slate-400">{v.affected_host}</td>
@@ -68,14 +66,32 @@ function VulnRow({ v }: { v: Vuln }) {
 }
 
 export function Vulnerabilities() {
-  const { data: vulns = [] } = useQuery({
-    queryKey: ['vulnerabilities'],
-    queryFn: () => api.get<Vuln[]>('/vulnerabilities'),
-  })
+  const { data: vulns = [] } = useQuery({ queryKey: ['vulnerabilities'], queryFn: () => api.get<Vuln[]>('/vulnerabilities') })
+  const { values, setValues } = useTableFilter(['search', 'severity', 'status'])
+
+  const filtered = useMemo(() => {
+    let result = vulns
+    if (values.severity) result = result.filter(v => v.severity === values.severity)
+    if (values.status) result = result.filter(v => v.status === values.status)
+    if (values.search) {
+      const q = values.search.toLowerCase()
+      result = result.filter(v => v.title.toLowerCase().includes(q) || v.affected_host?.toLowerCase().includes(q) || v.cve_id?.toLowerCase().includes(q))
+    }
+    return result
+  }, [vulns, values])
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Vulnerabilities</h1>
+      <h1 className="text-2xl font-bold mb-4">Vulnerabilities</h1>
+      <TableFilter
+        filters={[
+          { key: 'search', label: 'Search title, host, CVE...' },
+          { key: 'severity', label: 'Severity', options: ['critical', 'high', 'medium', 'low', 'info'] },
+          { key: 'status', label: 'Status', options: ['open', 'confirmed', 'mitigated', 'resolved', 'false_positive'] },
+        ]}
+        values={values}
+        onChange={setValues}
+      />
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -90,13 +106,14 @@ export function Vulnerabilities() {
             </tr>
           </thead>
           <tbody>
-            {vulns.map((v) => <VulnRow key={v.id} v={v} />)}
-            {vulns.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-slate-500">No vulnerabilities found</td></tr>
+            {filtered.map((v) => <VulnRow key={v.id} v={v} />)}
+            {filtered.length === 0 && (
+              <tr><td colSpan={7} className="p-6 text-center text-slate-500">{vulns.length > 0 ? 'No matches' : 'No vulnerabilities found'}</td></tr>
             )}
           </tbody>
         </table>
       </div>
+      <p className="text-slate-500 text-xs mt-2">{filtered.length} of {vulns.length} vulnerabilities</p>
     </div>
   )
 }
