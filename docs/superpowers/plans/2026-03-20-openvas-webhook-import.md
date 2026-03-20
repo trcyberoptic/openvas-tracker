@@ -1,14 +1,18 @@
-# OpenVAS Webhook Import Implementation Plan
+# OpenVAS Webhook Import Implementation Plan (v2 — Pure Dashboard)
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace OpenVAS scan orchestration with a webhook-based import endpoint that receives GMP XML reports and stores vulnerabilities.
+**Goal:** Convert OpenVAS-Tracker from a scan orchestrator into a pure vulnerability dashboard with webhook-based OpenVAS import. Remove all active scanning, asynq task queue, and Redis.
 
-**Architecture:** New `POST /api/import/openvas` endpoint secured by API-Key middleware, using existing `ParseOpenVASXML()` parser. Removes all gvm-cli orchestration code. System user `openvas-import` owns all imported records.
+**Architecture:** New `POST /api/import/openvas` endpoint secured by API-Key middleware, using existing `ParseOpenVASXML()` parser. All scan orchestration code, worker infrastructure, and Redis dependency removed.
 
-**Tech Stack:** Go, Echo v4, MariaDB (database/sql), asynq (nmap worker only)
+**Tech Stack:** Go, Echo v4, MariaDB (database/sql)
 
 **Spec:** `docs/superpowers/specs/2026-03-20-openvas-webhook-import-design.md`
+
+**Already completed:**
+- Task 1 (API-Key middleware) — committed as `9c62de4`
+- Task 2 (config: replaced `OpenVASPath` with `ImportAPIKey`) — committed as `d263aa3`, but needs further update to also remove `RedisConfig`, `NmapPath`, and rename `ScannerConfig` → `ImportConfig`
 
 ---
 
@@ -16,434 +20,290 @@
 
 | File | Action | Responsibility |
 |---|---|---|
-| `internal/middleware/apikey.go` | **Create** | API-Key authentication middleware |
+| `internal/middleware/apikey.go` | **Already created** | API-Key authentication middleware |
 | `internal/handler/import.go` | **Create** | Import handler: XML parsing, system user, scan+vuln creation |
-| `internal/config/config.go` | Modify | Replace `OpenVASPath` with `ImportAPIKey` in `ScannerConfig` |
-| `.env.example` | Modify | Replace `OT_SCANNER_OPENVASPATH` with `OT_SCANNER_IMPORTAPIKEY` |
-| `internal/scanner/openvas.go` | Modify | Remove `OpenVASScanner` struct, `NewOpenVASScanner()`, `Scan()` — keep parser |
-| `internal/scanner/openvas_test.go` | Keep as-is | Only tests `ParseOpenVASXML()` |
-| `internal/worker/scan_task.go` | Modify | Remove `HandleOpenVASScan()`, remove `openvas` field from `ScanHandler` |
-| `internal/worker/server.go` | Modify | Remove `TaskScanOpenVAS` constant, remove OpenVAS mux registration, remove `openvasScanner` param |
-| `internal/handler/scans.go` | Modify | Remove `openvas` from validation, remove OpenVAS task-type branch |
+| `internal/config/config.go` | Modify | Remove `ScannerConfig`+`RedisConfig`, add `ImportConfig` with `APIKey` |
+| `.env.example` | Modify | Remove `OT_SCANNER_*`, `OT_REDIS_*`, add `OT_IMPORT_APIKEY` |
+| `internal/scanner/openvas.go` | Modify | Remove `OpenVASScanner`, keep parser |
+| `internal/scanner/nmap.go` | Modify | Remove `NmapScanner`, keep parser + structs |
+| `internal/worker/` | **Delete entire dir** | No more task queue |
+| `internal/service/scan.go` | **Delete** | Depended on asynq |
+| `internal/handler/scans.go` | Modify | Remove `Launch()`, keep `List()`/`Get()`, remove asynq dep |
 | `internal/handler/schedules.go` | Modify | Remove `openvas` from validation |
-| `cmd/openvas-tracker/main.go` | Modify | Remove `openvasScanner`, wire import handler, update `NewMux` call |
+| `cmd/openvas-tracker/main.go` | Modify | Remove asynq/worker/scanner, wire import handler |
 
 ---
 
-## Chunk 1: API-Key Middleware + Config
+## Chunk 1: Remove All Scanning Infrastructure
 
-### Task 1: Create API-Key middleware
+### Task 3: Remove scanner CLI wrappers (keep parsers)
 
 **Files:**
-- Create: `internal/middleware/apikey.go`
-- Create: `internal/middleware/apikey_test.go`
+- Modify: `internal/scanner/openvas.go` — delete `OpenVASScanner`, `NewOpenVASScanner()`, `Scan()`; remove unused imports `"context"`, `"os/exec"`, `"strings"`
+- Modify: `internal/scanner/nmap.go` — delete `NmapScanner`, `NewNmapScanner()`, `Scan()`; remove unused imports `"context"`, `"os/exec"`, `"strings"`
 
-- [ ] **Step 1: Write the test file**
+- [ ] **Step 1: Edit `openvas.go` — remove lines 84-103 and unused imports**
 
-```go
-// internal/middleware/apikey_test.go
-package middleware
+After edit, file keeps: `package scanner`, imports `"encoding/xml"`, `"fmt"`, `"io"`, `"strconv"`, XML structs, `OpenVASResult`, `ParseOpenVASXML()`.
 
-import (
-	"net/http"
-	"net/http/httptest"
-	"testing"
+- [ ] **Step 2: Edit `nmap.go` — remove lines 127-143 and unused imports**
 
-	"github.com/labstack/echo/v4"
-)
+After edit, file keeps: `package scanner`, imports `"encoding/xml"`, `"fmt"`, `"io"`, XML structs, result types, `ParseNmapXML()`.
 
-func TestAPIKeyAuth_ValidKey(t *testing.T) {
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("X-API-Key", "a]valid-key-that-is-at-least-32-chars!!")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+- [ ] **Step 3: Verify parser tests pass**
 
-	handler := APIKeyAuth("a]valid-key-that-is-at-least-32-chars!!")(func(c echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
-	if err := handler(c); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-}
+Run: `cd e:/Code/openvas-tracker && go test ./internal/scanner/ -v`
+Expected: `TestParseOpenVASXML` and `TestParseNmapXML` both PASS
 
-func TestAPIKeyAuth_InvalidKey(t *testing.T) {
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("X-API-Key", "wrong-key-wrong-key-wrong-key-wrong")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	handler := APIKeyAuth("a]valid-key-that-is-at-least-32-chars!!")(func(c echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
-	err := handler(c)
-	he, ok := err.(*echo.HTTPError)
-	if !ok || he.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %v", err)
-	}
-}
-
-func TestAPIKeyAuth_MissingHeader(t *testing.T) {
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	handler := APIKeyAuth("a]valid-key-that-is-at-least-32-chars!!")(func(c echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
-	err := handler(c)
-	he, ok := err.(*echo.HTTPError)
-	if !ok || he.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %v", err)
-	}
-}
-
-func TestAPIKeyAuth_EmptyConfigKey(t *testing.T) {
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("X-API-Key", "anything")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	handler := APIKeyAuth("")(func(c echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
-	err := handler(c)
-	he, ok := err.(*echo.HTTPError)
-	if !ok || he.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503, got %v", err)
-	}
-}
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `cd e:/Code/openvas-tracker && go test ./internal/middleware/ -run TestAPIKeyAuth -v`
-Expected: compilation error — `APIKeyAuth` not defined
-
-- [ ] **Step 3: Implement the middleware**
-
-```go
-// internal/middleware/apikey.go
-package middleware
-
-import (
-	"crypto/subtle"
-	"net/http"
-
-	"github.com/labstack/echo/v4"
-)
-
-func APIKeyAuth(key string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			if key == "" {
-				return echo.NewHTTPError(http.StatusServiceUnavailable, "import API key not configured")
-			}
-			provided := c.Request().Header.Get("X-API-Key")
-			if provided == "" {
-				return echo.NewHTTPError(http.StatusUnauthorized, "missing API key")
-			}
-			if subtle.ConstantTimeCompare([]byte(provided), []byte(key)) != 1 {
-				return echo.NewHTTPError(http.StatusUnauthorized, "invalid API key")
-			}
-			return next(c)
-		}
-	}
-}
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `cd e:/Code/openvas-tracker && go test ./internal/middleware/ -run TestAPIKeyAuth -v`
-Expected: all 4 tests PASS
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add internal/middleware/apikey.go internal/middleware/apikey_test.go
-git commit -m "feat: add API-Key authentication middleware"
+git add internal/scanner/openvas.go internal/scanner/nmap.go
+git commit -m "refactor: remove scanner CLI wrappers, keep XML parsers"
 ```
 
-### Task 2: Update config — replace OpenVASPath with ImportAPIKey
+### Task 4: Delete worker package and scan service
 
 **Files:**
-- Modify: `internal/config/config.go:39-42` (ScannerConfig struct)
-- Modify: `internal/config/config.go:58` (SetDefault line)
-- Modify: `.env.example:10`
+- Delete: `internal/worker/scan_task.go`
+- Delete: `internal/worker/server.go`
+- Delete: `internal/service/scan.go`
 
-- [ ] **Step 1: Modify `ScannerConfig` struct**
+- [ ] **Step 1: Delete the files**
 
-In `internal/config/config.go`, replace:
+```bash
+rm internal/worker/scan_task.go internal/worker/server.go internal/service/scan.go
+rmdir internal/worker
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add -A internal/worker/ internal/service/scan.go
+git commit -m "refactor: remove worker package and scan service (no more active scanning)"
+```
+
+### Task 5: Update config — remove Redis + ScannerConfig, add ImportConfig
+
+**Files:**
+- Modify: `internal/config/config.go`
+- Modify: `internal/config/config_test.go` (if it references Redis or Scanner)
+- Modify: `.env.example`
+
+- [ ] **Step 1: Rewrite config structs**
+
+In `internal/config/config.go`, replace the `Config` struct and remove `RedisConfig` and `ScannerConfig`:
+
+Replace:
 ```go
-type ScannerConfig struct {
-	NmapPath    string
-	OpenVASPath string
+type Config struct {
+	Server   ServerConfig
+	Database DatabaseConfig
+	Redis    RedisConfig
+	JWT      JWTConfig
+	Scanner  ScannerConfig
 }
 ```
 With:
 ```go
-type ScannerConfig struct {
-	NmapPath     string
-	ImportAPIKey string
+type Config struct {
+	Server   ServerConfig
+	Database DatabaseConfig
+	JWT      JWTConfig
+	Import   ImportConfig
 }
 ```
 
-- [ ] **Step 2: Update `SetDefault` in `Load()`**
-
-In `internal/config/config.go`, replace:
+Delete `RedisConfig` struct entirely. Replace `ScannerConfig` with:
 ```go
-v.SetDefault("scanner.openvaspath", "gvm-cli")
+type ImportConfig struct {
+	APIKey string
+}
 ```
-With:
+
+- [ ] **Step 2: Update `Load()` defaults**
+
+Remove all `redis.*` and `scanner.*` defaults. Add:
 ```go
-v.SetDefault("scanner.importapikey", "")
+v.SetDefault("import.apikey", "")
 ```
 
 - [ ] **Step 3: Update `.env.example`**
 
-Replace:
+Remove:
 ```
-OT_SCANNER_OPENVASPATH=gvm-cli
-```
-With:
-```
+OT_REDIS_ADDR=localhost:6379
+OT_REDIS_PASSWORD=
 OT_SCANNER_IMPORTAPIKEY=
 ```
 
-- [ ] **Step 4: Run config tests**
+Add:
+```
+OT_IMPORT_APIKEY=
+```
+
+- [ ] **Step 4: Update config tests if needed**
 
 Run: `cd e:/Code/openvas-tracker && go test ./internal/config/ -v`
-Expected: PASS
+Fix any test referencing Redis or Scanner config.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/config/config.go .env.example
-git commit -m "feat: replace OpenVASPath config with ImportAPIKey"
+git add internal/config/config.go internal/config/config_test.go .env.example
+git commit -m "refactor: remove Redis and Scanner config, add Import config"
 ```
 
----
-
-## Chunk 2: Remove OpenVAS Orchestration
-
-### Task 3: Remove OpenVASScanner from scanner package
+### Task 6: Simplify scans handler — remove Launch, remove asynq
 
 **Files:**
-- Modify: `internal/scanner/openvas.go` — remove lines 84-103 (`OpenVASScanner`, `NewOpenVASScanner`, `Scan`)
-- Verify: `internal/scanner/openvas_test.go` — should still pass (only tests `ParseOpenVASXML`)
+- Modify: `internal/handler/scans.go` — remove `Launch()`, `launchScanRequest`, asynq imports; keep `List()`, `Get()`
+- Modify: `internal/handler/schedules.go` — remove `openvas` from validation
 
-- [ ] **Step 1: Remove `OpenVASScanner` struct, constructor, and `Scan` method**
+- [ ] **Step 1: Rewrite `scans.go`**
 
-In `internal/scanner/openvas.go`, delete the entire block from `type OpenVASScanner struct` through the end of the `Scan` method (lines 84-103). Also remove the now-unused imports: `"context"`, `"os/exec"`, `"strings"`.
+Replace entire file with:
+```go
+package handler
 
-After edit, the file should contain only: `package scanner`, imports for `"encoding/xml"`, `"fmt"`, `"io"`, `"strconv"`, the XML structs, `OpenVASResult`, and `ParseOpenVASXML()`.
+import (
+	"net/http"
 
-- [ ] **Step 2: Verify parser tests still pass**
+	"github.com/labstack/echo/v4"
 
-Run: `cd e:/Code/openvas-tracker && go test ./internal/scanner/ -run TestParseOpenVASXML -v`
-Expected: PASS
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+)
 
-- [ ] **Step 3: Commit**
+type ScanHandler struct {
+	q *queries.Queries
+}
+
+func NewScanHandler(q *queries.Queries) *ScanHandler {
+	return &ScanHandler{q: q}
+}
+
+func (h *ScanHandler) List(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	scans, err := h.q.ListScans(c.Request().Context(), queries.ListScansParams{
+		UserID: userID, Limit: 50, Offset: 0,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list scans")
+	}
+	return c.JSON(http.StatusOK, scans)
+}
+
+func (h *ScanHandler) Get(c echo.Context) error {
+	id := c.Param("id")
+	scan, err := h.q.GetScan(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "scan not found")
+	}
+	return c.JSON(http.StatusOK, scan)
+}
+
+func (h *ScanHandler) RegisterRoutes(g *echo.Group) {
+	g.GET("", h.List)
+	g.GET("/:id", h.Get)
+}
+```
+
+- [ ] **Step 2: Update `schedules.go` validation**
+
+Replace `oneof=nmap openvas` with `oneof=nmap` in `createScheduleRequest.ScanType`.
+
+- [ ] **Step 3: Verify handler package compiles**
+
+Run: `cd e:/Code/openvas-tracker && go build ./internal/handler/`
+Expected: success
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add internal/scanner/openvas.go
-git commit -m "refactor: remove OpenVASScanner orchestration, keep XML parser"
+git add internal/handler/scans.go internal/handler/schedules.go
+git commit -m "refactor: simplify scans handler to read-only, remove asynq dependency"
 ```
 
-### Task 4: Remove OpenVAS from worker
+### Task 7: Update main.go — remove asynq, Redis, scanner, worker
 
 **Files:**
-- Modify: `internal/worker/scan_task.go` — remove `openvas` field, `HandleOpenVASScan`, update `NewScanHandler` signature
-- Modify: `internal/worker/server.go` — remove `TaskScanOpenVAS`, update `NewMux` signature
+- Modify: `cmd/openvas-tracker/main.go`
 
-- [ ] **Step 1: Update `ScanHandler` struct and constructor in `scan_task.go`**
+- [ ] **Step 1: Remove imports**
+
+Remove these imports:
+- `"github.com/hibiken/asynq"`
+- `"github.com/cyberoptic/openvas-tracker/internal/scanner"`
+- `"github.com/cyberoptic/openvas-tracker/internal/worker"`
+
+- [ ] **Step 2: Remove asynq client block (lines ~49-53)**
+
+Delete:
+```go
+	// Asynq client (enqueue jobs)
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
+		Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: cfg.Redis.DB,
+	})
+	defer asynqClient.Close()
+```
+
+- [ ] **Step 3: Update ScanHandler construction (line ~99)**
 
 Replace:
 ```go
-type ScanHandler struct {
-	q       *queries.Queries
-	nmap    *scanner.NmapScanner
-	openvas *scanner.OpenVASScanner
-}
-
-func NewScanHandler(db *sql.DB, nmap *scanner.NmapScanner, openvas *scanner.OpenVASScanner) *ScanHandler {
-	return &ScanHandler{
-		q:       queries.New(db),
-		nmap:    nmap,
-		openvas: openvas,
-	}
-}
+	handler.NewScanHandler(q, asynqClient).RegisterRoutes(p.Group("/scans"))
 ```
 With:
 ```go
-type ScanHandler struct {
-	q    *queries.Queries
-	nmap *scanner.NmapScanner
-}
-
-func NewScanHandler(db *sql.DB, nmap *scanner.NmapScanner) *ScanHandler {
-	return &ScanHandler{
-		q:    queries.New(db),
-		nmap: nmap,
-	}
-}
+	handler.NewScanHandler(q).RegisterRoutes(p.Group("/scans"))
 ```
 
-- [ ] **Step 2: Delete `HandleOpenVASScan` method entirely (lines 75-110)**
+- [ ] **Step 4: Remove worker startup block (lines ~116-125)**
 
-- [ ] **Step 3: Remove unused `scanner` import from `scan_task.go`**
-
-The `scanner` import is still used by `NmapScanner`, so keep it. But remove the `openvas *scanner.OpenVASScanner` references. (Already done in step 1.)
-
-- [ ] **Step 4: Update `server.go`**
-
-Remove `TaskScanOpenVAS` constant and update `NewMux`:
-
-Replace:
-```go
-const (
-	TaskScanNmap    = "scan:nmap"
-	TaskScanOpenVAS = "scan:openvas"
-	TaskReport      = "report:generate"
-	TaskEnrich      = "vuln:enrich"
-)
-```
-With:
-```go
-const (
-	TaskScanNmap = "scan:nmap"
-	TaskReport   = "report:generate"
-	TaskEnrich   = "vuln:enrich"
-)
-```
-
-Replace:
-```go
-func NewMux(db *sql.DB, nmapScanner *scanner.NmapScanner, openvasScanner *scanner.OpenVASScanner) *asynq.ServeMux {
-	mux := asynq.NewServeMux()
-	scanHandler := NewScanHandler(db, nmapScanner, openvasScanner)
-	mux.HandleFunc(TaskScanNmap, scanHandler.HandleNmapScan)
-	mux.HandleFunc(TaskScanOpenVAS, scanHandler.HandleOpenVASScan)
-	return mux
-}
-```
-With:
-```go
-func NewMux(db *sql.DB, nmapScanner *scanner.NmapScanner) *asynq.ServeMux {
-	mux := asynq.NewServeMux()
-	scanHandler := NewScanHandler(db, nmapScanner)
-	mux.HandleFunc(TaskScanNmap, scanHandler.HandleNmapScan)
-	return mux
-}
-```
-
-Remove `scanner` import from `server.go` (no longer needed — `NmapScanner` is passed as an interface arg, but actually it's a `*scanner.NmapScanner` pointer so the import is still needed). Keep the import.
-
-- [ ] **Step 5: Update `scans.go` validation tag**
-
-Note: Tasks 4 and 5 are combined into one commit because `handler/scans.go` references `worker.TaskScanOpenVAS` — removing it from worker without updating the handler would break the build.
-
-Replace:
-```go
-ScanType string   `json:"scan_type" validate:"required,oneof=nmap openvas"`
-```
-With:
-```go
-ScanType string   `json:"scan_type" validate:"required,oneof=nmap"`
-```
-
-- [ ] **Step 6: Remove OpenVAS task-type selection in `scans.go` `Launch()`**
-
-Replace:
-```go
-	taskType := worker.TaskScanNmap
-	if req.ScanType == "openvas" {
-		taskType = worker.TaskScanOpenVAS
-	}
-
-	task, err := worker.NewScanTask(taskType, worker.ScanPayload{
-```
-With:
-```go
-	task, err := worker.NewScanTask(worker.TaskScanNmap, worker.ScanPayload{
-```
-
-Also remove the `worker` import reference to `TaskScanOpenVAS` — it's no longer exported. The `worker` import itself is still needed for `NewScanTask` and `ScanPayload`.
-
-- [ ] **Step 7: Update `schedules.go` validation tag**
-
-Replace:
-```go
-ScanType string `json:"scan_type" validate:"required,oneof=nmap openvas"`
-```
-With:
-```go
-ScanType string `json:"scan_type" validate:"required,oneof=nmap"`
-```
-
-- [ ] **Step 8: Verify compilation**
-
-Run: `cd e:/Code/openvas-tracker && go build ./internal/worker/ && go build ./internal/handler/`
-Expected: both succeed
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add internal/worker/scan_task.go internal/worker/server.go internal/handler/scans.go internal/handler/schedules.go
-git commit -m "refactor: remove OpenVAS orchestration from worker and handler"
-```
-
-### Task 5: Update main.go — remove OpenVAS scanner, fix NewMux call
-
-**Files:**
-- Modify: `cmd/openvas-tracker/main.go:117-120` — remove openvasScanner, update NewMux
-
-- [ ] **Step 1: Remove OpenVAS scanner instantiation and update NewMux**
-
-Replace:
+Delete:
 ```go
 	// Start Asynq worker in background
 	nmapScanner := scanner.NewNmapScanner(cfg.Scanner.NmapPath)
 	openvasScanner := scanner.NewOpenVASScanner(cfg.Scanner.OpenVASPath)
 	workerSrv := worker.NewServer(cfg, db)
 	workerMux := worker.NewMux(db, nmapScanner, openvasScanner)
-```
-With:
-```go
-	// Start Asynq worker in background
-	nmapScanner := scanner.NewNmapScanner(cfg.Scanner.NmapPath)
-	workerSrv := worker.NewServer(cfg, db)
-	workerMux := worker.NewMux(db, nmapScanner)
+	go func() {
+		if err := workerSrv.Run(workerMux); err != nil {
+			log.Printf("worker error: %v", err)
+		}
+	}()
 ```
 
-- [ ] **Step 2: Verify full build**
+- [ ] **Step 5: Remove worker shutdown (line ~144)**
+
+Delete:
+```go
+	workerSrv.Shutdown()
+```
+
+- [ ] **Step 6: Verify build**
 
 Run: `cd e:/Code/openvas-tracker && go build ./cmd/openvas-tracker/`
 Expected: success
 
-- [ ] **Step 3: Run all existing tests**
+- [ ] **Step 7: Run all tests**
 
-Run: `cd e:/Code/openvas-tracker && go test ./... 2>&1 | head -50`
-Expected: all tests pass
+Run: `cd e:/Code/openvas-tracker && go test ./...`
+Expected: all pass
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add cmd/openvas-tracker/main.go
-git commit -m "refactor: remove OpenVAS scanner from main, update worker wiring"
+git commit -m "refactor: remove asynq, Redis, scanner, and worker from main"
 ```
 
 ---
 
-## Chunk 3: Import Handler + Wiring
+## Chunk 2: Import Handler + Wiring
 
-### Task 6: Create the import handler
+### Task 8: Create the import handler
 
 **Files:**
 - Create: `internal/handler/import.go`
@@ -464,40 +324,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 )
-
-const testOpenVASXML = `<?xml version="1.0"?>
-<report>
-  <results>
-    <result>
-      <name>SSL/TLS Certificate Expired</name>
-      <host>192.168.1.10</host>
-      <port>443/tcp</port>
-      <threat>High</threat>
-      <severity>7.5</severity>
-      <description>The SSL certificate has expired.</description>
-      <nvt oid="1.3.6.1.4.1.25623.1.0.103955">
-        <name>SSL/TLS Certificate Expired</name>
-        <cvss_base>7.5</cvss_base>
-        <cve>CVE-2024-0001</cve>
-        <solution type="VendorFix">Renew the certificate.</solution>
-      </nvt>
-    </result>
-    <result>
-      <name>Info Disclosure</name>
-      <host>192.168.1.10</host>
-      <port>80/tcp</port>
-      <threat>Log</threat>
-      <severity>0.0</severity>
-      <description>Server banner disclosed.</description>
-      <nvt oid="1.3.6.1.4.1.25623.1.0.999999">
-        <name>Info Disclosure</name>
-        <cvss_base>0.0</cvss_base>
-        <cve>NOCVE</cve>
-        <solution type="Mitigation">Disable server banner.</solution>
-      </nvt>
-    </result>
-  </results>
-</report>`
 
 func TestMapSeverity(t *testing.T) {
 	tests := []struct {
@@ -523,8 +349,8 @@ func TestMapSeverity(t *testing.T) {
 
 func TestParsePort(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantPort *int32
+		input     string
+		wantPort  *int32
 		wantProto *string
 	}{
 		{"443/tcp", int32Ptr(443), strPtr("tcp")},
@@ -555,15 +381,13 @@ func TestHandleOpenVAS_BadXML(t *testing.T) {
 	}
 }
 
-func int32Ptr(v int32) *int32    { return &v }
-func strPtr(v string) *string    { return &v }
-func derefInt32(p *int32) string { if p == nil { return "<nil>" }; return fmt.Sprintf("%d", *p) }
-func derefStr(p *string) string  { if p == nil { return "<nil>" }; return *p }
+func int32Ptr(v int32) *int32     { return &v }
+func strPtr(v string) *string     { return &v }
+func derefInt32(p *int32) string  { if p == nil { return "<nil>" }; return fmt.Sprintf("%d", *p) }
+func derefStr(p *string) string   { if p == nil { return "<nil>" }; return *p }
 func int32PtrEq(a, b *int32) bool { if a == nil && b == nil { return true }; if a == nil || b == nil { return false }; return *a == *b }
 func strPtrEq(a, b *string) bool  { if a == nil && b == nil { return true }; if a == nil || b == nil { return false }; return *a == *b }
 ```
-
-Note: `"fmt"` is included in the import block above.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -626,7 +450,6 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve system user")
 	}
 
-	// Step 1: Create scan record
 	scanID := uuid.New().String()
 	now := time.Now()
 	scan, err := h.q.CreateScan(c.Request().Context(), queries.CreateScanParams{
@@ -640,7 +463,6 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create scan record")
 	}
 
-	// Step 2: Store raw XML and timestamps
 	rawXML := string(body)
 	h.q.UpdateScanStatus(c.Request().Context(), queries.UpdateScanStatusParams{
 		ID:          scan.ID,
@@ -650,7 +472,6 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		RawOutput:   &rawXML,
 	})
 
-	// Step 3: Create vulnerabilities
 	imported := 0
 	for _, r := range results {
 		port, proto := parsePort(r.Port)
@@ -678,15 +499,15 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		}
 
 		_, err := h.q.CreateVulnerability(c.Request().Context(), queries.CreateVulnerabilityParams{
-			ID:           uuid.New().String(),
-			ScanID:       scan.ID,
-			UserID:       h.systemUserID,
-			Title:        r.Title,
-			Description:  desc,
-			Severity:     queries.SeverityLevel(severity),
-			CvssScore:    cvss,
-			CveID:        cveID,
-			AffectedHost: host,
+			ID:             uuid.New().String(),
+			ScanID:         scan.ID,
+			UserID:         h.systemUserID,
+			Title:          r.Title,
+			Description:    desc,
+			Severity:       queries.SeverityLevel(severity),
+			CvssScore:      cvss,
+			CveID:          cveID,
+			AffectedHost:   host,
 			AffectedPort:   port,
 			Protocol:       proto,
 			Solution:       sol,
@@ -711,7 +532,6 @@ func (h *ImportHandler) resolveSystemUser(ctx context.Context) error {
 			h.systemUserID = user.ID
 			return
 		}
-		// User not found — create
 		randBytes := make([]byte, 32)
 		rand.Read(randBytes)
 		password := hex.EncodeToString(randBytes)
@@ -728,7 +548,6 @@ func (h *ImportHandler) resolveSystemUser(ctx context.Context) error {
 			Role:     queries.UserRoleViewer,
 		})
 		if err != nil {
-			// Duplicate key — another instance created it; retry lookup
 			user, err = h.q.GetUserByUsername(ctx, "openvas-import")
 			if err != nil {
 				h.onceErr = fmt.Errorf("failed to resolve system user: %w", err)
@@ -778,7 +597,7 @@ func parsePort(portStr string) (*int32, *string) {
 }
 ```
 
-- [ ] **Step 4: Run unit tests (mapSeverity, parsePort, bad XML)**
+- [ ] **Step 4: Run unit tests**
 
 Run: `cd e:/Code/openvas-tracker && go test ./internal/handler/ -run "TestMapSeverity|TestParsePort|TestHandleOpenVAS_BadXML" -v`
 Expected: PASS
@@ -787,44 +606,40 @@ Expected: PASS
 
 ```bash
 git add internal/handler/import.go internal/handler/import_test.go
-git commit -m "feat: add OpenVAS webhook import handler with severity mapping and port parsing"
+git commit -m "feat: add OpenVAS webhook import handler"
 ```
 
-### Task 7: Wire import handler into main.go
+### Task 9: Wire import handler into main.go
 
 **Files:**
-- Modify: `cmd/openvas-tracker/main.go` — add import handler registration before `serveFrontend`
+- Modify: `cmd/openvas-tracker/main.go`
 
 - [ ] **Step 1: Add import handler registration**
 
-After the WebSocket registration block (line ~114) and before `serveFrontend(e)`, add:
+After the WebSocket block and before `serveFrontend(e)`, add:
 
 ```go
 	// OpenVAS import webhook (API-Key auth, outside JWT group)
-	if cfg.Scanner.ImportAPIKey != "" {
-		if len(cfg.Scanner.ImportAPIKey) < 32 {
-			log.Fatal("OT_SCANNER_IMPORTAPIKEY must be at least 32 characters")
+	if cfg.Import.APIKey != "" {
+		if len(cfg.Import.APIKey) < 32 {
+			log.Fatal("OT_IMPORT_APIKEY must be at least 32 characters")
 		}
-		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Scanner.ImportAPIKey), echomw.BodyLimit("10M"))
+		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("10M"))
 		handler.NewImportHandler(db).RegisterRoutes(importG)
 	}
 ```
 
-- [ ] **Step 2: Remove unused `scanner` import from main.go**
-
-The `scanner` package import was used for `scanner.NewOpenVASScanner` and `scanner.NewNmapScanner`. Since `NewNmapScanner` is still used, keep the import.
-
-- [ ] **Step 3: Verify full build**
+- [ ] **Step 2: Verify full build**
 
 Run: `cd e:/Code/openvas-tracker && go build ./cmd/openvas-tracker/`
 Expected: success
 
-- [ ] **Step 4: Run all tests**
+- [ ] **Step 3: Run all tests**
 
 Run: `cd e:/Code/openvas-tracker && go test ./...`
 Expected: all pass
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add cmd/openvas-tracker/main.go
@@ -833,9 +648,30 @@ git commit -m "feat: wire OpenVAS import webhook endpoint into main"
 
 ---
 
-## Chunk 4: Verification
+## Chunk 3: Cleanup + Verification
 
-### Task 8: End-to-end verification
+### Task 10: Remove asynq dependency from go.mod
+
+- [ ] **Step 1: Run go mod tidy**
+
+```bash
+cd e:/Code/openvas-tracker && go mod tidy
+```
+
+- [ ] **Step 2: Verify build and tests**
+
+```bash
+cd e:/Code/openvas-tracker && go build ./cmd/openvas-tracker/ && go test ./...
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add go.mod go.sum
+git commit -m "chore: remove asynq/redis dependency via go mod tidy"
+```
+
+### Task 11: End-to-end verification
 
 - [ ] **Step 1: Run full test suite**
 
@@ -849,7 +685,7 @@ Expected: binary created without errors
 
 - [ ] **Step 3: Verify no references to removed code**
 
-Run: `cd e:/Code/openvas-tracker && grep -r "NewOpenVASScanner\|OpenVASScanner\|TaskScanOpenVAS\|HandleOpenVASScan\|OpenVASPath\|openvaspath" --include="*.go" .`
-Expected: no matches (except possibly in the spec/plan docs)
+Run: `cd e:/Code/openvas-tracker && grep -rn "NewOpenVASScanner\|NmapScanner\|OpenVASScanner\|TaskScan\|HandleOpenVASScan\|HandleNmapScan\|OpenVASPath\|openvaspath\|asynq\|RedisConfig\|ScannerConfig" --include="*.go" .`
+Expected: no matches in source files
 
 - [ ] **Step 4: Final commit if any cleanup needed**
