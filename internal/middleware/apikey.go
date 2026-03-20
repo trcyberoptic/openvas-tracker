@@ -15,6 +15,9 @@ func APIKeyAuth(key string) echo.MiddlewareFunc {
 			}
 			provided := c.Request().Header.Get("X-API-Key")
 			if provided == "" {
+				provided = c.QueryParam("api_key")
+			}
+			if provided == "" {
 				return echo.NewHTTPError(http.StatusUnauthorized, "missing API key")
 			}
 			if subtle.ConstantTimeCompare([]byte(provided), []byte(key)) != 1 {
