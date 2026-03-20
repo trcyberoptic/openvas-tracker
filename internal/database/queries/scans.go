@@ -98,7 +98,7 @@ func (q *Queries) GetScan(ctx context.Context, id string) (Scan, error) {
 }
 
 func (q *Queries) ListScans(ctx context.Context, arg ListScansParams) ([]Scan, error) {
-	rows, err := q.db.QueryContext(ctx, `SELECT `+scanCols+` FROM scans WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`, arg.UserID, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, `SELECT `+scanCols+` FROM scans ORDER BY created_at DESC LIMIT ? OFFSET ?`, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

@@ -6,21 +6,21 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
+	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type ScanHandler struct {
-	q *queries.Queries
+	q     *queries.Queries
+	vulns *service.VulnerabilityService
 }
 
-func NewScanHandler(q *queries.Queries) *ScanHandler {
-	return &ScanHandler{q: q}
+func NewScanHandler(q *queries.Queries, vulns *service.VulnerabilityService) *ScanHandler {
+	return &ScanHandler{q: q, vulns: vulns}
 }
 
 func (h *ScanHandler) List(c echo.Context) error {
-	userID := middleware.GetUserID(c)
 	scans, err := h.q.ListScans(c.Request().Context(), queries.ListScansParams{
-		UserID: userID, Limit: 50, Offset: 0,
+		Limit: 50, Offset: 0,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list scans")
@@ -37,7 +37,17 @@ func (h *ScanHandler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, scan)
 }
 
+func (h *ScanHandler) Vulns(c echo.Context) error {
+	id := c.Param("id")
+	vulns, err := h.vulns.ListByScan(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list vulnerabilities")
+	}
+	return c.JSON(http.StatusOK, vulns)
+}
+
 func (h *ScanHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
+	g.GET("/:id/vulnerabilities", h.Vulns)
 }

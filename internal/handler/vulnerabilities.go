@@ -6,7 +6,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
@@ -19,8 +18,7 @@ func NewVulnHandler(vulns *service.VulnerabilityService) *VulnHandler {
 }
 
 func (h *VulnHandler) List(c echo.Context) error {
-	userID := middleware.GetUserID(c)
-	vulns, err := h.vulns.List(c.Request().Context(), userID, 100, 0)
+	vulns, err := h.vulns.List(c.Request().Context(), 100, 0)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list vulnerabilities")
 	}

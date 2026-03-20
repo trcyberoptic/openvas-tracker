@@ -1,4 +1,3 @@
-// frontend/src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Shell } from '@/components/layout/Shell'
@@ -6,6 +5,7 @@ import { Login } from '@/pages/Login'
 import { Dashboard } from '@/pages/Dashboard'
 import { Targets } from '@/pages/Targets'
 import { Scans } from '@/pages/Scans'
+import { ScanDetail } from '@/pages/ScanDetail'
 import { Vulnerabilities } from '@/pages/Vulnerabilities'
 import { Tickets } from '@/pages/Tickets'
 import { Reports } from '@/pages/Reports'
@@ -30,8 +30,9 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
-            <Route path="targets" element={<Targets />} />
+            <Route path="hosts" element={<Targets />} />
             <Route path="scans" element={<Scans />} />
+            <Route path="scans/:id" element={<ScanDetail />} />
             <Route path="vulnerabilities" element={<Vulnerabilities />} />
             <Route path="tickets" element={<Tickets />} />
             <Route path="reports" element={<Reports />} />
