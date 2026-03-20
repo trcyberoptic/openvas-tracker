@@ -22,7 +22,7 @@ func NewScheduleHandler(s *service.ScheduleService) *ScheduleHandler {
 type createScheduleRequest struct {
 	Name     string `json:"name" validate:"required"`
 	CronExpr string `json:"cron_expr" validate:"required"`
-	ScanType string `json:"scan_type" validate:"required,oneof=nmap openvas"`
+	ScanType string `json:"scan_type" validate:"required,oneof=nmap"`
 	TargetID string `json:"target_id" validate:"required,uuid"`
 }
 
