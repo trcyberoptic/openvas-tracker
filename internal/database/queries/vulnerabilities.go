@@ -282,3 +282,27 @@ func (q *Queries) DeleteVulnerability(ctx context.Context, arg DeleteVulnerabili
 	_, err := q.db.ExecContext(ctx, deleteVulnerability, arg.ID, arg.UserID)
 	return err
 }
+
+// DistinctHostsWithoutHostname returns unique affected_host values where hostname is NULL.
+func (q *Queries) DistinctHostsWithoutHostname(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, "SELECT DISTINCT affected_host FROM vulnerabilities WHERE affected_host IS NOT NULL AND affected_host != '' AND (hostname IS NULL OR hostname = '')")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var hosts []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		hosts = append(hosts, h)
+	}
+	return hosts, rows.Err()
+}
+
+// SetHostnameByIP updates hostname for all vulnerabilities with the given affected_host.
+func (q *Queries) SetHostnameByIP(ctx context.Context, ip, hostname string) error {
+	_, err := q.db.ExecContext(ctx, "UPDATE vulnerabilities SET hostname = ? WHERE affected_host = ? AND (hostname IS NULL OR hostname = '')", hostname, ip)
+	return err
+}
