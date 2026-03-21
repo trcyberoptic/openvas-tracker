@@ -257,14 +257,14 @@ type TrendPoint struct {
 func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
 	const query = `
 		SELECT s.id, s.name, s.created_at,
-			COUNT(*) as total,
-			SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END) as critical,
-			SUM(CASE WHEN t.priority = 'high' THEN 1 ELSE 0 END) as high,
-			SUM(CASE WHEN t.priority = 'medium' THEN 1 ELSE 0 END) as medium,
-			SUM(CASE WHEN t.priority = 'low' THEN 1 ELSE 0 END) as low
+			COUNT(DISTINCT CASE WHEN t.status = 'open' THEN t.id END) as total,
+			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'critical' THEN t.id END) as critical,
+			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'high' THEN t.id END) as high,
+			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'medium' THEN t.id END) as medium,
+			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'low' THEN t.id END) as low
 		FROM scans s
 		JOIN vulnerabilities v ON v.scan_id = s.id
-		JOIN tickets t ON t.vulnerability_id = v.id AND t.status = 'open'
+		LEFT JOIN tickets t ON t.vulnerability_id = v.id
 		GROUP BY s.id, s.name, s.created_at
 		ORDER BY s.created_at ASC`
 	rows, err := q.db.QueryContext(ctx, query)
