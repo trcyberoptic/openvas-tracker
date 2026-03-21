@@ -1,9 +1,10 @@
 package config
 
 import (
-	"strings"
+	"os"
+	"strconv"
 
-	"github.com/spf13/viper"
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -34,29 +35,40 @@ type ImportConfig struct {
 }
 
 func Load() (*Config, error) {
-	v := viper.New()
+	_ = godotenv.Load()
 
-	v.SetDefault("server.host", "0.0.0.0")
-	v.SetDefault("server.port", 8080)
-	v.SetDefault("database.dsn", "openvas-tracker:openvas-tracker@tcp(localhost:3306)/openvas-tracker?parseTime=true")
-	v.SetDefault("database.maxconns", 25)
-	v.SetDefault("database.minconns", 5)
-	v.SetDefault("jwt.secret", "change-me-in-production")
-	v.SetDefault("jwt.expirehours", 24)
-	v.SetDefault("import.apikey", "")
+	return &Config{
+		Server: ServerConfig{
+			Host: env("OT_SERVER_HOST", "0.0.0.0"),
+			Port: envInt("OT_SERVER_PORT", 8080),
+		},
+		Database: DatabaseConfig{
+			DSN:      env("OT_DATABASE_DSN", "openvas-tracker:openvas-tracker@tcp(localhost:3306)/openvas-tracker?parseTime=true"),
+			MaxConns: envInt("OT_DATABASE_MAXCONNS", 25),
+			MinConns: envInt("OT_DATABASE_MINCONNS", 5),
+		},
+		JWT: JWTConfig{
+			Secret:      env("OT_JWT_SECRET", "change-me-in-production"),
+			ExpireHours: envInt("OT_JWT_EXPIREHOURS", 24),
+		},
+		Import: ImportConfig{
+			APIKey: env("OT_IMPORT_APIKEY", ""),
+		},
+	}, nil
+}
 
-	v.SetEnvPrefix("OT")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
-	v.SetConfigName(".env")
-	v.SetConfigType("env")
-	v.AddConfigPath(".")
-	_ = v.ReadInConfig()
-
-	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, err
+func env(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	return &cfg, nil
+	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
 }
