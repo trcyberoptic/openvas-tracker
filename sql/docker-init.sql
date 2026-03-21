@@ -16,3 +16,4 @@ SOURCE /docker-entrypoint-initdb.d/migrations/012_create_search_indexes.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/013_add_ticket_seen_timestamps.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/014_update_ticket_statuses.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/015_add_false_positive_and_risk_expiry.up.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/016_add_vuln_hostname.up.sql;

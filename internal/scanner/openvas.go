@@ -12,6 +12,7 @@ import (
 type OpenVASResult struct {
 	Title       string
 	Host        string
+	Hostname    string
 	Port        string
 	Severity    string
 	CVSSScore   float64
@@ -51,10 +52,15 @@ type ovasResults struct {
 	Results []ovasResult `xml:"result"`
 }
 
+type ovasHost struct {
+	IP       string `xml:",chardata"`
+	Hostname string `xml:"hostname"`
+}
+
 type ovasResult struct {
-	Name        string  `xml:"name"`
-	Host        string  `xml:"host"`
-	Port        string  `xml:"port"`
+	Name        string   `xml:"name"`
+	Host        ovasHost `xml:"host"`
+	Port        string   `xml:"port"`
 	Threat      string  `xml:"threat"`
 	Severity    float64 `xml:"severity"`
 	Description string  `xml:"description"`
@@ -138,12 +144,13 @@ func ParseOpenVASXML(r io.Reader) ([]OpenVASResult, error) {
 			cve = parseTag(res.NVT.Tags, "cve")
 		}
 
-		// Clean host (GMP format may have nested elements, text content is the IP)
-		host := strings.TrimSpace(strings.Split(res.Host, "\n")[0])
+		host := strings.TrimSpace(res.Host.IP)
+		hostname := strings.TrimSpace(res.Host.Hostname)
 
 		results = append(results, OpenVASResult{
 			Title:       res.Name,
 			Host:        host,
+			Hostname:    hostname,
 			Port:        res.Port,
 			Severity:    threat,
 			CVSSScore:   cvss,

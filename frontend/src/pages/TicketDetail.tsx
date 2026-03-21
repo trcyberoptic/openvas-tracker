@@ -8,7 +8,7 @@ const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300',
 
 interface Ticket {
   id: string; title: string; description?: string; priority: string; status: string
-  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string; affected_host?: string
+  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string; affected_host?: string; hostname?: string; cve_id?: string
   first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface Comment { id: string; user_id: string; content: string; created_at: string }
@@ -128,11 +128,33 @@ export function TicketDetail() {
         </div>
       )}
 
-      {/* Linked vulnerability */}
+      {/* References */}
+      {ticket.cve_id && (
+        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
+          <h3 className="text-sm font-medium text-slate-400 mb-2">References</h3>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 w-12">CVE</span>
+              <a href={`https://nvd.nist.gov/vuln/detail/${ticket.cve_id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-sm">{ticket.cve_id}</a>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 w-12">MITRE</span>
+              <a href={`https://cve.mitre.org/cgi-bin/cvename.cgi?name=${ticket.cve_id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-sm">MITRE Entry</a>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 w-12">Search</span>
+              <a href={`https://www.google.com/search?q=${ticket.cve_id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-sm">Google {ticket.cve_id}</a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Host */}
       {ticket.affected_host && (
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
           <h3 className="text-sm font-medium text-slate-400 mb-2">Host</h3>
           <Link to="/hosts" className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
+          {ticket.hostname && <span className="text-slate-500 text-sm ml-2">({ticket.hostname})</span>}
           {alsoAffected.length > 0 && (
             <div className="mt-3 border-t border-slate-800 pt-3">
               <h4 className="text-xs text-slate-500 mb-2">Also affected ({alsoAffected.length})</h4>
