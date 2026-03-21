@@ -42,6 +42,7 @@ type Ticket struct {
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	AffectedHost    *string        `json:"affected_host"`
+	CvssScore       *float64       `json:"cvss_score"`
 }
 
 type TicketComment struct {
@@ -91,10 +92,10 @@ type CountTicketsByStatusRow struct {
 	Count  int64        `json:"count"`
 }
 
-const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host`
+const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.cvss_score`
 
 func scanTicket(row interface{ Scan(...any) error }, i *Ticket) error {
-	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost)
+	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost, &i.CvssScore)
 }
 
 func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
@@ -223,7 +224,7 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 }
 
 // FindTicketByFingerprint finds an existing ticket matching a vulnerability fingerprint (host + CVE or host + title).
-const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host`
+const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.cvss_score`
 
 func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
 	var t Ticket
