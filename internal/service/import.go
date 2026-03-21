@@ -207,6 +207,18 @@ func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r 
 		return false
 	}
 
+	// Check if a risk accept rule matches this finding
+	fp := vulnFingerprint(r.CVE, r.Title)
+	if rule, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
+		q.UpdateTicketStatus(ctx, queries.UpdateTicketStatusParams{ID: ticketID, Status: queries.TicketStatusRiskAccepted})
+		if rule.ExpiresAt != nil {
+			q.SetRiskAcceptedUntil(ctx, ticketID, rule.ExpiresAt)
+		}
+		newStatus := "risk_accepted"
+		note := fmt.Sprintf("Auto risk-accepted by rule: %s", rule.Reason)
+		logActivity(ctx, q, ticketID, "status_changed", nil, &newStatus, "Automatic", &note)
+	}
+
 	if err := q.TouchTicket(ctx, queries.TouchTicketParams{ID: ticketID, VulnerabilityID: vulnID}); err != nil {
 		log.Printf("import: failed to touch new ticket %s: %v", ticketID, err)
 	}
@@ -307,6 +319,18 @@ func resolveHostname(ip, xmlHostname string) string {
 		return ""
 	}
 	return strings.TrimSuffix(names[0], ".")
+}
+
+// VulnFingerprint returns the canonical fingerprint for a vulnerability: CVE if available, otherwise "title:" + title.
+func VulnFingerprint(cve, title string) string {
+	if cve != "" && cve != "NOCVE" {
+		return cve
+	}
+	return "title:" + title
+}
+
+func vulnFingerprint(cve, title string) string {
+	return VulnFingerprint(cve, title)
 }
 
 func strPtr(s string) *string {

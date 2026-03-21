@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -284,6 +285,68 @@ func (h *TicketHandler) BulkUpdate(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]int{"updated": updated})
 }
 
+type createRiskRuleRequest struct {
+	Scope   string  `json:"scope" validate:"required,oneof=this_host all_hosts"`
+	Reason  string  `json:"reason" validate:"required"`
+	Expires *string `json:"expires"` // YYYY-MM-DD
+}
+
+func (h *TicketHandler) CreateRiskRule(c echo.Context) error {
+	id := c.Param("id")
+	var req createRiskRuleRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+
+	ticket, err := h.tickets.Get(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "ticket not found")
+	}
+
+	// Build fingerprint from the ticket's vulnerability
+	fp := service.VulnFingerprint(
+		func() string { if ticket.CveID != nil { return *ticket.CveID }; return "" }(),
+		ticket.Title,
+	)
+
+	hostPattern := "*"
+	if req.Scope == "this_host" && ticket.AffectedHost != nil {
+		hostPattern = *ticket.AffectedHost
+	}
+
+	var expiresAt *time.Time
+	if req.Expires != nil {
+		t, err := time.Parse("2006-01-02", *req.Expires)
+		if err == nil {
+			expiresAt = &t
+		}
+	}
+
+	userID := middleware.GetUserID(c)
+	err = h.q.CreateRiskAcceptRule(c.Request().Context(), queries.CreateRiskAcceptRuleParams{
+		ID: uuid.New().String(), Fingerprint: fp, HostPattern: hostPattern,
+		Reason: req.Reason, ExpiresAt: expiresAt, CreatedBy: userID,
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create rule")
+	}
+
+	// Also set this ticket to risk_accepted
+	old := string(ticket.Status)
+	h.tickets.UpdateStatus(c.Request().Context(), id, "risk_accepted")
+	if expiresAt != nil {
+		h.q.SetRiskAcceptedUntil(c.Request().Context(), id, expiresAt)
+	}
+	newStatus := "risk_accepted"
+	note := fmt.Sprintf("Risk accepted via rule (%s): %s", req.Scope, req.Reason)
+	h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
+		ID: uuid.New().String(), TicketID: id, Action: "status_changed",
+		OldValue: &old, NewValue: &newStatus, ChangedBy: userID, Note: &note,
+	})
+
+	return c.JSON(http.StatusCreated, map[string]string{"status": "ok", "scope": req.Scope, "host_pattern": hostPattern})
+}
+
 func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
@@ -294,5 +357,6 @@ func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
 	g.GET("/:id/also-affected", h.AlsoAffected)
+	g.POST("/:id/risk-rule", h.CreateRiskRule)
 	g.POST("/bulk", h.BulkUpdate)
 }

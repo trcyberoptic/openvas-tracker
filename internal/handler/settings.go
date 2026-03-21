@@ -170,6 +170,25 @@ func (h *SettingsHandler) currentLDAPConfig() config.LDAPConfig {
 	return cfg.LDAP
 }
 
+func (h *SettingsHandler) ListRiskRules(c echo.Context) error {
+	rules, err := h.q.ListRiskAcceptRules(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list rules")
+	}
+	if rules == nil {
+		rules = []queries.RiskAcceptRule{}
+	}
+	return c.JSON(http.StatusOK, rules)
+}
+
+func (h *SettingsHandler) DeleteRiskRule(c echo.Context) error {
+	id := c.Param("id")
+	if err := h.q.DeleteRiskAcceptRule(c.Request().Context(), id); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete rule")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/setup", h.GetSetup)
 	g.GET("/users", h.ListUsers)
@@ -177,4 +196,6 @@ func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.PUT("/env", h.UpdateEnvConfig)
 	g.PUT("/env/batch", h.UpdateEnvBatch)
 	g.POST("/ldap/test", h.TestLDAP)
+	g.GET("/risk-rules", h.ListRiskRules)
+	g.DELETE("/risk-rules/:id", h.DeleteRiskRule)
 }

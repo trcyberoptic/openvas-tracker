@@ -21,6 +21,10 @@ export function TicketDetail() {
   const qc = useQueryClient()
   const [comment, setComment] = useState('')
   const [riskUntil, setRiskUntil] = useState('')
+  const [ruleReason, setRuleReason] = useState('')
+  const [ruleScope, setRuleScope] = useState<'this_host' | 'all_hosts'>('this_host')
+  const [ruleExpires, setRuleExpires] = useState('')
+  const [showRuleForm, setShowRuleForm] = useState(false)
 
   const { data: ticket } = useQuery({ queryKey: ['ticket', id], queryFn: () => api.get<Ticket>(`/tickets/${id}`) })
   const { data: comments = [] } = useQuery({ queryKey: ['ticket-comments', id], queryFn: () => api.get<Comment[]>(`/tickets/${id}/comments`) })
@@ -49,6 +53,12 @@ export function TicketDetail() {
     onSuccess: () => { setComment(''); qc.invalidateQueries({ queryKey: ['ticket-comments', id] }); qc.invalidateQueries({ queryKey: ['ticket-activity', id] }) },
   })
 
+  const riskRuleMut = useMutation({
+    mutationFn: (body: { scope: string; reason: string; expires?: string }) =>
+      api.post(`/tickets/${id}/risk-rule`, body),
+    onSuccess: () => { setShowRuleForm(false); setRuleReason(''); invalidateTicket() },
+  })
+
   if (!ticket) return null
 
   const assignedUser = users.find(u => u.id === ticket.assigned_to)
@@ -63,19 +73,42 @@ export function TicketDetail() {
           <h1 className="text-2xl font-bold mb-2">{ticket.title}</h1>
           <div className="flex items-center gap-3">
             <span className={`px-2 py-1 rounded text-xs font-medium text-white ${PRIORITY_COLORS[ticket.priority]}`}>{ticket.priority}</span>
-            <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[ticket.status] || 'bg-slate-700 text-slate-300'}`}>{ticket.status.replace('_', ' ')}</span>
+            <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[ticket.status] || 'bg-slate-700 text-slate-300'}`}>{ticket.status.replace(/_/g, ' ')}</span>
             {ticket.first_seen_at && <span className="text-slate-500 text-xs">First seen: {new Date(ticket.first_seen_at).toLocaleString()}</span>}
             {ticket.last_seen_at && <span className="text-slate-500 text-xs">Last seen: {new Date(ticket.last_seen_at).toLocaleString()}</span>}
           </div>
         </div>
       </div>
 
+      {/* Host + Also Affected — TOP */}
+      {ticket.affected_host && (
+        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
+          <h3 className="text-sm font-medium text-slate-400 mb-2">Affected Host</h3>
+          <Link to="/hosts" className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
+          {ticket.hostname && <span className="text-slate-500 text-sm ml-2">({ticket.hostname})</span>}
+          {alsoAffected.length > 0 && (
+            <div className="mt-3 border-t border-slate-800 pt-3">
+              <h4 className="text-xs text-slate-500 mb-2">Also affected ({alsoAffected.length})</h4>
+              <div className="flex flex-wrap gap-2">
+                {alsoAffected.map(a => (
+                  <Link key={a.ticket_id} to={`/tickets/${a.ticket_id}`}
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">
+                    <span className="font-mono text-slate-300">{a.host}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[a.status] || 'bg-slate-700 text-slate-300'}`}>{a.status.replace(/_/g, ' ')}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 mb-6">
         {/* Status actions */}
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
           <h3 className="text-sm font-medium text-slate-400 mb-3">Change Status</h3>
           <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {ticket.status !== 'open' && ticket.status !== 'false_positive' && (
                 <button onClick={() => statusMut.mutate({ status: 'open' })} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Reopen</button>
               )}
@@ -91,11 +124,41 @@ export function TicketDetail() {
               )}
             </div>
             {ticket.status === 'open' && (
-              <div className="flex items-center gap-2 mt-1">
-                <label className="text-xs text-slate-500">Risk accepted until:</label>
-                <input type="date" value={riskUntil} onChange={e => setRiskUntil(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-blue-500" />
-              </div>
+              <>
+                <div className="flex items-center gap-2 mt-1">
+                  <label className="text-xs text-slate-500">Risk until:</label>
+                  <input type="date" value={riskUntil} onChange={e => setRiskUntil(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-blue-500" />
+                </div>
+                <button onClick={() => setShowRuleForm(!showRuleForm)}
+                  className="text-xs text-yellow-400 hover:text-yellow-300 text-left mt-1">
+                  {showRuleForm ? 'Cancel rule' : '+ Create auto-accept rule for future imports'}
+                </button>
+                {showRuleForm && (
+                  <div className="bg-slate-800/50 rounded p-3 space-y-2 mt-1">
+                    <div className="flex gap-2">
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        <input type="radio" checked={ruleScope === 'this_host'} onChange={() => setRuleScope('this_host')} /> This host only
+                      </label>
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        <input type="radio" checked={ruleScope === 'all_hosts'} onChange={() => setRuleScope('all_hosts')} /> All hosts
+                      </label>
+                    </div>
+                    <input type="text" placeholder="Reason (required)" value={ruleReason} onChange={e => setRuleReason(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 placeholder-slate-500" />
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-500">Expires:</label>
+                      <input type="date" value={ruleExpires} onChange={e => setRuleExpires(e.target.value)}
+                        className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300" />
+                    </div>
+                    <button onClick={() => ruleReason && riskRuleMut.mutate({ scope: ruleScope, reason: ruleReason, expires: ruleExpires || undefined })}
+                      disabled={!ruleReason || riskRuleMut.isPending}
+                      className="px-3 py-1 rounded text-xs bg-yellow-900 text-yellow-300 hover:bg-yellow-800 disabled:opacity-50">
+                      Create Rule &amp; Accept Risk
+                    </button>
+                  </div>
+                )}
+              </>
             )}
             {ticket.status === 'risk_accepted' && ticket.risk_accepted_until && (
               <p className="text-xs text-yellow-400 mt-1">Expires: {new Date(ticket.risk_accepted_until).toLocaleDateString()}</p>
@@ -119,14 +182,6 @@ export function TicketDetail() {
           {assignedUser && <p className="text-xs text-slate-500 mt-1">{assignedUser.email}</p>}
         </div>
       </div>
-
-      {/* Description */}
-      {ticket.description && (
-        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">Description</h3>
-          <p className="text-slate-300 whitespace-pre-wrap text-sm">{ticket.description}</p>
-        </div>
-      )}
 
       {/* References */}
       <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
@@ -158,26 +213,11 @@ export function TicketDetail() {
         )}
       </div>
 
-      {/* Host */}
-      {ticket.affected_host && (
+      {/* Description */}
+      {ticket.description && (
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">Host</h3>
-          <Link to="/hosts" className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
-          {ticket.hostname && <span className="text-slate-500 text-sm ml-2">({ticket.hostname})</span>}
-          {alsoAffected.length > 0 && (
-            <div className="mt-3 border-t border-slate-800 pt-3">
-              <h4 className="text-xs text-slate-500 mb-2">Also affected ({alsoAffected.length})</h4>
-              <div className="flex flex-wrap gap-2">
-                {alsoAffected.map(a => (
-                  <Link key={a.ticket_id} to={`/tickets/${a.ticket_id}`}
-                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">
-                    <span className="font-mono text-slate-300">{a.host}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[a.status] || 'bg-slate-700 text-slate-300'}`}>{a.status.replace(/_/g, ' ')}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
+          <h3 className="text-sm font-medium text-slate-400 mb-2">Description</h3>
+          <p className="text-slate-300 whitespace-pre-wrap text-sm">{ticket.description}</p>
         </div>
       )}
 
@@ -197,19 +237,13 @@ export function TicketDetail() {
           {comments.length === 0 && <p className="text-slate-500 text-sm">No notes yet</p>}
         </div>
         <div className="flex gap-2">
-          <input
-            type="text"
-            value={comment}
-            onChange={e => setComment(e.target.value)}
+          <input type="text" value={comment} onChange={e => setComment(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && comment.trim() && commentMut.mutate(comment.trim())}
             placeholder="Add a note..."
-            className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
-          />
-          <button
-            onClick={() => comment.trim() && commentMut.mutate(comment.trim())}
+            className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+          <button onClick={() => comment.trim() && commentMut.mutate(comment.trim())}
             className="px-4 py-2 rounded text-sm bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
-            disabled={!comment.trim()}
-          >Add</button>
+            disabled={!comment.trim()}>Add</button>
         </div>
       </div>
 
@@ -224,7 +258,7 @@ export function TicketDetail() {
                 <span className="font-medium text-slate-300">
                   {a.changed_by === 'Automatic' ? 'Automatic' : users.find(u => u.id === a.changed_by)?.username || a.changed_by.slice(0, 8) + '...'}
                 </span>
-                {' '}{a.action.replace('_', ' ')}
+                {' '}{a.action.replace(/_/g, ' ')}
                 {a.old_value && a.new_value && (
                   <> from <span className="text-slate-300">{users.find(u => u.id === a.old_value)?.username || a.old_value}</span> to <span className="text-slate-300">{users.find(u => u.id === a.new_value)?.username || a.new_value}</span></>
                 )}
