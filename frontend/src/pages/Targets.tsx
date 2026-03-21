@@ -1,22 +1,30 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
 
-const BADGE_COLORS: Record<string, string> = {
-  critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
-}
+const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300' }
+const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
 
 interface HostSummary {
   host: string; hostname?: string; vuln_count: number; critical_count: number; high_count: number; max_cvss?: number
   open_tickets: number; fixed_tickets: number; risk_accepted_tickets: number; false_positive_tickets: number
 }
-interface Vuln { id: string; severity: string; title: string; cve_id?: string; cvss_score?: number; affected_port?: number; protocol?: string; solution?: string; status: string }
+interface HostTicket {
+  id: string; title: string; status: string; priority: string; cvss_score?: number; cve_id?: string
+  first_seen_at?: string; last_seen_at?: string
+}
 
 function HostRow({ h }: { h: HostSummary }) {
   const [open, setOpen] = useState(false)
-  const { data: vulns = [] } = useQuery({ queryKey: ['host-vulns', h.host], queryFn: () => api.get<Vuln[]>(`/hosts/${h.host}/vulnerabilities`), enabled: open })
+  const navigate = useNavigate()
+  const { data: tickets = [] } = useQuery({
+    queryKey: ['host-tickets', h.host],
+    queryFn: () => api.get<HostTicket[]>(`/hosts/${h.host}/tickets`),
+    enabled: open,
+  })
   return (
     <>
       <tr onClick={() => setOpen(!open)} className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer">
@@ -37,19 +45,24 @@ function HostRow({ h }: { h: HostSummary }) {
           {h.open_tickets === 0 && h.fixed_tickets === 0 && h.risk_accepted_tickets === 0 && h.false_positive_tickets === 0 && <span className="text-slate-500">—</span>}
         </td>
       </tr>
-      {open && vulns.map(v => (
-        <tr key={v.id} className="bg-slate-800/20 border-b border-slate-800/30">
+      {open && tickets.map(t => (
+        <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)} className="bg-slate-800/20 border-b border-slate-800/30 hover:bg-slate-800/40 cursor-pointer">
           <td className="p-3 pl-10">
-            <span className={`px-2 py-1 rounded text-xs font-medium text-white ${BADGE_COLORS[v.severity] || 'bg-gray-600'}`}>{v.severity}</span>
-            <span className="ml-3">{v.title}</span>
+            <span className={`px-2 py-1 rounded text-xs font-medium text-white ${PRIORITY_COLORS[t.priority] || 'bg-gray-600'}`}>{t.priority}</span>
+            <span className="ml-3">{t.title}</span>
           </td>
-          <td className="p-3 text-slate-400">{v.cve_id || '-'}</td>
-          <td className="p-3">{v.cvss_score ?? '-'}</td>
-          <td className="p-3 text-slate-400">{v.affected_port ? `${v.affected_port}/${v.protocol || ''}` : '-'}</td>
-          <td className="p-3 text-slate-400 text-xs max-w-xs truncate">{v.solution || '-'}</td>
+          <td className="p-3 text-slate-400">{t.cve_id || '-'}</td>
+          <td className="p-3">{t.cvss_score?.toFixed(1) ?? '-'}</td>
+          <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[t.status] || 'bg-slate-700 text-slate-300'}`}>{t.status.replace(/_/g, ' ')}</span></td>
+          <td className="p-3 text-slate-400 text-xs">{t.last_seen_at ? new Date(t.last_seen_at).toLocaleDateString() : '-'}</td>
           <td></td>
         </tr>
       ))}
+      {open && tickets.length === 0 && (
+        <tr className="bg-slate-800/20 border-b border-slate-800/30">
+          <td colSpan={6} className="p-3 pl-10 text-slate-500 text-sm">No tickets for this host</td>
+        </tr>
+      )}
     </>
   )
 }
