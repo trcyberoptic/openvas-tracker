@@ -198,6 +198,28 @@ func (q *Queries) CountTicketsByStatus(ctx context.Context, userID string) ([]Co
 	return items, rows.Err()
 }
 
+type OpenTicketsByPriorityRow struct {
+	Priority string `json:"priority"`
+	Count    int64  `json:"count"`
+}
+
+func (q *Queries) OpenTicketsByPriority(ctx context.Context) ([]OpenTicketsByPriorityRow, error) {
+	rows, err := q.db.QueryContext(ctx, `SELECT priority, COUNT(*) as count FROM tickets WHERE status = 'open' GROUP BY priority`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OpenTicketsByPriorityRow
+	for rows.Next() {
+		var i OpenTicketsByPriorityRow
+		if err := rows.Scan(&i.Priority, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
 type DashboardTicketStatsRow struct {
 	MyTickets         int64 `json:"my_tickets"`
 	UnassignedTickets int64 `json:"unassigned_tickets"`

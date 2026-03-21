@@ -37,16 +37,16 @@ func (h *DashboardHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
 
-	vulnCounts, err := h.vulns.CountBySeverity(ctx)
+	priorityCounts, err := h.q.OpenTicketsByPriority(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load dashboard")
 	}
 
 	var sevCounts []severityCount
-	for _, vc := range vulnCounts {
+	for _, pc := range priorityCounts {
 		sevCounts = append(sevCounts, severityCount{
-			Severity: string(vc.Severity),
-			Count:    vc.Count,
+			Severity: pc.Priority,
+			Count:    pc.Count,
 		})
 	}
 
