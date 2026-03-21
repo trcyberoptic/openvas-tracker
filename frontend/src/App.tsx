@@ -13,6 +13,7 @@ import { TicketDetail } from '@/pages/TicketDetail'
 import { Reports } from '@/pages/Reports'
 import { Teams } from '@/pages/Teams'
 import { Settings } from '@/pages/Settings'
+import { RiskRules } from '@/pages/RiskRules'
 import { NotFound } from '@/pages/NotFound'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="tickets/:id" element={<TicketDetail />} />
             <Route path="reports" element={<Reports />} />
             <Route path="teams" element={<Teams />} />
+            <Route path="risk-rules" element={<RiskRules />} />
             <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<NotFound />} />

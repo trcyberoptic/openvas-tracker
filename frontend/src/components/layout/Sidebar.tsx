@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Scan, GitCompare, Ticket, User, Settings } from 'lucide-react'
+import { LayoutDashboard, Scan, GitCompare, Ticket, User, ShieldCheck, Settings } from 'lucide-react'
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -7,6 +7,7 @@ const links = [
   { to: '/tickets', icon: Ticket, label: 'All Tickets' },
   { to: '/scans', icon: Scan, label: 'Scans' },
   { to: '/scans/diff', icon: GitCompare, label: 'Scan Diff' },
+  { to: '/risk-rules', icon: ShieldCheck, label: 'Auto-Accept Rules' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
