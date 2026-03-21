@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -77,7 +78,11 @@ func main() {
 	e.Use(echomw.Logger())
 	e.Use(echomw.Recover())
 	e.Use(mw.SecurityHeaders())
-	e.Use(echomw.BodyLimit("1M")) // global body limit
+	// Global body limit — import endpoint uses a skipper to allow larger uploads
+	e.Use(echomw.BodyLimitWithConfig(echomw.BodyLimitConfig{
+		Limit:   "5M",
+		Skipper: func(c echo.Context) bool { return strings.HasPrefix(c.Path(), "/api/import") },
+	}))
 	rl := mw.NewRateLimiter(100, time.Minute)
 	e.Use(rl.Middleware())
 
@@ -137,7 +142,7 @@ func main() {
 			log.Fatal("OT_IMPORT_APIKEY must be at least 32 characters")
 		}
 		importSvc := service.NewImportService(db)
-		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("10M"))
+		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("50M"))
 		handler.NewImportHandler(importSvc).RegisterRoutes(importG)
 	}
 
