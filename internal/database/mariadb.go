@@ -33,6 +33,7 @@ func NewPool(cfg PoolConfig) (*sql.DB, error) {
 	db.SetMaxOpenConns(cfg.MaxConns)
 	db.SetMaxIdleConns(cfg.MinConns)
 	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(3 * time.Minute)
 
 	if err := db.Ping(); err != nil {
 		db.Close()

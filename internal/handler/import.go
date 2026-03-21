@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log"
 	"os/exec"
 	"net/http"
@@ -24,23 +23,20 @@ import (
 )
 
 type ImportHandler struct {
+	db           *sql.DB
 	q            *queries.Queries
 	systemUserID string
-	once         sync.Once
-	onceErr      error
+	mu           sync.Mutex
+	initDone     bool
+	initErr      error
 }
 
 func NewImportHandler(db *sql.DB) *ImportHandler {
-	return &ImportHandler{q: queries.New(db)}
+	return &ImportHandler{db: db, q: queries.New(db)}
 }
 
 func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
-	body, err := io.ReadAll(c.Request().Body)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "failed to read request body")
-	}
-
-	results, err := scanner.ParseOpenVASXML(strings.NewReader(string(body)))
+	results, err := scanner.ParseOpenVASXML(c.Request().Body)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse OpenVAS XML")
 	}
@@ -56,7 +52,14 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	now := time.Now()
 	scanID := uuid.New().String()
 
-	scan, err := h.q.CreateScan(ctx, queries.CreateScanParams{
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction")
+	}
+	defer tx.Rollback()
+	tq := queries.New(tx)
+
+	scan, err := tq.CreateScan(ctx, queries.CreateScanParams{
 		ID:       scanID,
 		Name:     fmt.Sprintf("OpenVAS Import %s", now.Format("2006-01-02 15:04:05")),
 		ScanType: queries.ScanTypeOpenvas,
@@ -67,13 +70,11 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create scan record")
 	}
 
-	rawXML := string(body)
-	if _, err := h.q.UpdateScanStatus(ctx, queries.UpdateScanStatusParams{
+	if _, err := tq.UpdateScanStatus(ctx, queries.UpdateScanStatusParams{
 		ID:          scan.ID,
 		Status:      queries.ScanStatusCompleted,
 		StartedAt:   &now,
 		CompletedAt: &now,
-		RawOutput:   &rawXML,
 	}); err != nil {
 		log.Printf("import: failed to update scan status: %v", err)
 	}
@@ -115,7 +116,7 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		}
 
 		vulnID := uuid.New().String()
-		_, err := h.q.CreateVulnerability(ctx, queries.CreateVulnerabilityParams{
+		_, err := tq.CreateVulnerability(ctx, queries.CreateVulnerabilityParams{
 			ID:             vulnID,
 			ScanID:         scan.ID,
 			UserID:         h.systemUserID,
@@ -138,7 +139,7 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		imported++
 
 		// Auto-ticket logic
-		created, reopened := h.processTicket(ctx, r, vulnID, severity, now)
+		created, reopened := h.processTicket(ctx, tq, r, vulnID, severity, now)
 		if created {
 			ticketsCreated++
 		}
@@ -148,10 +149,14 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	}
 
 	// Case 4: reopen expired risk_accepted tickets
-	h.reopenExpiredRiskAccepted(ctx)
+	h.reopenExpiredRiskAccepted(ctx, tq)
 
 	// Case 5: auto-resolve open tickets whose findings are NOT in this scan
-	autoResolved := h.autoResolveStale(ctx, scan.ID)
+	autoResolved := h.autoResolveStale(ctx, tq, scan.ID)
+
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit import")
+	}
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"scan_id":                  scan.ID,
@@ -163,15 +168,15 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	})
 }
 
-func (h *ImportHandler) processTicket(ctx context.Context, r scanner.OpenVASResult, vulnID, severity string, now time.Time) (created, reopened bool) {
+func (h *ImportHandler) processTicket(ctx context.Context, q *queries.Queries, r scanner.OpenVASResult, vulnID, severity string, now time.Time) (created, reopened bool) {
 	if r.Host == "" {
 		return false, false
 	}
 
-	existing, err := h.q.FindTicketByFingerprint(ctx, r.Host, r.CVE, r.Title)
+	existing, err := q.FindTicketByFingerprint(ctx, r.Host, r.CVE, r.Title)
 	if err != nil {
 		// No existing ticket → create new one (Case 1)
-		return h.createTicket(ctx, r, vulnID, severity, now), false
+		return h.createTicket(ctx, q, r, vulnID, severity, now), false
 	}
 
 	oldStatus := string(existing.Status)
@@ -183,29 +188,30 @@ func (h *ImportHandler) processTicket(ctx context.Context, r scanner.OpenVASResu
 
 	case queries.TicketStatusFixed, queries.TicketStatusRiskAccepted:
 		// Case 2: reopen
-		err := h.q.ReopenTicket(ctx, queries.ReopenTicketParams{
+		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
 			ID: existing.ID, VulnerabilityID: vulnID,
-		})
-		if err != nil {
+		}); err != nil {
 			return false, false
 		}
 		newStatus := "open"
 		note := fmt.Sprintf("Finding reappeared in scan — reopened. CVE: %s, Host: %s", r.CVE, r.Host)
-		h.logActivity(ctx, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		h.logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 		return false, true
 
 	default:
 		// Case 3: ticket still open — touch last_seen_at
-		h.q.TouchTicket(ctx, queries.TouchTicketParams{
+		if err := q.TouchTicket(ctx, queries.TouchTicketParams{
 			ID: existing.ID, VulnerabilityID: vulnID,
-		})
+		}); err != nil {
+			log.Printf("import: failed to touch ticket %s: %v", existing.ID, err)
+		}
 		note := fmt.Sprintf("Finding still present in scan. CVE: %s, Host: %s", r.CVE, r.Host)
-		h.logActivity(ctx, existing.ID, "still_present", nil, nil, "Automatic", &note)
+		h.logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
 		return false, false
 	}
 }
 
-func (h *ImportHandler) createTicket(ctx context.Context, r scanner.OpenVASResult, vulnID, severity string, now time.Time) bool {
+func (h *ImportHandler) createTicket(ctx context.Context, q *queries.Queries, r scanner.OpenVASResult, vulnID, severity string, now time.Time) bool {
 	priority := mapSeverityToPriority(severity)
 	title := fmt.Sprintf("[%s] %s — %s", strings.ToUpper(severity), r.Title, r.Host)
 	var desc *string
@@ -215,7 +221,7 @@ func (h *ImportHandler) createTicket(ctx context.Context, r scanner.OpenVASResul
 	}
 
 	ticketID := uuid.New().String()
-	_, err := h.q.CreateTicket(ctx, queries.CreateTicketParams{
+	_, err := q.CreateTicket(ctx, queries.CreateTicketParams{
 		ID:              ticketID,
 		Title:           title,
 		Description:     desc,
@@ -227,17 +233,18 @@ func (h *ImportHandler) createTicket(ctx context.Context, r scanner.OpenVASResul
 		return false
 	}
 
-	// Set first_seen_at and last_seen_at
-	h.q.TouchTicket(ctx, queries.TouchTicketParams{ID: ticketID, VulnerabilityID: vulnID})
+	if err := q.TouchTicket(ctx, queries.TouchTicketParams{ID: ticketID, VulnerabilityID: vulnID}); err != nil {
+		log.Printf("import: failed to touch new ticket %s: %v", ticketID, err)
+	}
 
 	newStatus := "open"
 	note := fmt.Sprintf("Ticket created from OpenVAS import. CVE: %s, Host: %s, CVSS: %.1f", r.CVE, r.Host, r.CVSSScore)
-	h.logActivity(ctx, ticketID, "created", nil, &newStatus, "Automatic", &note)
+	h.logActivity(ctx, q, ticketID, "created", nil, &newStatus, "Automatic", &note)
 	return true
 }
 
-func (h *ImportHandler) reopenExpiredRiskAccepted(ctx context.Context) {
-	reopened, err := h.q.ReopenExpiredRiskAccepted(ctx)
+func (h *ImportHandler) reopenExpiredRiskAccepted(ctx context.Context, q *queries.Queries) {
+	reopened, err := q.ReopenExpiredRiskAccepted(ctx)
 	if err != nil {
 		log.Printf("reopen expired risk_accepted error: %v", err)
 		return
@@ -246,12 +253,12 @@ func (h *ImportHandler) reopenExpiredRiskAccepted(ctx context.Context) {
 		oldStatus := "risk_accepted"
 		newStatus := "open"
 		note := "Risk acceptance expired — ticket reopened"
-		h.logActivity(ctx, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		h.logActivity(ctx, q, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 	}
 }
 
-func (h *ImportHandler) autoResolveStale(ctx context.Context, scanID string) int {
-	resolved, err := h.q.AutoResolveStaleTickets(ctx, scanID)
+func (h *ImportHandler) autoResolveStale(ctx context.Context, q *queries.Queries, scanID string) int {
+	resolved, err := q.AutoResolveStaleTickets(ctx, scanID)
 	if err != nil {
 		log.Printf("auto-resolve error: %v", err)
 		return 0
@@ -260,13 +267,13 @@ func (h *ImportHandler) autoResolveStale(ctx context.Context, scanID string) int
 		oldStatus := "open"
 		newStatus := "fixed"
 		note := "Finding not present in latest scan — auto-fixed"
-		h.logActivity(ctx, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		h.logActivity(ctx, q, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 	}
 	return len(resolved)
 }
 
-func (h *ImportHandler) logActivity(ctx context.Context, ticketID, action string, oldVal, newVal *string, changedBy string, note *string) {
-	h.q.LogTicketActivity(ctx, queries.LogTicketActivityParams{
+func (h *ImportHandler) logActivity(ctx context.Context, q *queries.Queries, ticketID, action string, oldVal, newVal *string, changedBy string, note *string) {
+	q.LogTicketActivity(ctx, queries.LogTicketActivityParams{
 		ID:        uuid.New().String(),
 		TicketID:  ticketID,
 		Action:    action,
@@ -278,41 +285,52 @@ func (h *ImportHandler) logActivity(ctx context.Context, ticketID, action string
 }
 
 func (h *ImportHandler) resolveSystemUser(ctx context.Context) error {
-	h.once.Do(func() {
-		user, err := h.q.GetUserByUsername(ctx, "openvas-import")
-		if err == nil {
-			h.systemUserID = user.ID
-			return
-		}
-		randBytes := make([]byte, 32)
-		rand.Read(randBytes)
-		password := hex.EncodeToString(randBytes)
-		hash, err := auth.HashPassword(password)
-		if err != nil {
-			h.onceErr = fmt.Errorf("failed to hash password: %w", err)
-			return
-		}
-		user, err = h.q.CreateUser(ctx, queries.CreateUserParams{
-			ID:       uuid.New().String(),
-			Email:    "openvas-import@system.local",
-			Username: "openvas-import",
-			Password: hash,
-			Role:     queries.UserRoleViewer,
-		})
-		if err != nil {
-			user, err = h.q.GetUserByUsername(ctx, "openvas-import")
-			if err != nil {
-				h.onceErr = fmt.Errorf("failed to resolve system user: %w", err)
-				return
-			}
-		}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.initDone {
+		return h.initErr
+	}
+
+	user, err := h.q.GetUserByUsername(ctx, "openvas-import")
+	if err == nil {
 		h.systemUserID = user.ID
+		h.initDone = true
+		return nil
+	}
+
+	randBytes := make([]byte, 32)
+	if _, err := rand.Read(randBytes); err != nil {
+		return fmt.Errorf("failed to generate random password: %w", err)
+	}
+	password := hex.EncodeToString(randBytes)
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	user, err = h.q.CreateUser(ctx, queries.CreateUserParams{
+		ID:       uuid.New().String(),
+		Email:    "openvas-import@system.local",
+		Username: "openvas-import",
+		Password: hash,
+		Role:     queries.UserRoleViewer,
 	})
-	return h.onceErr
+	if err != nil {
+		user, err = h.q.GetUserByUsername(ctx, "openvas-import")
+		if err != nil {
+			return fmt.Errorf("failed to resolve system user: %w", err)
+		}
+	}
+
+	h.systemUserID = user.ID
+	h.initDone = true
+	return nil
 }
 
 func (h *ImportHandler) TriggerFetch(c echo.Context) error {
-	cmd := exec.Command("sudo", "/usr/local/bin/openvas-tracker-fetch-latest")
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 120*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sudo", "/usr/local/bin/openvas-tracker-fetch-latest")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("fetch-latest error: %v: %s", err, out)

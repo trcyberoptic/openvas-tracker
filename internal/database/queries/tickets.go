@@ -6,6 +6,7 @@ package queries
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -248,7 +249,7 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 }
 
 // FindTicketByFingerprint finds an existing ticket matching a vulnerability fingerprint (host + CVE or host + title).
-const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.cvss_score`
+const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.cvss_score`
 
 func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
 	var t Ticket
@@ -294,14 +295,41 @@ func (q *Queries) TouchTicket(ctx context.Context, arg TouchTicketParams) error 
 }
 
 // AutoResolveStaleTickets resolves open tickets whose findings were not seen in the given scan.
+// Uses SELECT-then-UPDATE to avoid TOCTOU race with the 5-second window.
 func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
-	const query = `UPDATE tickets SET status = 'fixed', resolved_at = NOW(), updated_at = NOW() WHERE status = 'open' AND vulnerability_id IS NOT NULL AND vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`
-	_, err := q.db.ExecContext(ctx, query, scanID)
+	// Step 1: find IDs to resolve
+	idRows, err := q.db.QueryContext(ctx, `SELECT t.id FROM tickets t WHERE t.status = 'open' AND t.vulnerability_id IS NOT NULL AND t.vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`, scanID)
 	if err != nil {
 		return nil, err
 	}
-	// Return the just-resolved tickets for activity logging
-	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'fixed' AND t.resolved_at >= NOW() - INTERVAL 5 SECOND AND t.updated_at >= NOW() - INTERVAL 5 SECOND`)
+	var ids []string
+	for idRows.Next() {
+		var id string
+		if err := idRows.Scan(&id); err != nil {
+			idRows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	idRows.Close()
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Step 2: update those specific IDs
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	_, err = q.db.ExecContext(ctx, `UPDATE tickets SET status = 'fixed', resolved_at = NOW(), updated_at = NOW() WHERE id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 3: return the resolved tickets
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -319,11 +347,37 @@ func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([
 
 // ReopenExpiredRiskAccepted reopens risk_accepted tickets whose expiry date has passed.
 func (q *Queries) ReopenExpiredRiskAccepted(ctx context.Context) ([]Ticket, error) {
-	_, err := q.db.ExecContext(ctx, `UPDATE tickets SET status = 'open', risk_accepted_until = NULL, updated_at = NOW() WHERE status = 'risk_accepted' AND risk_accepted_until IS NOT NULL AND risk_accepted_until < CURDATE()`)
+	// Step 1: find IDs to reopen
+	idRows, err := q.db.QueryContext(ctx, `SELECT id FROM tickets WHERE status = 'risk_accepted' AND risk_accepted_until IS NOT NULL AND risk_accepted_until < CURDATE()`)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND t.updated_at >= NOW() - INTERVAL 5 SECOND`)
+	var ids []string
+	for idRows.Next() {
+		var id string
+		if err := idRows.Scan(&id); err != nil {
+			idRows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	idRows.Close()
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	_, err = q.db.ExecContext(ctx, `UPDATE tickets SET status = 'open', risk_accepted_until = NULL, updated_at = NOW() WHERE id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
 	}

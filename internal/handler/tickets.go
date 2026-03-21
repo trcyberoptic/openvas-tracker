@@ -35,6 +35,9 @@ func (h *TicketHandler) Create(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	userID := middleware.GetUserID(c)
 
 	params := queries.CreateTicketParams{
@@ -90,6 +93,9 @@ func (h *TicketHandler) UpdateStatus(c echo.Context) error {
 	var req updateStatusRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
 	// Get current ticket for activity logging
@@ -178,6 +184,9 @@ func (h *TicketHandler) AddComment(c echo.Context) error {
 	var req addCommentRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	userID := middleware.GetUserID(c)
 	comment, err := h.tickets.AddComment(c.Request().Context(), id, userID, req.Content)

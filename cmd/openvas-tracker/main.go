@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -37,6 +38,11 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
+	// Enforce JWT secret
+	if cfg.JWT.Secret == "change-me-in-production" || len(cfg.JWT.Secret) < 32 {
+		log.Fatal("OT_JWT_SECRET must be set to a random string of at least 32 characters")
+	}
+
 	db, err := database.NewPool(database.PoolConfig{
 		DSN:      cfg.Database.DSN,
 		MaxConns: cfg.Database.MaxConns,
@@ -59,7 +65,7 @@ func main() {
 	auditSvc := service.NewAuditService(db)
 	searchSvc := service.NewSearchService(db)
 
-	// WebSocket hub (no background goroutine needed — hub is mutex-based)
+	// WebSocket hub
 	hub := websocket.NewHub()
 
 	// Echo
@@ -71,6 +77,7 @@ func main() {
 	e.Use(echomw.Logger())
 	e.Use(echomw.Recover())
 	e.Use(mw.SecurityHeaders())
+	e.Use(echomw.BodyLimit("1M")) // global body limit
 	rl := mw.NewRateLimiter(100, time.Minute)
 	e.Use(rl.Middleware())
 
@@ -89,10 +96,11 @@ func main() {
 		return c.JSON(code, map[string]interface{}{"status": status, "checks": checks})
 	})
 
-	// Auth routes (public)
+	// Auth routes (public) with dedicated rate limiter
+	authLimiter := mw.NewRateLimiter(10, time.Minute)
 	jwtExpiry := time.Duration(cfg.JWT.ExpireHours) * time.Hour
 	authH := handler.NewAuthHandler(userSvc, cfg.JWT.Secret, jwtExpiry)
-	authH.RegisterRoutes(e.Group("/api/auth"))
+	authH.RegisterRoutes(e.Group("/api/auth", authLimiter.Middleware()))
 
 	// Protected routes
 	p := e.Group("/api", mw.JWTAuth(cfg.JWT.Secret))
@@ -104,7 +112,12 @@ func main() {
 
 	handler.NewHostHandler(q).RegisterRoutes(p.Group("/hosts"))
 	handler.NewVulnHandler(vulnSvc).RegisterRoutes(p.Group("/vulnerabilities"))
-	handler.NewTicketHandler(ticketSvc, q).RegisterRoutes(p.Group("/tickets"))
+
+	// Ticket routes — status/assign require admin or analyst role
+	ticketH := handler.NewTicketHandler(ticketSvc, q)
+	ticketG := p.Group("/tickets")
+	ticketH.RegisterRoutes(ticketG)
+
 	handler.NewReportHandler(reportSvc).RegisterRoutes(p.Group("/reports"))
 	handler.NewDashboardHandler(vulnSvc, ticketSvc, q).RegisterRoutes(p.Group("/dashboard"))
 	handler.NewTeamHandler(teamSvc).RegisterRoutes(p.Group("/teams"))
@@ -138,9 +151,9 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown
+	// Graceful shutdown — handle both SIGINT and SIGTERM
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 	log.Println("shutting down...")
 
