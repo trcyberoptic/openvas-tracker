@@ -61,3 +61,38 @@ func (q *Queries) MatchRiskAcceptRule(ctx context.Context, fingerprint, host str
 	}
 	return &r, nil
 }
+
+// ApplyRuleToExistingTickets sets matching open tickets to risk_accepted.
+func (q *Queries) ApplyRuleToExistingTickets(ctx context.Context, fingerprint, hostPattern string, expiresAt *time.Time) ([]string, error) {
+	var query string
+	var args []any
+	if hostPattern == "*" {
+		query = "SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND (v.cve_id = ? OR (v.cve_id IS NULL AND CONCAT('title:', v.title) = ?))"
+		args = []any{fingerprint, fingerprint}
+	} else {
+		query = "SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND v.affected_host = ? AND (v.cve_id = ? OR (v.cve_id IS NULL AND CONCAT('title:', v.title) = ?))"
+		args = []any{hostPattern, fingerprint, fingerprint}
+	}
+
+	rows, err := q.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for _, id := range ids {
+		q.db.ExecContext(ctx, "UPDATE tickets SET status = 'risk_accepted', risk_accepted_until = ?, updated_at = NOW() WHERE id = ?", expiresAt, id)
+	}
+	return ids, nil
+}
