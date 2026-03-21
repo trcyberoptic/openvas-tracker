@@ -129,9 +129,9 @@ export function TicketDetail() {
       )}
 
       {/* References */}
-      {ticket.cve_id && (
-        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">References</h3>
+      <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
+        <h3 className="text-sm font-medium text-slate-400 mb-2">References</h3>
+        {ticket.cve_id ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 w-12">CVE</span>
@@ -146,8 +146,17 @@ export function TicketDetail() {
               <a href={`https://www.google.com/search?q=${ticket.cve_id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-sm">Google {ticket.cve_id}</a>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div>
+            <p className="text-xs text-slate-500 mb-2 italic">No CVE assigned — web search based on title:</p>
+            <a href={`https://www.google.com/search?q=${encodeURIComponent(ticket.title)}`} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-blue-400 hover:underline text-sm">
+              <span>Search for &quot;{ticket.title.length > 60 ? ticket.title.slice(0, 60) + '...' : ticket.title}&quot;</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Google</span>
+            </a>
+          </div>
+        )}
+      </div>
 
       {/* Host */}
       {ticket.affected_host && (
