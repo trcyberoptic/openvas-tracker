@@ -47,8 +47,10 @@ handler (Echo HTTP) → service (business logic) → queries (database/sql) → 
 ```
 
 - **`internal/handler/`** — Echo route handlers. Each has a `RegisterRoutes(*echo.Group)` method mounted in main.go.
-  - **`import.go`** — Webhook endpoint `POST /api/import/openvas`. Parses XML, creates scan + vulns, auto-creates/reopens/resolves tickets.
+  - **`import.go`** — Webhook endpoint `POST /api/import/openvas`. Parses XML, creates scan + vulns, auto-creates/reopens/resolves tickets. Also `GET /api/import/openvas` triggers `openvas-tracker-fetch-latest` script to pull latest report from GVM via GMP socket.
   - **`tickets.go`** — CRUD + status changes + comments + activity log.
+  - **`pagination.go`** — Shared `paginate(c)` helper, returns `(limit, offset int32)`. Default 500, max 5000.
+  - **`settings.go`** — Setup guide endpoint + user list for ticket assignment.
 - **`internal/service/`** — Business logic. Each takes `*sql.DB` in constructor (e.g., `NewUserService(db)`).
 - **`internal/database/queries/`** — Hand-written query stubs. Uses `database/sql` with `go-sql-driver/mysql`.
   - **`tickets.go`** — Ticket queries including `FindTicketByFingerprint`, `AutoResolveStaleTickets`, `LogTicketActivity`.
@@ -62,7 +64,7 @@ handler (Echo HTTP) → service (business logic) → queries (database/sql) → 
 
 ## Configuration
 
-All config via environment variables with `OT_` prefix (Viper, `internal/config/config.go`):
+All config via environment variables with `OT_` prefix (`godotenv` + `os.Getenv`, `internal/config/config.go`):
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -80,7 +82,7 @@ All config via environment variables with `OT_` prefix (Viper, `internal/config/
 
 ## Key Patterns
 
-- **Auth flow:** JWT Bearer tokens. Public routes under `/api/auth/*`, everything else behind `middleware.JWTAuth`. Import endpoint uses `X-API-Key` header via `middleware.APIKeyAuth`. User ID extracted via `middleware.GetUserID(c)` (returns `string`).
+- **Auth flow:** JWT Bearer tokens. Public routes under `/api/auth/*`, everything else behind `middleware.JWTAuth`. Import endpoint uses `X-API-Key` header via `middleware.APIKeyAuth` (also accepted as `?api_key=` query param for GVM HTTP Get alerts). User ID extracted via `middleware.GetUserID(c)` (returns `string`).
 - **Import flow:** OpenVAS webhook → parse XML → create scan record + vulnerabilities → for each vuln: find existing ticket by fingerprint (host + CVE/title) → create new / reopen fixed / update last_seen → auto-resolve open tickets not in current scan.
 - **Ticket statuses:** `open` → `fixed` | `risk_accepted`. Auto-resolve sets `fixed`. Recurring finding reopens to `open`. All changes logged in `ticket_activity` table.
 - **System user:** Import creates vulns/tickets under a dedicated `openvas-import` system user (auto-created on first import).
@@ -100,6 +102,25 @@ Docker Compose (MariaDB + single Go binary). Also supports Debian Trixie as a sy
 **Production server:** `SCANNER01` (192.168.1.100), Debian Trixie 13, accessible via `ssh scanner01`. Service runs as `openvas-tracker` user, config in `/etc/openvas-tracker/env`.
 
 **Deploy .deb manually:** `scp` package tree to server, `dpkg-deb --build`, `dpkg -i`. Binary must be `chmod 755` (use `install -m 0755`, not `cp`).
+
+## GVM Integration (scanner01)
+
+- **Greenbone Community Edition** runs as Docker stack (~16 containers) on scanner01.
+- **GMP socket:** `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`
+- **GVM admin creds:** `admin` / `admin`
+- **Import trigger:** GVM "HTTP Get" alert → `GET /api/import/openvas?api_key=...` → Go handler calls `sudo /usr/local/bin/openvas-tracker-fetch-latest` → script connects GMP socket, fetches report, POSTs to self.
+- **NoNewPrivileges=no** in systemd unit — required for sudo to GMP socket.
+- **Sudoers:** `/etc/sudoers.d/openvas-tracker-fetch` allows openvas-tracker user to run fetch script as root.
+
+## Quick Deploy to Production
+
+```bash
+cd frontend && npm run build && cd ..
+rm -rf cmd/openvas-tracker/static && cp -r frontend/dist cmd/openvas-tracker/static
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/openvas-tracker-linux-amd64 ./cmd/openvas-tracker
+scp bin/openvas-tracker-linux-amd64 scanner01:/usr/local/bin/openvas-tracker.new
+ssh scanner01 "chmod 755 /usr/local/bin/openvas-tracker.new && systemctl stop openvas-tracker && mv /usr/local/bin/openvas-tracker.new /usr/local/bin/openvas-tracker && systemctl start openvas-tracker"
+```
 
 ## Gotchas
 
