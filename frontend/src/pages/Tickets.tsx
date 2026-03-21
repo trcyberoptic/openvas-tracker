@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
+import { useAuth } from '@/hooks/useAuth'
 import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
 
 const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
@@ -25,12 +26,16 @@ interface UserRef { id: string; username: string; email: string }
 
 export function Tickets() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { user } = useAuth()
   const qc = useQueryClient()
   const { data: raw = [] } = useQuery({ queryKey: ['tickets'], queryFn: () => api.get<Ticket[]>('/tickets') })
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
   const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'host'])
   const { sort, toggle } = useSortable()
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const assignedFilter = searchParams.get('assigned') // "me" | "unassigned" | null
 
   const tickets = useMemo(() => raw.map(t => ({ ...t, priority_order: PRIO_ORDER[t.priority] || 9 })), [raw])
 
@@ -41,12 +46,14 @@ export function Tickets() {
 
   const filtered = useMemo(() => {
     let result = tickets
+    if (assignedFilter === 'me' && user) result = result.filter(t => t.assigned_to === user.id)
+    if (assignedFilter === 'unassigned') result = result.filter(t => !t.assigned_to)
     if (values.priority) result = result.filter(t => t.priority === values.priority)
     if (values.status) result = result.filter(t => t.status === values.status)
     if (values.host) result = result.filter(t => t.affected_host === values.host)
     if (values.search) { const q = values.search.toLowerCase(); result = result.filter(t => t.title.toLowerCase().includes(q) || t.affected_host?.toLowerCase().includes(q)) }
     return result
-  }, [tickets, values])
+  }, [tickets, values, assignedFilter, user])
 
   const effectiveSort = sort.key ? sort : { key: 'cvss_score', dir: 'desc' as const }
   const sorted = useSorted(filtered, effectiveSort)
@@ -79,7 +86,15 @@ export function Tickets() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Tickets</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Tickets</h1>
+          {assignedFilter && (
+            <span className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-900/50 text-blue-300 text-xs">
+              {assignedFilter === 'me' ? 'My tickets' : 'Unassigned'}
+              <button onClick={() => setSearchParams({})} className="hover:text-white">&times;</button>
+            </span>
+          )}
+        </div>
         {selected.size > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-400">{selected.size} selected</span>

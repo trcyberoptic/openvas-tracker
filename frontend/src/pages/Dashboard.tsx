@@ -66,12 +66,12 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-3 gap-6 mb-8">
-        <Link to="/tickets" className="bg-slate-900 rounded-lg border border-slate-800 p-6 hover:border-slate-600 transition-colors">
+        <Link to="/tickets?assigned=me" className="bg-slate-900 rounded-lg border border-slate-800 p-6 hover:border-slate-600 transition-colors">
           <h2 className="text-lg font-semibold mb-4">My Tickets</h2>
           <p className="text-4xl font-bold text-blue-400">{data?.my_tickets ?? 0}</p>
           <p className="text-slate-400 text-sm mt-1">assigned to me</p>
         </Link>
-        <Link to="/tickets" className="bg-slate-900 rounded-lg border border-slate-800 p-6 hover:border-slate-600 transition-colors">
+        <Link to="/tickets?assigned=unassigned" className="bg-slate-900 rounded-lg border border-slate-800 p-6 hover:border-slate-600 transition-colors">
           <h2 className="text-lg font-semibold mb-4">Unassigned</h2>
           <p className="text-4xl font-bold text-yellow-400">{data?.unassigned_tickets ?? 0}</p>
           <p className="text-slate-400 text-sm mt-1">need attention</p>
