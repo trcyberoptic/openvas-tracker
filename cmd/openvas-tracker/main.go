@@ -102,7 +102,7 @@ func main() {
 	})
 
 	// Auth routes (public) with dedicated rate limiter
-	authLimiter := mw.NewRateLimiter(10, time.Minute)
+	authLimiter := mw.NewRateLimiter(30, time.Minute)
 	jwtExpiry := time.Duration(cfg.JWT.ExpireHours) * time.Hour
 	authH := handler.NewAuthHandler(userSvc, cfg.JWT.Secret, jwtExpiry)
 	authH.RegisterRoutes(e.Group("/api/auth", authLimiter.Middleware()))
