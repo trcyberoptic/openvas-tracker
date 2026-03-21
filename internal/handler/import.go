@@ -87,8 +87,8 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		port, proto := parsePort(r.Port)
 		severity := mapSeverity(r.Severity, r.CVSSScore)
 
-		// Skip info-level findings — no actionable vulnerabilities
-		if severity == "info" {
+		// Skip info-level findings with CVSS 0 — not actionable
+		if severity == "info" && r.CVSSScore <= 0 {
 			skipped++
 			continue
 		}
