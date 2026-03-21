@@ -60,6 +60,9 @@ func (s *UserService) Authenticate(ctx context.Context, email, password string) 
 	if err != nil {
 		return queries.User{}, ErrUserNotFound
 	}
+	if !user.IsActive {
+		return queries.User{}, ErrUserNotFound
+	}
 	if !auth.CheckPassword(password, user.Password) {
 		return queries.User{}, ErrInvalidPassword
 	}

@@ -32,13 +32,12 @@ func (h *SettingsHandler) GetSetup(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"api_key":        h.apiKey,
 		"api_key_masked": masked,
 		"server_port":    h.serverPort,
-		"webhook_url":    fmt.Sprintf("/api/import/openvas?api_key=%s", h.apiKey),
+		"webhook_url":    fmt.Sprintf("/api/import/openvas?api_key=<YOUR_API_KEY>"),
 		"curl_example": fmt.Sprintf(
-			"curl -X POST http://<tracker-host>:%d/api/import/openvas \\\n  -H 'X-API-Key: %s' \\\n  -H 'Content-Type: application/xml' \\\n  --data-binary @scan-report.xml",
-			h.serverPort, h.apiKey,
+			"curl -X POST http://<tracker-host>:%d/api/import/openvas \\\n  -H 'X-API-Key: <YOUR_API_KEY>' \\\n  -H 'Content-Type: application/xml' \\\n  --data-binary @scan-report.xml",
+			h.serverPort,
 		),
 	})
 }

@@ -12,7 +12,13 @@ import (
 )
 
 var upgrader = gws.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		return origin == "http://"+r.Host || origin == "https://"+r.Host
+	},
 }
 
 type WSHandler struct {
