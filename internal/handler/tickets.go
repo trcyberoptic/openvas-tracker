@@ -220,6 +220,18 @@ func (h *TicketHandler) ListActivity(c echo.Context) error {
 	return c.JSON(http.StatusOK, activity)
 }
 
+func (h *TicketHandler) AlsoAffected(c echo.Context) error {
+	id := c.Param("id")
+	hosts, err := h.q.AlsoAffectedHosts(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list affected hosts")
+	}
+	if hosts == nil {
+		hosts = []queries.AlsoAffectedHost{}
+	}
+	return c.JSON(http.StatusOK, hosts)
+}
+
 func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
@@ -229,4 +241,5 @@ func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/:id/comments", h.AddComment)
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
+	g.GET("/:id/also-affected", h.AlsoAffected)
 }
