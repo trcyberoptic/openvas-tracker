@@ -285,7 +285,7 @@ func (h *ImportHandler) resolveSystemUser(ctx context.Context) error {
 }
 
 func (h *ImportHandler) TriggerFetch(c echo.Context) error {
-	cmd := exec.Command("/usr/local/bin/openvas-tracker-fetch-latest")
+	cmd := exec.Command("sudo", "/usr/local/bin/openvas-tracker-fetch-latest")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("fetch-latest error: %v: %s", err, out)

@@ -17,7 +17,7 @@ StandardError=journal
 SyslogIdentifier=openvas-tracker
 
 # Security hardening
-NoNewPrivileges=yes
+NoNewPrivileges=no
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/var/lib/openvas-tracker
