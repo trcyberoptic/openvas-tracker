@@ -51,9 +51,9 @@ export function TableFilter({ filters, values, onChange }: FilterProps) {
   )
 }
 
-export function useTableFilter(keys: string[]) {
+export function useTableFilter(keys: string[], defaults?: Record<string, string>) {
   const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(keys.map(k => [k, '']))
+    Object.fromEntries(keys.map(k => [k, defaults?.[k] || '']))
   )
   return { values, setValues }
 }

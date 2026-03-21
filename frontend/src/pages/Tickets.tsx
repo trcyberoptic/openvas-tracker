@@ -31,7 +31,7 @@ export function Tickets() {
   const qc = useQueryClient()
   const { data: raw = [] } = useQuery({ queryKey: ['tickets'], queryFn: () => api.get<Ticket[]>('/tickets') })
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
-  const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'host'])
+  const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'host'], { status: 'open' })
   const { sort, toggle } = useSortable()
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
