@@ -68,9 +68,8 @@ type CreateTicketParams struct {
 }
 
 type ListTicketsParams struct {
-	CreatedBy string `json:"created_by"`
-	Limit     int32  `json:"limit"`
-	Offset    int32  `json:"offset"`
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 type UpdateTicketStatusParams struct {

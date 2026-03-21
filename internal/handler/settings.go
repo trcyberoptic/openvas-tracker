@@ -7,7 +7,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 )
 
 type SettingsHandler struct {
@@ -21,11 +20,6 @@ func NewSettingsHandler(apiKey string, serverPort int, q *queries.Queries) *Sett
 }
 
 func (h *SettingsHandler) GetSetup(c echo.Context) error {
-	role := middleware.GetUserRole(c)
-	if role != "admin" {
-		return echo.NewHTTPError(http.StatusForbidden, "admin only")
-	}
-
 	masked := ""
 	if len(h.apiKey) >= 8 {
 		masked = h.apiKey[:8] + "..." + h.apiKey[len(h.apiKey)-4:]

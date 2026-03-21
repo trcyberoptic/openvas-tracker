@@ -136,8 +136,9 @@ func main() {
 		if len(cfg.Import.APIKey) < 32 {
 			log.Fatal("OT_IMPORT_APIKEY must be at least 32 characters")
 		}
+		importSvc := service.NewImportService(db)
 		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("10M"))
-		handler.NewImportHandler(db).RegisterRoutes(importG)
+		handler.NewImportHandler(importSvc).RegisterRoutes(importG)
 	}
 
 	// Embedded frontend (catch-all, must be last)

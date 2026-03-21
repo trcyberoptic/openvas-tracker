@@ -1,4 +1,3 @@
-// internal/handler/audit.go
 package handler
 
 import (
@@ -6,7 +5,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
@@ -19,10 +17,6 @@ func NewAuditHandler(a *service.AuditService) *AuditHandler {
 }
 
 func (h *AuditHandler) List(c echo.Context) error {
-	role := middleware.GetUserRole(c)
-	if role != "admin" {
-		return echo.NewHTTPError(http.StatusForbidden, "admin only")
-	}
 	limit, offset := paginate(c)
 	logs, err := h.audit.List(c.Request().Context(), limit, offset)
 	if err != nil {

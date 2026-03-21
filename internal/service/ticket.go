@@ -29,8 +29,8 @@ func (s *TicketService) Get(ctx context.Context, id string) (queries.Ticket, err
 	return s.q.GetTicket(ctx, id)
 }
 
-func (s *TicketService) List(ctx context.Context, userID string, limit, offset int32) ([]queries.Ticket, error) {
-	return s.q.ListTickets(ctx, queries.ListTicketsParams{CreatedBy: userID, Limit: limit, Offset: offset})
+func (s *TicketService) List(ctx context.Context, limit, offset int32) ([]queries.Ticket, error) {
+	return s.q.ListTickets(ctx, queries.ListTicketsParams{Limit: limit, Offset: offset})
 }
 
 func (s *TicketService) UpdateStatus(ctx context.Context, id string, status string) (queries.Ticket, error) {
