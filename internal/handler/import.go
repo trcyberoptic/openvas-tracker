@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os/exec"
 	"net/http"
 	"strconv"
 	"strings"
@@ -283,8 +284,19 @@ func (h *ImportHandler) resolveSystemUser(ctx context.Context) error {
 	return h.onceErr
 }
 
+func (h *ImportHandler) TriggerFetch(c echo.Context) error {
+	cmd := exec.Command("/usr/local/bin/openvas-tracker-fetch-latest")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("fetch-latest error: %v: %s", err, out)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": string(out)})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"output": string(out)})
+}
+
 func (h *ImportHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/openvas", h.HandleOpenVAS)
+	g.GET("/openvas", h.TriggerFetch)
 }
 
 func mapSeverity(threat string, cvss float64) string {
