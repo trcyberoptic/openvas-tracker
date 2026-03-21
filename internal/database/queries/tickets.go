@@ -12,9 +12,10 @@ import (
 type TicketStatus string
 
 const (
-	TicketStatusOpen         TicketStatus = "open"
-	TicketStatusFixed        TicketStatus = "fixed"
-	TicketStatusRiskAccepted TicketStatus = "risk_accepted"
+	TicketStatusOpen          TicketStatus = "open"
+	TicketStatusFixed         TicketStatus = "fixed"
+	TicketStatusRiskAccepted  TicketStatus = "risk_accepted"
+	TicketStatusFalsePositive TicketStatus = "false_positive"
 )
 
 type TicketPriority string
@@ -36,8 +37,9 @@ type Ticket struct {
 	AssignedTo      *string        `json:"assigned_to"`
 	CreatedBy       string         `json:"created_by"`
 	DueDate         *time.Time     `json:"due_date"`
-	ResolvedAt      *time.Time     `json:"resolved_at"`
-	FirstSeenAt     *time.Time     `json:"first_seen_at"`
+	ResolvedAt         *time.Time     `json:"resolved_at"`
+	RiskAcceptedUntil  *time.Time     `json:"risk_accepted_until"`
+	FirstSeenAt        *time.Time     `json:"first_seen_at"`
 	LastSeenAt      *time.Time     `json:"last_seen_at"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
@@ -92,10 +94,10 @@ type CountTicketsByStatusRow struct {
 	Count  int64        `json:"count"`
 }
 
-const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.cvss_score`
+const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.cvss_score`
 
 func scanTicket(row interface{ Scan(...any) error }, i *Ticket) error {
-	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost, &i.CvssScore)
+	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.RiskAcceptedUntil, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost, &i.CvssScore)
 }
 
 func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
@@ -275,6 +277,11 @@ func (q *Queries) ReopenTicket(ctx context.Context, arg ReopenTicketParams) erro
 	return err
 }
 
+func (q *Queries) SetRiskAcceptedUntil(ctx context.Context, ticketID string, until *time.Time) error {
+	_, err := q.db.ExecContext(ctx, `UPDATE tickets SET risk_accepted_until = ?, updated_at = NOW() WHERE id = ?`, until, ticketID)
+	return err
+}
+
 type TouchTicketParams struct {
 	ID              string
 	VulnerabilityID string
@@ -295,6 +302,28 @@ func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([
 	}
 	// Return the just-resolved tickets for activity logging
 	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'fixed' AND t.resolved_at >= NOW() - INTERVAL 5 SECOND AND t.updated_at >= NOW() - INTERVAL 5 SECOND`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Ticket
+	for rows.Next() {
+		var t Ticket
+		if err := scanTicket(rows, &t); err != nil {
+			return nil, err
+		}
+		items = append(items, t)
+	}
+	return items, rows.Err()
+}
+
+// ReopenExpiredRiskAccepted reopens risk_accepted tickets whose expiry date has passed.
+func (q *Queries) ReopenExpiredRiskAccepted(ctx context.Context) ([]Ticket, error) {
+	_, err := q.db.ExecContext(ctx, `UPDATE tickets SET status = 'open', risk_accepted_until = NULL, updated_at = NOW() WHERE status = 'risk_accepted' AND risk_accepted_until IS NOT NULL AND risk_accepted_until < CURDATE()`)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND t.updated_at >= NOW() - INTERVAL 5 SECOND`)
 	if err != nil {
 		return nil, err
 	}

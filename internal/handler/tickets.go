@@ -81,7 +81,8 @@ func (h *TicketHandler) Get(c echo.Context) error {
 }
 
 type updateStatusRequest struct {
-	Status string `json:"status" validate:"required,oneof=open fixed risk_accepted"`
+	Status            string  `json:"status" validate:"required,oneof=open fixed risk_accepted false_positive"`
+	RiskAcceptedUntil *string `json:"risk_accepted_until"` // date string YYYY-MM-DD
 }
 
 func (h *TicketHandler) UpdateStatus(c echo.Context) error {
@@ -102,6 +103,18 @@ func (h *TicketHandler) UpdateStatus(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update status")
 	}
 
+	// Set risk_accepted_until if accepting risk
+	if req.Status == "risk_accepted" && req.RiskAcceptedUntil != nil {
+		t, err := time.Parse("2006-01-02", *req.RiskAcceptedUntil)
+		if err == nil {
+			h.q.SetRiskAcceptedUntil(c.Request().Context(), id, &t)
+		}
+	}
+	// Clear risk_accepted_until if moving away from risk_accepted
+	if req.Status != "risk_accepted" {
+		h.q.SetRiskAcceptedUntil(c.Request().Context(), id, nil)
+	}
+
 	// Log activity
 	userID := middleware.GetUserID(c)
 	oldStatus := string(old.Status)
@@ -110,6 +123,8 @@ func (h *TicketHandler) UpdateStatus(c echo.Context) error {
 		OldValue: &oldStatus, NewValue: &req.Status, ChangedBy: userID,
 	})
 
+	// Re-fetch to include updated risk_accepted_until
+	ticket, _ = h.tickets.Get(c.Request().Context(), id)
 	return c.JSON(http.StatusOK, ticket)
 }
 

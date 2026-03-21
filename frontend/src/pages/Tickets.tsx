@@ -5,7 +5,7 @@ import { api } from '@/api/client'
 import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
 
 const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
-const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300' }
+const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300' }
 const PRIO_ORDER: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4 }
 
 function cvssColor(score: number | null | undefined): string {
@@ -57,7 +57,7 @@ export function Tickets() {
         filters={[
           { key: 'search', label: 'Search tickets...' },
           { key: 'priority', label: 'Priority', options: ['critical', 'high', 'medium', 'low'] },
-          { key: 'status', label: 'Status', options: ['open', 'fixed', 'risk_accepted'] },
+          { key: 'status', label: 'Status', options: ['open', 'fixed', 'risk_accepted', 'false_positive'] },
           { key: 'host', label: 'Host', options: hosts },
         ]}
         values={values} onChange={setValues}

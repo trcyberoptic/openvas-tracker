@@ -4,11 +4,12 @@ import { useParams, Link } from 'react-router-dom'
 import { api } from '@/api/client'
 
 const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
-const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300' }
+const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300' }
 
 interface Ticket {
   id: string; title: string; description?: string; priority: string; status: string
-  vulnerability_id?: string; assigned_to?: string; first_seen_at?: string; last_seen_at?: string; created_at: string
+  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string
+  first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface Comment { id: string; user_id: string; content: string; created_at: string }
 interface Activity { id: string; action: string; old_value?: string; new_value?: string; changed_by: string; note?: string; created_at: string }
@@ -18,6 +19,7 @@ export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const [comment, setComment] = useState('')
+  const [riskUntil, setRiskUntil] = useState('')
 
   const { data: ticket } = useQuery({ queryKey: ['ticket', id], queryFn: () => api.get<Ticket>(`/tickets/${id}`) })
   const { data: comments = [] } = useQuery({ queryKey: ['ticket-comments', id], queryFn: () => api.get<Comment[]>(`/tickets/${id}/comments`) })
@@ -30,7 +32,8 @@ export function TicketDetail() {
   }
 
   const statusMut = useMutation({
-    mutationFn: (status: string) => api.patch(`/tickets/${id}/status`, { status }),
+    mutationFn: ({ status, risk_accepted_until }: { status: string; risk_accepted_until?: string }) =>
+      api.patch(`/tickets/${id}/status`, { status, risk_accepted_until }),
     onSuccess: invalidateTicket,
   })
 
@@ -69,15 +72,31 @@ export function TicketDetail() {
         {/* Status actions */}
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
           <h3 className="text-sm font-medium text-slate-400 mb-3">Status</h3>
-          <div className="flex gap-2">
-            {ticket.status !== 'open' && (
-              <button onClick={() => statusMut.mutate('open')} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Reopen</button>
-            )}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              {ticket.status !== 'open' && ticket.status !== 'false_positive' && (
+                <button onClick={() => statusMut.mutate({ status: 'open' })} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Reopen</button>
+              )}
+              {ticket.status === 'false_positive' && (
+                <button onClick={() => statusMut.mutate({ status: 'open' })} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Not False Positive</button>
+              )}
+              {ticket.status === 'open' && (
+                <>
+                  <button onClick={() => statusMut.mutate({ status: 'fixed' })} className="px-3 py-1.5 rounded text-sm bg-green-900 text-green-300 hover:bg-green-800">Mark Fixed</button>
+                  <button onClick={() => statusMut.mutate({ status: 'risk_accepted', risk_accepted_until: riskUntil || undefined })} className="px-3 py-1.5 rounded text-sm bg-yellow-900 text-yellow-300 hover:bg-yellow-800">Accept Risk</button>
+                  <button onClick={() => statusMut.mutate({ status: 'false_positive' })} className="px-3 py-1.5 rounded text-sm bg-slate-700 text-slate-300 hover:bg-slate-600">False Positive</button>
+                </>
+              )}
+            </div>
             {ticket.status === 'open' && (
-              <>
-                <button onClick={() => statusMut.mutate('fixed')} className="px-3 py-1.5 rounded text-sm bg-green-900 text-green-300 hover:bg-green-800">Mark Fixed</button>
-                <button onClick={() => statusMut.mutate('risk_accepted')} className="px-3 py-1.5 rounded text-sm bg-yellow-900 text-yellow-300 hover:bg-yellow-800">Accept Risk</button>
-              </>
+              <div className="flex items-center gap-2 mt-1">
+                <label className="text-xs text-slate-500">Risk accepted until:</label>
+                <input type="date" value={riskUntil} onChange={e => setRiskUntil(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-blue-500" />
+              </div>
+            )}
+            {ticket.status === 'risk_accepted' && ticket.risk_accepted_until && (
+              <p className="text-xs text-yellow-400 mt-1">Expires: {new Date(ticket.risk_accepted_until).toLocaleDateString()}</p>
             )}
           </div>
         </div>

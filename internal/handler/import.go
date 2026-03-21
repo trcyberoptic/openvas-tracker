@@ -147,7 +147,10 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		}
 	}
 
-	// Case 4: auto-resolve open tickets whose findings are NOT in this scan
+	// Case 4: reopen expired risk_accepted tickets
+	h.reopenExpiredRiskAccepted(ctx)
+
+	// Case 5: auto-resolve open tickets whose findings are NOT in this scan
 	autoResolved := h.autoResolveStale(ctx, scan.ID)
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
@@ -174,6 +177,10 @@ func (h *ImportHandler) processTicket(ctx context.Context, r scanner.OpenVASResu
 	oldStatus := string(existing.Status)
 
 	switch existing.Status {
+	case queries.TicketStatusFalsePositive:
+		// Never reopen false positives — skip silently
+		return false, false
+
 	case queries.TicketStatusFixed, queries.TicketStatusRiskAccepted:
 		// Case 2: reopen
 		err := h.q.ReopenTicket(ctx, queries.ReopenTicketParams{
@@ -227,6 +234,20 @@ func (h *ImportHandler) createTicket(ctx context.Context, r scanner.OpenVASResul
 	note := fmt.Sprintf("Ticket created from OpenVAS import. CVE: %s, Host: %s, CVSS: %.1f", r.CVE, r.Host, r.CVSSScore)
 	h.logActivity(ctx, ticketID, "created", nil, &newStatus, "Automatic", &note)
 	return true
+}
+
+func (h *ImportHandler) reopenExpiredRiskAccepted(ctx context.Context) {
+	reopened, err := h.q.ReopenExpiredRiskAccepted(ctx)
+	if err != nil {
+		log.Printf("reopen expired risk_accepted error: %v", err)
+		return
+	}
+	for _, t := range reopened {
+		oldStatus := "risk_accepted"
+		newStatus := "open"
+		note := "Risk acceptance expired — ticket reopened"
+		h.logActivity(ctx, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+	}
 }
 
 func (h *ImportHandler) autoResolveStale(ctx context.Context, scanID string) int {
