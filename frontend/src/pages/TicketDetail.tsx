@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 
 const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
@@ -18,6 +18,10 @@ interface AlsoAffected { host: string; ticket_id: string; status: string }
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
+  const from = searchParams.get('from') // "me" | null
+  const backUrl = from === 'me' ? '/tickets?assigned=me' : '/tickets'
+  const backLabel = from === 'me' ? 'My Tickets' : 'Tickets'
   const qc = useQueryClient()
   const [comment, setComment] = useState('')
   const [riskUntil, setRiskUntil] = useState('')
@@ -65,7 +69,7 @@ export function TicketDetail() {
 
   return (
     <div className="max-w-4xl">
-      <Link to="/tickets" className="text-blue-400 hover:underline text-sm mb-4 inline-block">&larr; Back to Tickets</Link>
+      <Link to={backUrl} className="text-blue-400 hover:underline text-sm mb-4 inline-block">&larr; Back to {backLabel}</Link>
 
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
