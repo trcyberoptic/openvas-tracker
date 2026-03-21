@@ -8,9 +8,18 @@ const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 
 const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300' }
 const PRIO_ORDER: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4 }
 
+function cvssColor(score: number | null | undefined): string {
+  if (score == null) return 'text-slate-500'
+  if (score >= 9) return 'text-red-400 font-bold'
+  if (score >= 7) return 'text-orange-400 font-semibold'
+  if (score >= 4) return 'text-yellow-400'
+  return 'text-slate-400'
+}
+
 interface Ticket {
   id: string; title: string; priority: string; priority_order?: number; status: string
-  affected_host?: string; assigned_to?: string; first_seen_at?: string; last_seen_at?: string; created_at: string
+  affected_host?: string; cvss_score?: number; assigned_to?: string
+  first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface UserRef { id: string; username: string; email: string }
 
@@ -37,7 +46,9 @@ export function Tickets() {
     return result
   }, [tickets, values])
 
-  const sorted = useSorted(filtered, sort)
+  // Default sort by CVSS desc when no explicit sort is set
+  const effectiveSort = sort.key ? sort : { key: 'cvss_score', dir: 'desc' as const }
+  const sorted = useSorted(filtered, effectiveSort)
 
   return (
     <div>
@@ -54,23 +65,23 @@ export function Tickets() {
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-slate-800">
-            <SortHeader label="Title" sortKey="title" sort={sort} onToggle={toggle} />
-            <SortHeader label="Host" sortKey="affected_host" sort={sort} onToggle={toggle} />
-            <SortHeader label="Priority" sortKey="priority_order" sort={sort} onToggle={toggle} />
-            <SortHeader label="Status" sortKey="status" sort={sort} onToggle={toggle} />
-            <SortHeader label="Assigned To" sortKey="assigned_to" sort={sort} onToggle={toggle} />
-            <SortHeader label="First Seen" sortKey="first_seen_at" sort={sort} onToggle={toggle} />
-            <SortHeader label="Last Seen" sortKey="last_seen_at" sort={sort} onToggle={toggle} />
+            <SortHeader label="CVSS" sortKey="cvss_score" sort={effectiveSort} onToggle={toggle} />
+            <SortHeader label="Title" sortKey="title" sort={effectiveSort} onToggle={toggle} />
+            <SortHeader label="Host" sortKey="affected_host" sort={effectiveSort} onToggle={toggle} />
+            <SortHeader label="Priority" sortKey="priority_order" sort={effectiveSort} onToggle={toggle} />
+            <SortHeader label="Status" sortKey="status" sort={effectiveSort} onToggle={toggle} />
+            <SortHeader label="Assigned To" sortKey="assigned_to" sort={effectiveSort} onToggle={toggle} />
+            <SortHeader label="Last Seen" sortKey="last_seen_at" sort={effectiveSort} onToggle={toggle} />
           </tr></thead>
           <tbody>
             {sorted.map(t => (
               <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)} className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer">
+                <td className={`p-3 ${cvssColor(t.cvss_score)}`}>{t.cvss_score?.toFixed(1) ?? '—'}</td>
                 <td className="p-3">{t.title}</td>
                 <td className="p-3 font-mono text-slate-400">{t.affected_host || '—'}</td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs font-medium text-white ${PRIORITY_COLORS[t.priority] || 'bg-gray-600'}`}>{t.priority}</span></td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[t.status] || 'bg-slate-700 text-slate-300'}`}>{t.status.replace('_', ' ')}</span></td>
                 <td className="p-3 text-slate-400">{t.assigned_to ? users.find(u => u.id === t.assigned_to)?.username || '...' : <span className="text-slate-600">—</span>}</td>
-                <td className="p-3 text-slate-400">{t.first_seen_at ? new Date(t.first_seen_at).toLocaleString() : '-'}</td>
                 <td className="p-3 text-slate-400">{t.last_seen_at ? new Date(t.last_seen_at).toLocaleString() : '-'}</td>
               </tr>
             ))}
