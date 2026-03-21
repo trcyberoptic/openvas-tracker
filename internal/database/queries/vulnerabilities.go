@@ -196,16 +196,20 @@ func (q *Queries) CountVulnsBySeverity(ctx context.Context) ([]CountVulnsBySever
 }
 
 type HostSummaryRow struct {
-	Host          string   `json:"host"`
-	Hostname      *string  `json:"hostname"`
-	VulnCount     int64    `json:"vuln_count"`
-	CriticalCount int64    `json:"critical_count"`
-	HighCount     int64    `json:"high_count"`
-	MaxCVSS       *float64 `json:"max_cvss"`
+	Host           string   `json:"host"`
+	Hostname       *string  `json:"hostname"`
+	VulnCount      int64    `json:"vuln_count"`
+	CriticalCount  int64    `json:"critical_count"`
+	HighCount      int64    `json:"high_count"`
+	MaxCVSS        *float64 `json:"max_cvss"`
+	OpenTickets    int64    `json:"open_tickets"`
+	FixedTickets   int64    `json:"fixed_tickets"`
+	RiskAccepted   int64    `json:"risk_accepted_tickets"`
+	FalsePositives int64    `json:"false_positive_tickets"`
 }
 
 func (q *Queries) ListHostSummaries(ctx context.Context) ([]HostSummaryRow, error) {
-	const query = `SELECT affected_host, MAX(hostname) as hostname, COUNT(*) as vuln_count, SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as critical_count, SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END) as high_count, MAX(cvss_score) as max_cvss FROM vulnerabilities WHERE affected_host IS NOT NULL AND affected_host != '' GROUP BY affected_host ORDER BY critical_count DESC, high_count DESC, vuln_count DESC`
+	const query = `SELECT v.affected_host, MAX(v.hostname) as hostname, COUNT(DISTINCT v.id) as vuln_count, SUM(CASE WHEN v.severity = 'critical' THEN 1 ELSE 0 END) as critical_count, SUM(CASE WHEN v.severity = 'high' THEN 1 ELSE 0 END) as high_count, MAX(v.cvss_score) as max_cvss, COALESCE(SUM(CASE WHEN t.status = 'open' THEN 1 ELSE 0 END), 0) as open_tickets, COALESCE(SUM(CASE WHEN t.status = 'fixed' THEN 1 ELSE 0 END), 0) as fixed_tickets, COALESCE(SUM(CASE WHEN t.status = 'risk_accepted' THEN 1 ELSE 0 END), 0) as risk_accepted_tickets, COALESCE(SUM(CASE WHEN t.status = 'false_positive' THEN 1 ELSE 0 END), 0) as false_positive_tickets FROM vulnerabilities v LEFT JOIN tickets t ON t.vulnerability_id = v.id WHERE v.affected_host IS NOT NULL AND v.affected_host != '' GROUP BY v.affected_host ORDER BY open_tickets DESC, critical_count DESC, high_count DESC`
 	rows, err := q.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -214,7 +218,7 @@ func (q *Queries) ListHostSummaries(ctx context.Context) ([]HostSummaryRow, erro
 	var items []HostSummaryRow
 	for rows.Next() {
 		var i HostSummaryRow
-		if err := rows.Scan(&i.Host, &i.Hostname, &i.VulnCount, &i.CriticalCount, &i.HighCount, &i.MaxCVSS); err != nil {
+		if err := rows.Scan(&i.Host, &i.Hostname, &i.VulnCount, &i.CriticalCount, &i.HighCount, &i.MaxCVSS, &i.OpenTickets, &i.FixedTickets, &i.RiskAccepted, &i.FalsePositives); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
