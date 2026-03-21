@@ -331,20 +331,28 @@ func (h *TicketHandler) CreateRiskRule(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create rule")
 	}
 
-	// Also set this ticket to risk_accepted
-	old := string(ticket.Status)
-	h.tickets.UpdateStatus(c.Request().Context(), id, "risk_accepted")
-	if expiresAt != nil {
-		h.q.SetRiskAcceptedUntil(c.Request().Context(), id, expiresAt)
-	}
+	// Apply rule to ALL matching open tickets (including this one)
+	ctx := c.Request().Context()
+	affected, _ := h.q.ApplyRuleToExistingTickets(ctx, fp, hostPattern, expiresAt)
+
 	newStatus := "risk_accepted"
 	note := fmt.Sprintf("Risk accepted via rule (%s): %s", req.Scope, req.Reason)
-	h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
-		ID: uuid.New().String(), TicketID: id, Action: "status_changed",
-		OldValue: &old, NewValue: &newStatus, ChangedBy: userID, Note: &note,
-	})
+	for _, tid := range affected {
+		old, err := h.tickets.Get(ctx, tid)
+		if err != nil {
+			continue
+		}
+		oldStatus := string(old.Status)
+		h.q.LogTicketActivity(ctx, queries.LogTicketActivityParams{
+			ID: uuid.New().String(), TicketID: tid, Action: "status_changed",
+			OldValue: &oldStatus, NewValue: &newStatus, ChangedBy: userID, Note: &note,
+		})
+	}
 
-	return c.JSON(http.StatusCreated, map[string]string{"status": "ok", "scope": req.Scope, "host_pattern": hostPattern})
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"status": "ok", "scope": req.Scope, "host_pattern": hostPattern,
+		"tickets_affected": len(affected),
+	})
 }
 
 func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
