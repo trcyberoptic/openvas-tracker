@@ -266,6 +266,42 @@ func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, titl
 	return &t, nil
 }
 
+type AlsoAffectedHost struct {
+	Host     string `json:"host"`
+	TicketID string `json:"ticket_id"`
+	Status   string `json:"status"`
+}
+
+// AlsoAffectedHosts finds other hosts with the same CVE or title as the given ticket's vulnerability.
+func (q *Queries) AlsoAffectedHosts(ctx context.Context, ticketID string) ([]AlsoAffectedHost, error) {
+	const query = `
+		SELECT v2.affected_host, t2.id, t2.status
+		FROM tickets t1
+		JOIN vulnerabilities v1 ON t1.vulnerability_id = v1.id
+		JOIN vulnerabilities v2 ON (
+			(v1.cve_id IS NOT NULL AND v1.cve_id != '' AND v2.cve_id = v1.cve_id)
+			OR (v1.cve_id IS NULL OR v1.cve_id = '') AND v2.title = v1.title
+		)
+		JOIN tickets t2 ON t2.vulnerability_id = v2.id
+		WHERE t1.id = ? AND t2.id != ? AND v2.affected_host != v1.affected_host
+		GROUP BY v2.affected_host, t2.id, t2.status
+		ORDER BY v2.affected_host`
+	rows, err := q.db.QueryContext(ctx, query, ticketID, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AlsoAffectedHost
+	for rows.Next() {
+		var i AlsoAffectedHost
+		if err := rows.Scan(&i.Host, &i.TicketID, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
 type ReopenTicketParams struct {
 	ID              string
 	VulnerabilityID string

@@ -14,6 +14,7 @@ interface Ticket {
 interface Comment { id: string; user_id: string; content: string; created_at: string }
 interface Activity { id: string; action: string; old_value?: string; new_value?: string; changed_by: string; note?: string; created_at: string }
 interface UserRef { id: string; username: string; email: string }
+interface AlsoAffected { host: string; ticket_id: string; status: string }
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
@@ -25,6 +26,7 @@ export function TicketDetail() {
   const { data: comments = [] } = useQuery({ queryKey: ['ticket-comments', id], queryFn: () => api.get<Comment[]>(`/tickets/${id}/comments`) })
   const { data: activity = [] } = useQuery({ queryKey: ['ticket-activity', id], queryFn: () => api.get<Activity[]>(`/tickets/${id}/activity`) })
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
+  const { data: alsoAffected = [] } = useQuery({ queryKey: ['ticket-also-affected', id], queryFn: () => api.get<AlsoAffected[]>(`/tickets/${id}/also-affected`) })
 
   const invalidateTicket = () => {
     qc.invalidateQueries({ queryKey: ['ticket', id] })
@@ -130,7 +132,21 @@ export function TicketDetail() {
       {ticket.affected_host && (
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
           <h3 className="text-sm font-medium text-slate-400 mb-2">Host</h3>
-          <Link to={`/hosts`} className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
+          <Link to="/hosts" className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
+          {alsoAffected.length > 0 && (
+            <div className="mt-3 border-t border-slate-800 pt-3">
+              <h4 className="text-xs text-slate-500 mb-2">Also affected ({alsoAffected.length})</h4>
+              <div className="flex flex-wrap gap-2">
+                {alsoAffected.map(a => (
+                  <Link key={a.ticket_id} to={`/tickets/${a.ticket_id}`}
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">
+                    <span className="font-mono text-slate-300">{a.host}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[a.status] || 'bg-slate-700 text-slate-300'}`}>{a.status.replace(/_/g, ' ')}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
