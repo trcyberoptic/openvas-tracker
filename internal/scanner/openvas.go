@@ -75,6 +75,16 @@ type ovasNVT struct {
 	Solution   string         `xml:"solution"`
 	Tags       string         `xml:"tags"`
 	Severities ovasSeverities `xml:"severities"`
+	Refs       ovasRefs       `xml:"refs"`
+}
+
+type ovasRefs struct {
+	Ref []ovasRef `xml:"ref"`
+}
+
+type ovasRef struct {
+	Type string `xml:"type,attr"`
+	ID   string `xml:"id,attr"`
 }
 
 type ovasSeverities struct {
@@ -142,6 +152,15 @@ func ParseOpenVASXML(r io.Reader) ([]OpenVASResult, error) {
 		cve := res.NVT.CVE
 		if cve == "" || cve == "NOCVE" {
 			cve = parseTag(res.NVT.Tags, "cve")
+		}
+		// Check <refs><ref type="cve"> as fallback (GMP format)
+		if (cve == "" || cve == "NOCVE") && len(res.NVT.Refs.Ref) > 0 {
+			for _, ref := range res.NVT.Refs.Ref {
+				if ref.Type == "cve" && ref.ID != "" {
+					cve = ref.ID
+					break
+				}
+			}
 		}
 
 		host := strings.TrimSpace(res.Host.IP)
