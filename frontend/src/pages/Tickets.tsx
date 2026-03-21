@@ -154,7 +154,7 @@ export function Tickets() {
           </tr></thead>
           <tbody>
             {sorted.map(t => (
-              <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)} className={`border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer ${selected.has(t.id) ? 'bg-blue-900/20' : ''}`}>
+              <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}${assignedFilter === 'me' ? '?from=me' : ''}`)} className={`border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer ${selected.has(t.id) ? 'bg-blue-900/20' : ''}`}>
                 <td className="p-3" onClick={e => toggleSelect(t.id, e)}>
                   <input type="checkbox" checked={selected.has(t.id)} readOnly className="rounded border-slate-600 bg-slate-800" />
                 </td>
