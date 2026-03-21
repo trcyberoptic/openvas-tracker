@@ -128,3 +128,115 @@ func (q *Queries) DeleteScan(ctx context.Context, arg DeleteScanParams) error {
 	_, err := q.db.ExecContext(ctx, deleteScan, arg.ID, arg.UserID)
 	return err
 }
+
+type ScanDiffEntry struct {
+	Status       string  `json:"status"` // "new", "fixed", "unchanged"
+	VulnID       string  `json:"vuln_id"`
+	Title        string  `json:"title"`
+	AffectedHost *string `json:"affected_host"`
+	Hostname     *string `json:"hostname"`
+	Severity     string  `json:"severity"`
+	CvssScore    *float64 `json:"cvss_score"`
+	CveID        *string `json:"cve_id"`
+}
+
+// DiffScans compares two scans by their vulnerabilities (matched by host+cve or host+title).
+func (q *Queries) DiffScans(ctx context.Context, oldScanID, newScanID string) ([]ScanDiffEntry, error) {
+	// New: in new scan but not in old
+	// Fixed: in old scan but not in new
+	// Unchanged: in both
+	const query = `
+		SELECT
+			CASE
+				WHEN o.id IS NULL THEN 'new'
+				WHEN n.id IS NULL THEN 'fixed'
+				ELSE 'unchanged'
+			END as status,
+			COALESCE(n.id, o.id) as vuln_id,
+			COALESCE(n.title, o.title) as title,
+			COALESCE(n.affected_host, o.affected_host) as affected_host,
+			COALESCE(n.hostname, o.hostname) as hostname,
+			COALESCE(n.severity, o.severity) as severity,
+			COALESCE(n.cvss_score, o.cvss_score) as cvss_score,
+			COALESCE(n.cve_id, o.cve_id) as cve_id
+		FROM (
+			SELECT id, title, affected_host, hostname, severity, cvss_score, cve_id,
+				CONCAT(COALESCE(affected_host,''), '||', COALESCE(cve_id, CONCAT('t:', title))) as fingerprint
+			FROM vulnerabilities WHERE scan_id = ?
+		) n
+		FULL OUTER JOIN (
+			SELECT id, title, affected_host, hostname, severity, cvss_score, cve_id,
+				CONCAT(COALESCE(affected_host,''), '||', COALESCE(cve_id, CONCAT('t:', title))) as fingerprint
+			FROM vulnerabilities WHERE scan_id = ?
+		) o ON n.fingerprint = o.fingerprint
+		ORDER BY
+			CASE WHEN o.id IS NULL THEN 1 WHEN n.id IS NULL THEN 2 ELSE 3 END,
+			COALESCE(n.cvss_score, o.cvss_score) DESC`
+
+	rows, err := q.db.QueryContext(ctx, query, newScanID, oldScanID)
+	if err != nil {
+		// MariaDB doesn't support FULL OUTER JOIN, use UNION approach
+		return q.diffScansCompat(ctx, oldScanID, newScanID)
+	}
+	defer rows.Close()
+	return scanDiffRows(rows)
+}
+
+func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID string) ([]ScanDiffEntry, error) {
+	const query = `
+		SELECT 'new' as status, n.id, n.title, n.affected_host, n.hostname, n.severity, n.cvss_score, n.cve_id
+		FROM vulnerabilities n
+		WHERE n.scan_id = ?
+		AND NOT EXISTS (
+			SELECT 1 FROM vulnerabilities o WHERE o.scan_id = ?
+			AND COALESCE(o.affected_host,'') = COALESCE(n.affected_host,'')
+			AND (
+				(o.cve_id IS NOT NULL AND o.cve_id != '' AND o.cve_id = n.cve_id)
+				OR ((o.cve_id IS NULL OR o.cve_id = '') AND (n.cve_id IS NULL OR n.cve_id = '') AND o.title = n.title)
+			)
+		)
+		UNION ALL
+		SELECT 'fixed' as status, o.id, o.title, o.affected_host, o.hostname, o.severity, o.cvss_score, o.cve_id
+		FROM vulnerabilities o
+		WHERE o.scan_id = ?
+		AND NOT EXISTS (
+			SELECT 1 FROM vulnerabilities n WHERE n.scan_id = ?
+			AND COALESCE(n.affected_host,'') = COALESCE(o.affected_host,'')
+			AND (
+				(n.cve_id IS NOT NULL AND n.cve_id != '' AND n.cve_id = o.cve_id)
+				OR ((n.cve_id IS NULL OR n.cve_id = '') AND (o.cve_id IS NULL OR o.cve_id = '') AND n.title = o.title)
+			)
+		)
+		UNION ALL
+		SELECT 'unchanged' as status, n.id, n.title, n.affected_host, n.hostname, n.severity, n.cvss_score, n.cve_id
+		FROM vulnerabilities n
+		WHERE n.scan_id = ?
+		AND EXISTS (
+			SELECT 1 FROM vulnerabilities o WHERE o.scan_id = ?
+			AND COALESCE(o.affected_host,'') = COALESCE(n.affected_host,'')
+			AND (
+				(o.cve_id IS NOT NULL AND o.cve_id != '' AND o.cve_id = n.cve_id)
+				OR ((o.cve_id IS NULL OR o.cve_id = '') AND (n.cve_id IS NULL OR n.cve_id = '') AND o.title = n.title)
+			)
+		)
+		ORDER BY FIELD(status, 'new', 'fixed', 'unchanged'), cvss_score DESC`
+
+	rows, err := q.db.QueryContext(ctx, query, newScanID, oldScanID, oldScanID, newScanID, newScanID, oldScanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDiffRows(rows)
+}
+
+func scanDiffRows(rows interface{ Next() bool; Scan(...any) error; Err() error }) ([]ScanDiffEntry, error) {
+	var items []ScanDiffEntry
+	for rows.Next() {
+		var i ScanDiffEntry
+		if err := rows.Scan(&i.Status, &i.VulnID, &i.Title, &i.AffectedHost, &i.Hostname, &i.Severity, &i.CvssScore, &i.CveID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}

@@ -1,11 +1,12 @@
 // frontend/src/components/layout/Sidebar.tsx
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Server, Scan, Ticket, Settings } from 'lucide-react'
+import { LayoutDashboard, Server, Scan, GitCompare, Ticket, Settings } from 'lucide-react'
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/hosts', icon: Server, label: 'Hosts' },
   { to: '/scans', icon: Scan, label: 'Scans' },
+  { to: '/scans/diff', icon: GitCompare, label: 'Scan Diff' },
   { to: '/tickets', icon: Ticket, label: 'Tickets' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]

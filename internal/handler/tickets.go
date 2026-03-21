@@ -232,6 +232,58 @@ func (h *TicketHandler) AlsoAffected(c echo.Context) error {
 	return c.JSON(http.StatusOK, hosts)
 }
 
+type bulkUpdateRequest struct {
+	TicketIDs  []string `json:"ticket_ids" validate:"required,min=1"`
+	Status     *string  `json:"status"`
+	AssignedTo *string  `json:"assigned_to"`
+}
+
+func (h *TicketHandler) BulkUpdate(c echo.Context) error {
+	var req bulkUpdateRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if req.Status == nil && req.AssignedTo == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "must provide status or assigned_to")
+	}
+	if len(req.TicketIDs) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "no ticket IDs provided")
+	}
+
+	userID := middleware.GetUserID(c)
+	updated := 0
+
+	for _, tid := range req.TicketIDs {
+		if req.Status != nil {
+			old, err := h.tickets.Get(c.Request().Context(), tid)
+			if err != nil {
+				continue
+			}
+			if _, err := h.tickets.UpdateStatus(c.Request().Context(), tid, *req.Status); err != nil {
+				continue
+			}
+			oldStatus := string(old.Status)
+			h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
+				ID: uuid.New().String(), TicketID: tid, Action: "status_changed",
+				OldValue: &oldStatus, NewValue: req.Status, ChangedBy: userID,
+			})
+		}
+		if req.AssignedTo != nil {
+			h.q.AssignTicket(c.Request().Context(), queries.AssignTicketParams{
+				ID: tid, AssignedTo: req.AssignedTo,
+			})
+			action := "assigned"
+			h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
+				ID: uuid.New().String(), TicketID: tid, Action: action,
+				NewValue: req.AssignedTo, ChangedBy: userID,
+			})
+		}
+		updated++
+	}
+
+	return c.JSON(http.StatusOK, map[string]int{"updated": updated})
+}
+
 func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
@@ -242,4 +294,5 @@ func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
 	g.GET("/:id/also-affected", h.AlsoAffected)
+	g.POST("/bulk", h.BulkUpdate)
 }
