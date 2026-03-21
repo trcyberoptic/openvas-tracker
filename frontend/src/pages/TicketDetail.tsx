@@ -80,29 +80,6 @@ export function TicketDetail() {
         </div>
       </div>
 
-      {/* Host + Also Affected — TOP */}
-      {ticket.affected_host && (
-        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">Affected Host</h3>
-          <Link to="/hosts" className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
-          {ticket.hostname && <span className="text-slate-500 text-sm ml-2">({ticket.hostname})</span>}
-          {alsoAffected.length > 0 && (
-            <div className="mt-3 border-t border-slate-800 pt-3">
-              <h4 className="text-xs text-slate-500 mb-2">Also affected ({alsoAffected.length})</h4>
-              <div className="flex flex-wrap gap-2">
-                {alsoAffected.map(a => (
-                  <Link key={a.ticket_id} to={`/tickets/${a.ticket_id}`}
-                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">
-                    <span className="font-mono text-slate-300">{a.host}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[a.status] || 'bg-slate-700 text-slate-300'}`}>{a.status.replace(/_/g, ' ')}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="grid grid-cols-2 gap-4 mb-6">
         {/* Status actions */}
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
@@ -182,6 +159,29 @@ export function TicketDetail() {
           {assignedUser && <p className="text-xs text-slate-500 mt-1">{assignedUser.email}</p>}
         </div>
       </div>
+
+      {/* Affected Host */}
+      {ticket.affected_host && (
+        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
+          <h3 className="text-sm font-medium text-slate-400 mb-2">Affected Host</h3>
+          <Link to="/hosts" className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
+          {ticket.hostname && <span className="text-slate-500 text-sm ml-2">({ticket.hostname})</span>}
+          {alsoAffected.length > 0 && (
+            <div className="mt-3 border-t border-slate-800 pt-3">
+              <h4 className="text-xs text-slate-500 mb-2">Also affected ({alsoAffected.length})</h4>
+              <div className="flex flex-wrap gap-2">
+                {alsoAffected.map(a => (
+                  <Link key={a.ticket_id} to={`/tickets/${a.ticket_id}`}
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">
+                    <span className="font-mono text-slate-300">{a.host}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[a.status] || 'bg-slate-700 text-slate-300'}`}>{a.status.replace(/_/g, ' ')}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* References */}
       <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
