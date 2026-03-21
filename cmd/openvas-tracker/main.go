@@ -56,6 +56,8 @@ func main() {
 
 	// Services
 	userSvc := service.NewUserService(db)
+	ldapSvc := service.NewLDAPService()
+	envSvc := service.NewEnvFileService(".env")
 	targetSvc := service.NewTargetService(db)
 	vulnSvc := service.NewVulnerabilityService(db)
 	ticketSvc := service.NewTicketService(db)
@@ -104,15 +106,14 @@ func main() {
 	// Auth routes (public) with dedicated rate limiter
 	authLimiter := mw.NewRateLimiter(30, time.Minute)
 	jwtExpiry := time.Duration(cfg.JWT.ExpireHours) * time.Hour
-	authH := handler.NewAuthHandler(userSvc, cfg.JWT.Secret, jwtExpiry)
+	q := queries.New(db)
+	authH := handler.NewAuthHandler(userSvc, ldapSvc, cfg, q, cfg.JWT.Secret, jwtExpiry)
 	authH.RegisterRoutes(e.Group("/api/auth", authLimiter.Middleware()))
 
 	// Protected routes
 	p := e.Group("/api", mw.JWTAuth(cfg.JWT.Secret))
 
 	handler.NewTargetHandler(targetSvc).RegisterRoutes(p.Group("/targets"))
-
-	q := queries.New(db)
 	handler.NewScanHandler(q, vulnSvc).RegisterRoutes(p.Group("/scans"))
 
 	handler.NewHostHandler(q).RegisterRoutes(p.Group("/hosts"))
@@ -130,7 +131,7 @@ func main() {
 	handler.NewAssetHandler(assetSvc).RegisterRoutes(p.Group("/assets"))
 	handler.NewAuditHandler(auditSvc).RegisterRoutes(p.Group("/audit"))
 	handler.NewSearchHandler(searchSvc).RegisterRoutes(p.Group("/search"))
-	handler.NewSettingsHandler(cfg.Import.APIKey, cfg.Server.Port, q).RegisterRoutes(p.Group("/settings"))
+	handler.NewSettingsHandler(cfg, q, envSvc, ldapSvc).RegisterRoutes(p.Group("/settings"))
 
 	// WebSocket
 	wsH := handler.NewWSHandler(hub, cfg.JWT.Secret)
