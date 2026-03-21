@@ -8,7 +8,7 @@ const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300',
 
 interface Ticket {
   id: string; title: string; description?: string; priority: string; status: string
-  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string
+  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string; affected_host?: string
   first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface Comment { id: string; user_id: string; content: string; created_at: string }
@@ -127,10 +127,10 @@ export function TicketDetail() {
       )}
 
       {/* Linked vulnerability */}
-      {ticket.vulnerability_id && (
+      {ticket.affected_host && (
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">Linked Vulnerability</h3>
-          <Link to="/vulnerabilities" className="text-blue-400 hover:underline text-sm">{ticket.vulnerability_id}</Link>
+          <h3 className="text-sm font-medium text-slate-400 mb-2">Host</h3>
+          <Link to={`/hosts`} className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
         </div>
       )}
 
