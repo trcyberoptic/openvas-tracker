@@ -57,7 +57,13 @@ func main() {
 	// Services
 	userSvc := service.NewUserService(db)
 	ldapSvc := service.NewLDAPService()
-	envSvc := service.NewEnvFileService(".env")
+	envPath := ".env"
+	if p := os.Getenv("OT_ENV_FILE"); p != "" {
+		envPath = p
+	} else if _, err := os.Stat("/etc/openvas-tracker/env"); err == nil {
+		envPath = "/etc/openvas-tracker/env"
+	}
+	envSvc := service.NewEnvFileService(envPath)
 	targetSvc := service.NewTargetService(db)
 	vulnSvc := service.NewVulnerabilityService(db)
 	ticketSvc := service.NewTicketService(db)

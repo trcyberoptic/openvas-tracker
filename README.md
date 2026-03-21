@@ -8,9 +8,17 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 - **Automatic Ticketing**: New findings create tickets, missing findings auto-resolve, recurring findings reopen
 - **Ticket Lifecycle**: open → fixed / risk_accepted / false_positive, with full activity audit trail
 - **Risk Acceptance with Expiry**: Risk-accepted tickets auto-reopen after expiry date
-- **Host-centric View**: Aggregated vulnerability counts per host with expandable details
-- **Dashboard**: Open ticket counts by priority, severity trend over time, ticket stats
-- **Filterable & Sortable Tables**: All list views with column sorting and multi-filter support
+- **Scan Comparison**: Side-by-side diff of two scans — new, fixed, unchanged findings
+- **Bulk Actions**: Select multiple tickets for batch status change or assignment
+- **Host-centric View**: Aggregated vulnerability counts and ticket status per host with expandable ticket list
+- **Dashboard**: Open ticket counts by priority, trend over time, "My Tickets" and "Unassigned" quick filters
+- **CVE References**: NVD, MITRE, and Google links on tickets with CVE; title-based search for tickets without
+- **Also Affected**: See which other hosts have the same vulnerability
+- **DNS Hostname Resolution**: Automatic PTR lookup for host IPs, shown alongside IPs everywhere
+- **LDAP / Active Directory**: Optional AD authentication with group-based access control
+- **Admin + LDAP Auth**: Built-in admin user with configurable password, plus optional LDAP for team access
+- **Settings UI**: Edit all configuration (.env file) from the browser, test LDAP connection
+- **Filterable & Sortable Tables**: All list views with column sorting, multi-filter, full-text search across all columns
 - **Report Generation**: HTML, PDF, Excel, Markdown
 - **Real-time Updates**: WebSocket push notifications
 - **Embedded React SPA**: Single binary, no separate frontend deploy
@@ -21,6 +29,7 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 sequenceDiagram
     participant OV as OpenVAS (GVM)
     participant TR as OpenVAS-Tracker
+    participant AD as Active Directory
     participant DB as MariaDB
     participant UI as React Dashboard
 
@@ -29,60 +38,50 @@ sequenceDiagram
     TR->>OV: GMP Socket: fetch latest report
     OV-->>TR: XML report
     TR->>DB: Begin transaction
-    TR->>DB: Create scan record
-    loop For each vulnerability
-        TR->>DB: Create vulnerability
-        alt New finding
-            TR->>DB: Create ticket (open)
-        else Known finding (ticket open)
-            TR->>DB: Update last_seen_at
-        else Recurring finding (ticket fixed)
-            TR->>DB: Reopen ticket → open
-        else False positive
-            TR->>DB: Skip (never reopen)
-        end
+    TR->>DB: Create scan + vulnerabilities + tickets
+    TR->>DB: Auto-fix/reopen tickets
+    TR->>DB: Commit
+    TR->>UI: WebSocket push
+
+    Note over UI: User logs in
+    UI->>TR: POST /api/auth/login (username + password)
+    alt Admin user
+        TR->>TR: Check OT_ADMIN_PASSWORD
+    else LDAP user
+        TR->>AD: Bind + group check
     end
-    TR->>DB: Auto-fix tickets for missing findings
-    TR->>DB: Reopen expired risk acceptances
-    TR->>DB: Commit transaction
-    TR->>UI: WebSocket: push update
-    UI->>TR: GET /api/dashboard
-    TR-->>UI: Priority counts, ticket stats, trend
+    TR-->>UI: JWT token
 ```
 
 ```
-┌──────────────┐     HTTP GET (alert)      ┌──────────────────┐
-│   OpenVAS    │ ──────────────────────────▶│                  │
-│   (GVM)      │◀── GMP socket (fetch) ────│  OpenVAS-Tracker │──▶ MariaDB
+┌──────────────┐     HTTP GET (alert)      ┌──────────────────┐     ┌─────────────┐
+│   OpenVAS    │ ──────────────────────────▶│                  │────▶│  MariaDB    │
+│   (GVM)      │◀── GMP socket (fetch) ────│  OpenVAS-Tracker │     └─────────────┘
 │              │         XML report         │   (Go + React)   │
 └──────────────┘                            └──────────────────┘
-                                                    │
-                                              :8080 │
-                                                    ▼
-                                            ┌──────────────┐
-                                            │   Browser     │
-                                            │  Dashboard    │
-                                            └──────────────┘
+                                              │          │
+                                         :8080│     LDAP │
+                                              ▼          ▼
+                                      ┌──────────┐  ┌──────────────┐
+                                      │ Browser  │  │   Active     │
+                                      │Dashboard │  │  Directory   │
+                                      └──────────┘  └──────────────┘
 ```
 
 ## Quick Start with Docker
 
 ```bash
-cp .env.example .env    # edit: set OT_JWT_SECRET and OT_IMPORT_APIKEY
+cp .env.example .env    # edit: set OT_JWT_SECRET, OT_ADMIN_PASSWORD, OT_IMPORT_APIKEY
 docker compose up -d
 ```
 
 This starts MariaDB + the app. The UI is at http://localhost:8080.
 
-> **Important:** `OT_JWT_SECRET` must be set to a random string of at least 32 characters. The app will refuse to start with the default value.
+> **Important:** `OT_JWT_SECRET` must be a random string of at least 32 characters.
 
-### Register a user
+### Login
 
-```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@local.dev","username":"admin","password":"changeme123"}'
-```
+Default admin login: username `admin`, password from `OT_ADMIN_PASSWORD` in `.env`.
 
 ### Import an OpenVAS report
 
@@ -93,18 +92,6 @@ curl -X POST http://localhost:8080/api/import/openvas \
   --data-binary @scan-report.xml
 ```
 
-Response:
-```json
-{
-  "scan_id": "...",
-  "vulnerabilities_imported": 10,
-  "vulnerabilities_skipped": 2,
-  "tickets_created": 10,
-  "tickets_reopened": 0,
-  "tickets_auto_resolved": 0
-}
-```
-
 ## Quick Start without Docker (Bare Metal)
 
 ### Prerequisites
@@ -112,54 +99,32 @@ Response:
 - Go 1.24+
 - Node.js 22+ and npm
 - MariaDB 10.6+ (or MySQL 8+)
-- [golang-migrate](https://github.com/golang-migrate/migrate) CLI (for migrations)
 
-### 1. Set up MariaDB
-
-```sql
-CREATE DATABASE `openvas-tracker` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'otracker'@'localhost' IDENTIFIED BY 'your-db-password';
-GRANT ALL PRIVILEGES ON `openvas-tracker`.* TO 'otracker'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-### 2. Run migrations
+### Setup
 
 ```bash
-export DATABASE_URL="mysql://otracker:your-db-password@tcp(localhost:3306)/openvas-tracker"
+# 1. Create database
+mysql -e "CREATE DATABASE \`openvas-tracker\` CHARACTER SET utf8mb4;"
+
+# 2. Run migrations
 make migrate-up
-```
 
-### 3. Configure environment
+# 3. Configure
+cat > .env << EOF
+OT_DATABASE_DSN=root@tcp(localhost:3306)/openvas-tracker?parseTime=true
+OT_JWT_SECRET=$(openssl rand -hex 32)
+OT_IMPORT_APIKEY=$(openssl rand -hex 32)
+OT_ADMIN_PASSWORD=your-admin-password
+EOF
 
-```bash
-export OT_DATABASE_DSN="otracker:your-db-password@tcp(localhost:3306)/openvas-tracker?parseTime=true"
-export OT_JWT_SECRET="$(openssl rand -hex 32)"
-export OT_IMPORT_APIKEY="$(openssl rand -hex 32)"
-```
-
-Or create an `.env` file — `godotenv` reads it automatically.
-
-### 4. Build and run
-
-```bash
-make build          # builds frontend + Go binary → bin/openvas-tracker
+# 4. Build and run
+make build
 ./bin/openvas-tracker
 ```
 
-The UI is at http://localhost:8080.
-
-### Development mode
-
-```bash
-make dev            # runs Go backend + Vite dev server with HMR
-```
-
-Frontend dev server on port 5173 proxies API calls to the backend on port 8080.
-
 ## Configuration
 
-All config via environment variables with `OT_` prefix:
+All config via `.env` file. Editable from the Settings page in the UI.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -167,75 +132,46 @@ All config via environment variables with `OT_` prefix:
 | `OT_DATABASE_DSN` | `...@tcp(localhost:3306)/openvas-tracker?parseTime=true` | MariaDB DSN |
 | `OT_JWT_SECRET` | (none — **required**) | JWT signing key (min 32 chars) |
 | `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars) |
+| `OT_ADMIN_PASSWORD` | (empty) | Admin user password |
+| `OT_LDAP_URL` | (empty) | LDAP server URL (e.g. `ldaps://dc01.example.com:636`) |
+| `OT_LDAP_BASE_DN` | (empty) | LDAP search base DN |
+| `OT_LDAP_BIND_DN` | (empty) | LDAP service account DN |
+| `OT_LDAP_BIND_PASSWORD` | (empty) | LDAP service account password |
+| `OT_LDAP_GROUP_DN` | (empty) | Required AD group for access |
+| `OT_LDAP_USER_FILTER` | `(sAMAccountName=%s)` | LDAP user search filter |
+
+## Authentication
+
+**Three auth sources, tried in order:**
+
+1. **Admin**: Username `admin` + `OT_ADMIN_PASSWORD` → always available
+2. **LDAP**: Bind against Active Directory, verify group membership → if `OT_LDAP_URL` configured
+3. **DB fallback**: Check existing database users → for backwards compatibility
+
+No self-registration. Users are either the admin, AD members, or pre-existing DB accounts.
+
+LDAP users are auto-created in the DB on first login. Their DB record is used for ticket assignment and activity logging.
 
 ## OpenVAS Configuration
 
-OpenVAS-Tracker does not control OpenVAS — it only receives scan results. You configure OpenVAS to push reports to the tracker via its built-in Alert system.
+OpenVAS-Tracker does not control OpenVAS — it only receives scan results.
 
-### Prerequisites
+### Setup
 
-- A running OpenVAS/GVM installation (Greenbone Community Edition or Greenbone Enterprise)
-- Network access from the OpenVAS host to the tracker's import endpoint
-
-### Step 1: Set the API key
-
-In your `.env` or environment config, set a strong API key (min 32 characters):
-
-```
-OT_IMPORT_APIKEY=your-secret-import-key-at-least-32-chars
-```
-
-### Step 2: Create an Alert in OpenVAS
-
-1. Log in to the **Greenbone Security Assistant (GSA)** web UI
-2. Go to **Configuration → Alerts → New Alert**
-3. Configure:
-
-| Field | Value |
-|-------|-------|
-| Name | `OpenVAS-Tracker Import` |
-| Event | Task run status changed → Done |
-| Method | HTTP Get |
-| HTTP Get URL | `http://<tracker-host>:8080/api/import/openvas?api_key=<your-api-key>` |
-
-When the alert fires, OpenVAS-Tracker receives the GET request, connects to GVM via the GMP Unix socket, fetches the latest completed report, and imports it automatically.
-
-> **Note:** If GVM runs in Docker, use the Docker bridge IP (typically `172.17.0.1`) instead of `localhost` in the alert URL. The API key must be passed as a query parameter because GVM HTTP Get alerts cannot set custom headers.
-
-### Step 3: Attach the Alert to a Scan Task
-
-1. Go to **Scans → Tasks**
-2. Edit your scan task (or create a new one)
-3. Under **Alerts**, select the `OpenVAS-Tracker Import` alert
-4. Save
-
-Now every time this scan completes, the results are automatically imported.
-
-### GMP Fetch Script
-
-The GET endpoint triggers `/usr/local/bin/openvas-tracker-fetch-latest` which:
-1. Connects to the GVM Manager via GMP Unix socket
-2. Fetches the latest completed report in XML format
-3. POSTs it to the tracker's import endpoint
-4. Tracks the last imported report ID to avoid duplicates
+1. Set `OT_IMPORT_APIKEY` in `.env` (min 32 chars)
+2. In GSA: **Configuration → Alerts → New Alert**
+   - Event: Task run status changed → Done
+   - Method: HTTP Get
+   - URL: `http://<tracker-host>:8080/api/import/openvas?api_key=<your-api-key>`
+3. Attach the alert to your scan task
 
 ### Manual Import
 
-You can also import reports manually via curl:
-
 ```bash
 curl -X POST http://localhost:8080/api/import/openvas \
-  -H 'X-API-Key: your-secret-import-key-at-least-32-chars' \
-  -H 'Content-Type: application/xml' \
-  --data-binary @scan-report.xml
+  -H 'X-API-Key: <key>' -H 'Content-Type: application/xml' \
+  --data-binary @report.xml
 ```
-
-### Exporting from OpenVAS manually
-
-1. In GSA, go to **Scans → Reports**
-2. Select a completed report
-3. Click the download icon → choose **XML** format
-4. Import the downloaded file using the curl command above
 
 ## Ticket Lifecycle
 
@@ -249,42 +185,41 @@ Risk acceptance expires            →  Ticket auto-reopened
 User marks ticket                  →  fixed / risk_accepted / false_positive
 ```
 
-All status changes are logged in the activity trail with actor (user ID or "Automatic").
+All status changes logged with actor (user ID or "Automatic").
 
 ## API
 
-All endpoints under `/api/` require `Authorization: Bearer <token>` except auth and health.
-
-Import endpoint uses `X-API-Key` header (or `?api_key=` query param) instead of JWT.
-
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/auth/register | Register user |
-| POST | /api/auth/login | Login, get JWT (rate limited: 10/min/IP) |
+| POST | /api/auth/login | Login (username + password), get JWT |
 | POST | /api/import/openvas | Import OpenVAS XML (API-Key auth) |
 | GET | /api/import/openvas | Trigger GMP fetch (API-Key auth) |
-| GET | /api/hosts | Aggregated host summaries |
-| GET | /api/hosts/:host/vulnerabilities | Vulns for a specific host |
-| GET | /api/scans | List scans (imports) |
+| GET | /api/hosts | Host summaries with ticket status |
+| GET | /api/hosts/:host/tickets | Tickets for a host |
+| GET | /api/scans | List scans |
+| GET | /api/scans/diff?old=X&new=Y | Compare two scans |
 | GET | /api/scans/:id | Scan detail |
-| GET | /api/scans/:id/vulnerabilities | Vulns in a scan |
-| GET | /api/vulnerabilities | List all vulnerabilities |
-| GET | /api/tickets | List all tickets (shared board) |
+| GET | /api/tickets | List all tickets |
 | GET | /api/tickets/:id | Ticket detail |
-| PATCH | /api/tickets/:id/status | Change status (open/fixed/risk_accepted/false_positive) |
+| PATCH | /api/tickets/:id/status | Change status |
 | PATCH | /api/tickets/:id/assign | Assign to user |
+| POST | /api/tickets/bulk | Bulk status/assign |
 | POST/GET | /api/tickets/:id/comments | Add/list notes |
-| GET | /api/tickets/:id/activity | Ticket activity log |
-| GET | /api/dashboard | Dashboard: priority counts + ticket stats |
-| GET | /api/dashboard/trend | Vulnerability trend over time |
-| GET | /api/settings/setup | Setup guide (masked API key) |
-| GET | /api/settings/users | User list for assignment |
-| GET | /api/health | Health check (includes DB ping) |
-| WS | /ws?token= | Real-time updates (origin-validated) |
+| GET | /api/tickets/:id/activity | Activity log |
+| GET | /api/tickets/:id/also-affected | Other hosts with same finding |
+| GET | /api/dashboard | Priority counts + ticket stats |
+| GET | /api/dashboard/trend | Vuln trend over time |
+| GET | /api/settings/setup | Setup guide |
+| GET | /api/settings/users | User list (local + LDAP) |
+| GET | /api/settings/env | Read .env config (masked) |
+| PUT | /api/settings/env | Update single .env key |
+| PUT | /api/settings/env/batch | Update multiple .env keys |
+| POST | /api/settings/ldap/test | Test LDAP connection |
+| GET | /api/health | Health check (DB ping) |
 
 ## Tech Stack
 
-- **Backend**: Go 1.26, Echo v4, MariaDB, golang-jwt, bcrypt, godotenv
+- **Backend**: Go 1.26, Echo v4, MariaDB, golang-jwt, bcrypt, godotenv, go-ldap
 - **Frontend**: React 19, Vite, Tailwind CSS, TanStack Query, Recharts, Zustand
 - **Deploy**: Docker Compose (MariaDB + single Go binary with embedded SPA)
 
