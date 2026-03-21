@@ -18,6 +18,11 @@ func TestMapSeverity(t *testing.T) {
 		{"Log", 0.0, "info"},
 		{"Debug", 0.0, "info"},
 		{"", 0.0, "info"},
+		{"", 10.0, "critical"},  // CVSS fallback
+		{"", 7.5, "high"},       // CVSS fallback
+		{"", 5.0, "medium"},     // CVSS fallback
+		{"", 2.0, "low"},        // CVSS fallback
+		{"Log", 9.8, "critical"}, // Log with high CVSS
 	}
 	for _, tt := range tests {
 		got := mapSeverity(tt.threat, tt.cvss)
