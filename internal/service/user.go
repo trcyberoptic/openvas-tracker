@@ -55,10 +55,22 @@ func (s *UserService) Register(ctx context.Context, email, username, password st
 	return user, nil
 }
 
-func (s *UserService) Authenticate(ctx context.Context, email, password string) (queries.User, error) {
-	user, err := s.q.GetUserByEmail(ctx, email)
+func (s *UserService) GetByUsername(ctx context.Context, username string) (queries.User, error) {
+	user, err := s.q.GetUserByUsername(ctx, username)
 	if err != nil {
 		return queries.User{}, ErrUserNotFound
+	}
+	return user, nil
+}
+
+func (s *UserService) Authenticate(ctx context.Context, username, password string) (queries.User, error) {
+	// Try by email first (backwards compat), then by username
+	user, err := s.q.GetUserByEmail(ctx, username)
+	if err != nil {
+		user, err = s.q.GetUserByUsername(ctx, username)
+		if err != nil {
+			return queries.User{}, ErrUserNotFound
+		}
 	}
 	if !user.IsActive {
 		return queries.User{}, ErrUserNotFound

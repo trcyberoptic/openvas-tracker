@@ -12,6 +12,8 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Import   ImportConfig
+	Admin    AdminConfig
+	LDAP     LDAPConfig
 }
 
 type ServerConfig struct {
@@ -34,6 +36,23 @@ type ImportConfig struct {
 	APIKey string
 }
 
+type AdminConfig struct {
+	Password string
+}
+
+type LDAPConfig struct {
+	URL          string
+	BaseDN       string
+	BindDN       string
+	BindPassword string
+	GroupDN      string
+	UserFilter   string // e.g. (sAMAccountName=%s)
+}
+
+func (l LDAPConfig) Enabled() bool {
+	return l.URL != "" && l.BaseDN != ""
+}
+
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
@@ -53,6 +72,17 @@ func Load() (*Config, error) {
 		},
 		Import: ImportConfig{
 			APIKey: env("OT_IMPORT_APIKEY", ""),
+		},
+		Admin: AdminConfig{
+			Password: env("OT_ADMIN_PASSWORD", ""),
+		},
+		LDAP: LDAPConfig{
+			URL:          env("OT_LDAP_URL", ""),
+			BaseDN:       env("OT_LDAP_BASE_DN", ""),
+			BindDN:       env("OT_LDAP_BIND_DN", ""),
+			BindPassword: env("OT_LDAP_BIND_PASSWORD", ""),
+			GroupDN:      env("OT_LDAP_GROUP_DN", ""),
+			UserFilter:   env("OT_LDAP_USER_FILTER", "(sAMAccountName=%s)"),
 		},
 	}, nil
 }
