@@ -73,7 +73,7 @@ export function TicketDetail() {
       <div className="grid grid-cols-2 gap-4 mb-6">
         {/* Status actions */}
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-          <h3 className="text-sm font-medium text-slate-400 mb-3">Status</h3>
+          <h3 className="text-sm font-medium text-slate-400 mb-3">Change Status</h3>
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
               {ticket.status !== 'open' && ticket.status !== 'false_positive' && (
