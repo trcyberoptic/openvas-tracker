@@ -18,7 +18,8 @@ func NewVulnHandler(vulns *service.VulnerabilityService) *VulnHandler {
 }
 
 func (h *VulnHandler) List(c echo.Context) error {
-	vulns, err := h.vulns.List(c.Request().Context(), 100, 0)
+	limit, offset := paginate(c)
+	vulns, err := h.vulns.List(c.Request().Context(), limit, offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list vulnerabilities")
 	}

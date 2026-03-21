@@ -63,7 +63,8 @@ func (h *TicketHandler) Create(c echo.Context) error {
 
 func (h *TicketHandler) List(c echo.Context) error {
 	userID := middleware.GetUserID(c)
-	tickets, err := h.tickets.List(c.Request().Context(), userID, 100, 0)
+	limit, offset := paginate(c)
+	tickets, err := h.tickets.List(c.Request().Context(), userID, limit, offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list tickets")
 	}

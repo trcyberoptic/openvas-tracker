@@ -20,7 +20,8 @@ func NewAssetHandler(a *service.AssetService) *AssetHandler {
 
 func (h *AssetHandler) List(c echo.Context) error {
 	userID := middleware.GetUserID(c)
-	assets, err := h.assets.List(c.Request().Context(), userID, 100, 0)
+	limit, offset := paginate(c)
+	assets, err := h.assets.List(c.Request().Context(), userID, limit, offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list assets")
 	}
