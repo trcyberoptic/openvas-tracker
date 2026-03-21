@@ -255,18 +255,25 @@ type TrendPoint struct {
 }
 
 func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
+	// For each of the last 30 days, count how many tickets were open on that day.
+	// A ticket was open on day D if: created_at <= D AND (resolved_at IS NULL OR resolved_at > D)
 	const query = `
-		SELECT s.id, s.name, s.created_at,
-			COUNT(DISTINCT CASE WHEN t.status = 'open' THEN t.id END) as total,
-			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'critical' THEN t.id END) as critical,
-			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'high' THEN t.id END) as high,
-			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'medium' THEN t.id END) as medium,
-			COUNT(DISTINCT CASE WHEN t.status = 'open' AND t.priority = 'low' THEN t.id END) as low
-		FROM scans s
-		JOIN vulnerabilities v ON v.scan_id = s.id
-		LEFT JOIN tickets t ON t.vulnerability_id = v.id
-		GROUP BY s.id, s.name, s.created_at
-		ORDER BY s.created_at ASC`
+		WITH RECURSIVE dates AS (
+			SELECT CURDATE() - INTERVAL 29 DAY AS d
+			UNION ALL SELECT d + INTERVAL 1 DAY FROM dates WHERE d < CURDATE()
+		)
+		SELECT '' as id, DATE_FORMAT(d, '%Y-%m-%d') as name, d as created_at,
+			COUNT(t.id) as total,
+			SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END) as critical,
+			SUM(CASE WHEN t.priority = 'high' THEN 1 ELSE 0 END) as high,
+			SUM(CASE WHEN t.priority = 'medium' THEN 1 ELSE 0 END) as medium,
+			SUM(CASE WHEN t.priority = 'low' THEN 1 ELSE 0 END) as low
+		FROM dates
+		LEFT JOIN tickets t ON t.created_at <= dates.d + INTERVAL 1 DAY
+			AND (t.resolved_at IS NULL OR t.resolved_at > dates.d)
+			AND t.status != 'false_positive'
+		GROUP BY dates.d
+		ORDER BY dates.d ASC`
 	rows, err := q.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
