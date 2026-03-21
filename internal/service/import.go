@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"net"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -39,6 +40,28 @@ type ImportService struct {
 
 func NewImportService(db *sql.DB) *ImportService {
 	return &ImportService{db: db, q: queries.New(db)}
+}
+
+// BackfillHostnames resolves PTR records for all vulnerabilities missing a hostname.
+func (s *ImportService) BackfillHostnames(ctx context.Context) (int, error) {
+	hosts, err := s.q.DistinctHostsWithoutHostname(ctx)
+	if err != nil {
+		return 0, err
+	}
+	updated := 0
+	for _, ip := range hosts {
+		hostname := resolveHostname(ip, "")
+		if hostname == "" {
+			continue
+		}
+		if err := s.q.SetHostnameByIP(ctx, ip, hostname); err != nil {
+			log.Printf("backfill: failed to set hostname for %s: %v", ip, err)
+			continue
+		}
+		log.Printf("backfill: %s → %s", ip, hostname)
+		updated++
+	}
+	return updated, nil
 }
 
 // Import processes parsed OpenVAS results: creates scan, vulns, tickets in a single transaction.
@@ -96,7 +119,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 			CvssScore:      f64Ptr(r.CVSSScore),
 			CveID:          cvePtr(r.CVE),
 			AffectedHost:   strPtr(r.Host),
-			Hostname:       strPtr(r.Hostname),
+			Hostname:       strPtr(resolveHostname(r.Host, r.Hostname)),
 			AffectedPort:   port,
 			Protocol:       proto,
 			Solution:       strPtr(r.Solution),
@@ -269,6 +292,21 @@ func logActivity(ctx context.Context, q *queries.Queries, ticketID, action strin
 		ID: uuid.New().String(), TicketID: ticketID, Action: action,
 		OldValue: oldVal, NewValue: newVal, ChangedBy: changedBy, Note: note,
 	})
+}
+
+// resolveHostname returns the hostname from XML, or falls back to PTR lookup.
+func resolveHostname(ip, xmlHostname string) string {
+	if xmlHostname != "" {
+		return xmlHostname
+	}
+	if ip == "" {
+		return ""
+	}
+	names, err := net.LookupAddr(ip)
+	if err != nil || len(names) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(names[0], ".")
 }
 
 func strPtr(s string) *string {

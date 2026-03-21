@@ -71,6 +71,7 @@ export function Tickets() {
             <SortHeader label="Priority" sortKey="priority_order" sort={effectiveSort} onToggle={toggle} />
             <SortHeader label="Status" sortKey="status" sort={effectiveSort} onToggle={toggle} />
             <SortHeader label="Assigned To" sortKey="assigned_to" sort={effectiveSort} onToggle={toggle} />
+            <SortHeader label="First Seen" sortKey="first_seen_at" sort={effectiveSort} onToggle={toggle} />
             <SortHeader label="Last Seen" sortKey="last_seen_at" sort={effectiveSort} onToggle={toggle} />
           </tr></thead>
           <tbody>
@@ -82,10 +83,11 @@ export function Tickets() {
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs font-medium text-white ${PRIORITY_COLORS[t.priority] || 'bg-gray-600'}`}>{t.priority}</span></td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[t.status] || 'bg-slate-700 text-slate-300'}`}>{t.status.replace('_', ' ')}</span></td>
                 <td className="p-3 text-slate-400">{t.assigned_to ? users.find(u => u.id === t.assigned_to)?.username || '...' : <span className="text-slate-600">—</span>}</td>
+                <td className="p-3 text-slate-400">{t.first_seen_at ? new Date(t.first_seen_at).toLocaleString() : '-'}</td>
                 <td className="p-3 text-slate-400">{t.last_seen_at ? new Date(t.last_seen_at).toLocaleString() : '-'}</td>
               </tr>
             ))}
-            {sorted.length === 0 && (<tr><td colSpan={7} className="p-6 text-center text-slate-500">{tickets.length > 0 ? 'No matches' : 'No tickets found'}</td></tr>)}
+            {sorted.length === 0 && (<tr><td colSpan={8} className="p-6 text-center text-slate-500">{tickets.length > 0 ? 'No matches' : 'No tickets found'}</td></tr>)}
           </tbody>
         </table>
       </div>

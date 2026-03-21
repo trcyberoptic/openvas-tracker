@@ -36,6 +36,15 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "import failed")
 	}
 
+	// Backfill hostnames via PTR for any IPs missing them
+	go func() {
+		if n, err := h.importSvc.BackfillHostnames(context.Background()); err != nil {
+			log.Printf("hostname backfill error: %v", err)
+		} else if n > 0 {
+			log.Printf("hostname backfill: resolved %d hosts", n)
+		}
+	}()
+
 	return c.JSON(http.StatusCreated, res)
 }
 
