@@ -84,7 +84,7 @@ export OT_JWT_SECRET="$(openssl rand -hex 32)"
 export OT_IMPORT_APIKEY="$(openssl rand -hex 32)"
 ```
 
-Or create an `.env` file — Viper reads it automatically.
+Or create an `.env` file — `godotenv` reads it automatically.
 
 ### 4. Build and run
 
@@ -148,24 +148,11 @@ OT_IMPORT_APIKEY=your-secret-import-key-at-least-32-chars
 | Name | `OpenVAS-Tracker Import` |
 | Event | Task run status changed → Done |
 | Method | HTTP Get |
-| HTTP Get URL | `http://<tracker-host>:8080/api/import/openvas` |
+| HTTP Get URL | `http://<tracker-host>:8080/api/import/openvas?api_key=<your-api-key>` |
 
-> **Note:** The built-in "HTTP Get" alert method in GVM sends the report as XML in the request body. If your GVM version doesn't support sending the report body via HTTP alerts, use the **SCP** or **Send to host** method to write the XML file, then use a small cron script to POST it:
->
-> ```bash
-> #!/bin/bash
-> # /opt/openvas-tracker/push-report.sh
-> REPORT_DIR="/var/lib/gvm/reports"
-> API_URL="http://tracker-host:8080/api/import/openvas"
-> API_KEY="your-secret-import-key-at-least-32-chars"
->
-> for f in "$REPORT_DIR"/*.xml; do
->   curl -s -X POST "$API_URL" \
->     -H "X-API-Key: $API_KEY" \
->     -H "Content-Type: application/xml" \
->     --data-binary "@$f" && rm "$f"
-> done
-> ```
+When the alert fires, OpenVAS-Tracker receives the GET request, connects to GVM via the GMP Unix socket, fetches the latest completed report, and imports it automatically.
+
+> **Note:** If GVM runs in Docker, use the Docker bridge IP (typically `172.17.0.1`) instead of `localhost` in the alert URL. The API key must be passed as a query parameter because GVM HTTP Get alerts cannot set custom headers.
 
 ### Step 3: Attach the Alert to a Scan Task
 
@@ -174,7 +161,15 @@ OT_IMPORT_APIKEY=your-secret-import-key-at-least-32-chars
 3. Under **Alerts**, select the `OpenVAS-Tracker Import` alert
 4. Save
 
-Now every time this scan completes, the results are automatically sent to the tracker.
+Now every time this scan completes, the results are automatically imported.
+
+### GMP Fetch Script
+
+The GET endpoint triggers `/usr/local/bin/openvas-tracker-fetch-latest` which:
+1. Connects to the GVM Manager via GMP Unix socket
+2. Fetches the latest completed report in XML format
+3. POSTs it to the tracker's import endpoint
+4. Tracks the last imported report ID to avoid duplicates
 
 ### Manual Import
 
