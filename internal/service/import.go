@@ -307,18 +307,34 @@ func logActivity(ctx context.Context, q *queries.Queries, ticketID, action strin
 }
 
 // resolveHostname returns the hostname from XML, or falls back to PTR lookup.
+// Normalizes: hostname part uppercase, domain part lowercase.
 func resolveHostname(ip, xmlHostname string) string {
-	if xmlHostname != "" {
-		return xmlHostname
+	raw := xmlHostname
+	if raw == "" {
+		if ip == "" {
+			return ""
+		}
+		names, err := net.LookupAddr(ip)
+		if err != nil || len(names) == 0 {
+			return ""
+		}
+		raw = strings.TrimSuffix(names[0], ".")
 	}
-	if ip == "" {
+	return normalizeHostname(raw)
+}
+
+// normalizeHostname: hostname part UPPERCASE, domain part lowercase.
+// e.g. "vgitlab01.example.local" → "VGITLAB01.example.local"
+func normalizeHostname(h string) string {
+	if h == "" {
 		return ""
 	}
-	names, err := net.LookupAddr(ip)
-	if err != nil || len(names) == 0 {
-		return ""
+	parts := strings.SplitN(h, ".", 2)
+	result := strings.ToUpper(parts[0])
+	if len(parts) == 2 {
+		result += "." + strings.ToLower(parts[1])
 	}
-	return strings.TrimSuffix(names[0], ".")
+	return result
 }
 
 // VulnFingerprint returns the canonical fingerprint for a vulnerability: CVE if available, otherwise "title:" + title.
