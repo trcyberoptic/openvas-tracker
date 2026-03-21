@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker info:*)",
+      "Bash(curl -s http://localhost:8080/api/health)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "bash -c 'if [[ \"$CLAUDE_FILE_PATH\" == *.go ]]; then gofmt -w \"$CLAUDE_FILE_PATH\" 2>/dev/null; fi'"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "bash -c 'if [[ \"$CLAUDE_FILE_PATH\" == *.env ]]; then echo \"BLOCKED: Do not edit .env files directly — use deploy/openvas-tracker.env.example instead\"; exit 1; fi'"
+      }
+    ]
+  }
+}
