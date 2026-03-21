@@ -41,6 +41,7 @@ type Ticket struct {
 	LastSeenAt      *time.Time     `json:"last_seen_at"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
+	AffectedHost    *string        `json:"affected_host"`
 }
 
 type TicketComment struct {
@@ -90,10 +91,10 @@ type CountTicketsByStatusRow struct {
 	Count  int64        `json:"count"`
 }
 
-const ticketCols = `id, title, description, status, priority, vulnerability_id, assigned_to, created_by, due_date, resolved_at, first_seen_at, last_seen_at, created_at, updated_at`
+const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host`
 
 func scanTicket(row interface{ Scan(...any) error }, i *Ticket) error {
-	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt)
+	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost)
 }
 
 func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
@@ -106,14 +107,14 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Tic
 }
 
 func (q *Queries) GetTicket(ctx context.Context, id string) (Ticket, error) {
-	row := q.db.QueryRowContext(ctx, `SELECT `+ticketCols+` FROM tickets WHERE id = ?`, id)
+	row := q.db.QueryRowContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.id = ?`, id)
 	var i Ticket
 	err := scanTicket(row, &i)
 	return i, err
 }
 
 func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Ticket, error) {
-	const listTickets = `SELECT ` + ticketCols + ` FROM tickets ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, created_at DESC LIMIT ? OFFSET ?`
+	const listTickets = `SELECT ` + ticketCols + ` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id ORDER BY CASE t.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, t.created_at DESC LIMIT ? OFFSET ?`
 	rows, err := q.db.QueryContext(ctx, listTickets, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
@@ -222,7 +223,7 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 }
 
 // FindTicketByFingerprint finds an existing ticket matching a vulnerability fingerprint (host + CVE or host + title).
-const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at`
+const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host`
 
 func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
 	var t Ticket
@@ -270,7 +271,7 @@ func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([
 		return nil, err
 	}
 	// Return the just-resolved tickets for activity logging
-	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets WHERE status = 'fixed' AND resolved_at >= NOW() - INTERVAL 5 SECOND AND updated_at >= NOW() - INTERVAL 5 SECOND`)
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'fixed' AND t.resolved_at >= NOW() - INTERVAL 5 SECOND AND t.updated_at >= NOW() - INTERVAL 5 SECOND`)
 	if err != nil {
 		return nil, err
 	}
