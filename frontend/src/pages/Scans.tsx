@@ -15,7 +15,7 @@ export function Scans() {
   const filtered = useMemo(() => {
     let result = scans
     if (values.status) result = result.filter(s => s.status === values.status)
-    if (values.search) { const q = values.search.toLowerCase(); result = result.filter(s => s.name.toLowerCase().includes(q)) }
+    if (values.search) { const q = values.search.toLowerCase(); result = result.filter(s => s.name.toLowerCase().includes(q) || s.scan_type.toLowerCase().includes(q) || s.status.toLowerCase().includes(q) || new Date(s.created_at).toLocaleString().toLowerCase().includes(q)) }
     return result
   }, [scans, values])
 

@@ -75,7 +75,7 @@ export function Targets() {
   const filtered = useMemo(() => {
     if (!values.search) return hosts
     const q = values.search.toLowerCase()
-    return hosts.filter(h => h.host.toLowerCase().includes(q) || h.hostname?.toLowerCase().includes(q))
+    return hosts.filter(h => h.host.toLowerCase().includes(q) || h.hostname?.toLowerCase().includes(q) || h.max_cvss?.toFixed(1).includes(q))
   }, [hosts, values])
 
   const sorted = useSorted(filtered, sort)

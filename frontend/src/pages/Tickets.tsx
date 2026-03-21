@@ -19,7 +19,7 @@ function cvssColor(score: number | null | undefined): string {
 
 interface Ticket {
   id: string; title: string; priority: string; priority_order?: number; status: string
-  affected_host?: string; hostname?: string; cvss_score?: number; assigned_to?: string
+  affected_host?: string; hostname?: string; cvss_score?: number; cve_id?: string; assigned_to?: string
   first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface UserRef { id: string; username: string; email: string }
@@ -51,7 +51,20 @@ export function Tickets() {
     if (values.priority) result = result.filter(t => t.priority === values.priority)
     if (values.status) result = result.filter(t => t.status === values.status)
     if (values.host) result = result.filter(t => t.affected_host === values.host)
-    if (values.search) { const q = values.search.toLowerCase(); result = result.filter(t => t.title.toLowerCase().includes(q) || t.affected_host?.toLowerCase().includes(q)) }
+    if (values.search) {
+      const q = values.search.toLowerCase()
+      result = result.filter(t => {
+        const assignedName = t.assigned_to ? users.find(u => u.id === t.assigned_to)?.username?.toLowerCase() : ''
+        return t.title.toLowerCase().includes(q)
+          || t.affected_host?.toLowerCase().includes(q)
+          || t.hostname?.toLowerCase().includes(q)
+          || t.priority.toLowerCase().includes(q)
+          || t.status.toLowerCase().includes(q)
+          || t.cve_id?.toLowerCase().includes(q)
+          || t.cvss_score?.toFixed(1).includes(q)
+          || assignedName?.includes(q)
+      })
+    }
     return result
   }, [tickets, values, assignedFilter, user])
 
