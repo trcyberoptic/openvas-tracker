@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 
@@ -22,6 +22,15 @@ export function ScanDiff() {
   const [oldId, setOldId] = useState('')
   const [newId, setNewId] = useState('')
   const [filter, setFilter] = useState<string>('')
+
+  // Default to the two most recent scans
+  useEffect(() => {
+    if (scans.length >= 2 && !oldId && !newId) {
+      const sorted = [...scans].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      setNewId(sorted[0].id)
+      setOldId(sorted[1].id)
+    }
+  }, [scans, oldId, newId])
 
   const { data: diff, isFetching } = useQuery({
     queryKey: ['scan-diff', oldId, newId],
