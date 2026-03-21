@@ -20,7 +20,8 @@ func NewNotificationHandler(n *service.NotificationService) *NotificationHandler
 
 func (h *NotificationHandler) List(c echo.Context) error {
 	userID := middleware.GetUserID(c)
-	notifs, err := h.notifications.List(c.Request().Context(), userID, 50, 0)
+	limit, offset := paginate(c)
+	notifs, err := h.notifications.List(c.Request().Context(), userID, limit, offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list notifications")
 	}

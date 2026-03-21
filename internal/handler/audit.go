@@ -23,7 +23,8 @@ func (h *AuditHandler) List(c echo.Context) error {
 	if role != "admin" {
 		return echo.NewHTTPError(http.StatusForbidden, "admin only")
 	}
-	logs, err := h.audit.List(c.Request().Context(), 100, 0)
+	limit, offset := paginate(c)
+	logs, err := h.audit.List(c.Request().Context(), limit, offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list audit logs")
 	}

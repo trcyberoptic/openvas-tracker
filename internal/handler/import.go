@@ -67,15 +67,18 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	}
 
 	rawXML := string(body)
-	h.q.UpdateScanStatus(ctx, queries.UpdateScanStatusParams{
+	if _, err := h.q.UpdateScanStatus(ctx, queries.UpdateScanStatusParams{
 		ID:          scan.ID,
 		Status:      queries.ScanStatusCompleted,
 		StartedAt:   &now,
 		CompletedAt: &now,
 		RawOutput:   &rawXML,
-	})
+	}); err != nil {
+		log.Printf("import: failed to update scan status: %v", err)
+	}
 
 	imported := 0
+	skipped := 0
 	ticketsCreated := 0
 	ticketsReopened := 0
 
@@ -121,6 +124,8 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 			VulnReferences: []byte("[]"),
 		})
 		if err != nil {
+			log.Printf("import: failed to create vuln %q for host %s: %v", r.Title, r.Host, err)
+			skipped++
 			continue
 		}
 		imported++
@@ -141,6 +146,7 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"scan_id":                  scan.ID,
 		"vulnerabilities_imported": imported,
+		"vulnerabilities_skipped":  skipped,
 		"tickets_created":          ticketsCreated,
 		"tickets_reopened":         ticketsReopened,
 		"tickets_auto_resolved":    autoResolved,

@@ -37,7 +37,11 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	db, err := database.NewPool(cfg.Database.DSN)
+	db, err := database.NewPool(database.PoolConfig{
+		DSN:      cfg.Database.DSN,
+		MaxConns: cfg.Database.MaxConns,
+		MinConns: cfg.Database.MinConns,
+	})
 	if err != nil {
 		log.Fatalf("database: %v", err)
 	}

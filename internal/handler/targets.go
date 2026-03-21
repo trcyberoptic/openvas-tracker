@@ -56,7 +56,8 @@ func (h *TargetHandler) Create(c echo.Context) error {
 
 func (h *TargetHandler) List(c echo.Context) error {
 	userID := middleware.GetUserID(c)
-	targets, err := h.targets.List(c.Request().Context(), userID, 100, 0)
+	limit, offset := paginate(c)
+	targets, err := h.targets.List(c.Request().Context(), userID, limit, offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list targets")
 	}

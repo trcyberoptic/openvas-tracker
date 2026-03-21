@@ -19,8 +19,9 @@ func NewScanHandler(q *queries.Queries, vulns *service.VulnerabilityService) *Sc
 }
 
 func (h *ScanHandler) List(c echo.Context) error {
+	limit, offset := paginate(c)
 	scans, err := h.q.ListScans(c.Request().Context(), queries.ListScansParams{
-		Limit: 50, Offset: 0,
+		Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list scans")
