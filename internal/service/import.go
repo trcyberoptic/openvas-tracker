@@ -96,6 +96,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 			CvssScore:      f64Ptr(r.CVSSScore),
 			CveID:          cvePtr(r.CVE),
 			AffectedHost:   strPtr(r.Host),
+			Hostname:       strPtr(r.Hostname),
 			AffectedPort:   port,
 			Protocol:       proto,
 			Solution:       strPtr(r.Solution),

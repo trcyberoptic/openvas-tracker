@@ -18,7 +18,7 @@ function cvssColor(score: number | null | undefined): string {
 
 interface Ticket {
   id: string; title: string; priority: string; priority_order?: number; status: string
-  affected_host?: string; cvss_score?: number; assigned_to?: string
+  affected_host?: string; hostname?: string; cvss_score?: number; assigned_to?: string
   first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface UserRef { id: string; username: string; email: string }
@@ -78,7 +78,7 @@ export function Tickets() {
               <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)} className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer">
                 <td className={`p-3 ${cvssColor(t.cvss_score)}`}>{t.cvss_score?.toFixed(1) ?? '—'}</td>
                 <td className="p-3">{t.title}</td>
-                <td className="p-3 font-mono text-slate-400">{t.affected_host || '—'}</td>
+                <td className="p-3 text-slate-400">{t.hostname ? <><span className="font-mono">{t.affected_host}</span> <span className="text-slate-500 text-xs">({t.hostname})</span></> : <span className="font-mono">{t.affected_host || '—'}</span>}</td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs font-medium text-white ${PRIORITY_COLORS[t.priority] || 'bg-gray-600'}`}>{t.priority}</span></td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[t.status] || 'bg-slate-700 text-slate-300'}`}>{t.status.replace('_', ' ')}</span></td>
                 <td className="p-3 text-slate-400">{t.assigned_to ? users.find(u => u.id === t.assigned_to)?.username || '...' : <span className="text-slate-600">—</span>}</td>
