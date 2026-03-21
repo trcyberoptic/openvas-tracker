@@ -6,6 +6,7 @@ import { Dashboard } from '@/pages/Dashboard'
 import { Targets } from '@/pages/Targets'
 import { Scans } from '@/pages/Scans'
 import { ScanDetail } from '@/pages/ScanDetail'
+import { ScanDiff } from '@/pages/ScanDiff'
 import { Vulnerabilities } from '@/pages/Vulnerabilities'
 import { Tickets } from '@/pages/Tickets'
 import { TicketDetail } from '@/pages/TicketDetail'
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="hosts" element={<Targets />} />
             <Route path="scans" element={<Scans />} />
             <Route path="scans/:id" element={<ScanDetail />} />
+            <Route path="scans/diff" element={<ScanDiff />} />
             <Route path="vulnerabilities" element={<Vulnerabilities />} />
             <Route path="tickets" element={<Tickets />} />
             <Route path="tickets/:id" element={<TicketDetail />} />

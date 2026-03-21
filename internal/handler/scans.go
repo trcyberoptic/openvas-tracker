@@ -47,8 +47,25 @@ func (h *ScanHandler) Vulns(c echo.Context) error {
 	return c.JSON(http.StatusOK, vulns)
 }
 
+func (h *ScanHandler) Diff(c echo.Context) error {
+	oldID := c.QueryParam("old")
+	newID := c.QueryParam("new")
+	if oldID == "" || newID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "both 'old' and 'new' scan IDs required")
+	}
+	diff, err := h.q.DiffScans(c.Request().Context(), oldID, newID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to diff scans")
+	}
+	if diff == nil {
+		diff = []queries.ScanDiffEntry{}
+	}
+	return c.JSON(http.StatusOK, diff)
+}
+
 func (h *ScanHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.List)
+	g.GET("/diff", h.Diff)
 	g.GET("/:id", h.Get)
 	g.GET("/:id/vulnerabilities", h.Vulns)
 }

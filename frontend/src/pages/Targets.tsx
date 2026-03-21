@@ -8,7 +8,7 @@ const BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
 }
 
-interface HostSummary { host: string; vuln_count: number; critical_count: number; high_count: number; max_cvss?: number }
+interface HostSummary { host: string; hostname?: string; vuln_count: number; critical_count: number; high_count: number; max_cvss?: number }
 interface Vuln { id: string; severity: string; title: string; cve_id?: string; cvss_score?: number; affected_port?: number; protocol?: string; solution?: string; status: string }
 
 function HostRow({ h }: { h: HostSummary }) {
@@ -20,6 +20,7 @@ function HostRow({ h }: { h: HostSummary }) {
         <td className="p-3">
           {open ? <ChevronDown size={16} className="inline mr-2" /> : <ChevronRight size={16} className="inline mr-2" />}
           <span className="font-mono">{h.host}</span>
+          {h.hostname && <span className="text-slate-500 text-xs ml-2">({h.hostname})</span>}
         </td>
         <td className="p-3">{h.vuln_count}</td>
         <td className="p-3">{h.critical_count > 0 ? <span className="px-2 py-1 rounded text-xs bg-red-600 text-white">{h.critical_count}</span> : <span className="text-slate-500">0</span>}</td>
