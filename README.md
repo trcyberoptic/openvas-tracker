@@ -14,6 +14,51 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 - **Team Collaboration**: RBAC with admin/analyst/viewer roles
 - **Embedded React SPA**: Single binary, no separate frontend deploy
 
+## Architecture
+
+```mermaid
+sequenceDiagram
+    participant OV as OpenVAS (GVM)
+    participant TR as OpenVAS-Tracker
+    participant DB as MariaDB
+    participant UI as React Dashboard
+
+    Note over OV: Scan completes
+    OV->>TR: HTTP GET /api/import/openvas?api_key=...
+    TR->>OV: GMP Socket: fetch latest report
+    OV-->>TR: XML report
+    TR->>DB: Create scan record
+    loop For each vulnerability
+        TR->>DB: Create vulnerability
+        alt New finding
+            TR->>DB: Create ticket (open)
+        else Known finding (ticket open)
+            TR->>DB: Update last_seen_at
+        else Recurring finding (ticket fixed)
+            TR->>DB: Reopen ticket → open
+        end
+    end
+    TR->>DB: Auto-fix tickets for missing findings
+    TR->>UI: WebSocket: push update
+    UI->>TR: GET /api/dashboard
+    TR-->>UI: Severity counts, ticket stats, trend
+```
+
+```
+┌──────────────┐     HTTP GET (alert)      ┌──────────────────┐
+│   OpenVAS    │ ──────────────────────────▶│                  │
+│   (GVM)      │◀── GMP socket (fetch) ────│  OpenVAS-Tracker │──▶ MariaDB
+│              │         XML report         │   (Go + React)   │
+└──────────────┘                            └──────────────────┘
+                                                    │
+                                              :8080 │
+                                                    ▼
+                                            ┌──────────────┐
+                                            │   Browser     │
+                                            │  Dashboard    │
+                                            └──────────────┘
+```
+
 ## Quick Start with Docker
 
 ```bash
