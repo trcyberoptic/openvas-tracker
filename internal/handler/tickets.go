@@ -303,11 +303,20 @@ func (h *TicketHandler) CreateRiskRule(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "ticket not found")
 	}
 
-	// Build fingerprint from the ticket's vulnerability
-	fp := service.VulnFingerprint(
-		func() string { if ticket.CveID != nil { return *ticket.CveID }; return "" }(),
-		ticket.Title,
-	)
+	// Get the vulnerability to build fingerprint from raw vuln title (not formatted ticket title)
+	var vulnTitle string
+	if ticket.VulnerabilityID != nil {
+		vuln, err := h.q.GetVulnerability(c.Request().Context(), *ticket.VulnerabilityID)
+		if err == nil {
+			vulnTitle = vuln.Title
+		}
+	}
+
+	cve := ""
+	if ticket.CveID != nil {
+		cve = *ticket.CveID
+	}
+	fp := service.VulnFingerprint(cve, vulnTitle)
 
 	hostPattern := "*"
 	if req.Scope == "this_host" && ticket.AffectedHost != nil {
