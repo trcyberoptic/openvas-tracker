@@ -33,7 +33,17 @@ func (h *HostHandler) Vulns(c echo.Context) error {
 	return c.JSON(http.StatusOK, vulns)
 }
 
+func (h *HostHandler) Tickets(c echo.Context) error {
+	host := c.Param("host")
+	tickets, err := h.q.ListTicketsByHost(c.Request().Context(), host)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list tickets")
+	}
+	return c.JSON(http.StatusOK, tickets)
+}
+
 func (h *HostHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.List)
 	g.GET("/:host/vulnerabilities", h.Vulns)
+	g.GET("/:host/tickets", h.Tickets)
 }

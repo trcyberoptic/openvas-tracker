@@ -473,3 +473,21 @@ func (q *Queries) ListTicketActivity(ctx context.Context, ticketID string) ([]Ti
 	}
 	return items, rows.Err()
 }
+
+// ListTicketsByHost returns all tickets for a given host IP.
+func (q *Queries) ListTicketsByHost(ctx context.Context, host string) ([]Ticket, error) {
+	rows, err := q.db.QueryContext(ctx, "SELECT "+ticketCols+" FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE v.affected_host = ? ORDER BY CASE t.status WHEN 'open' THEN 1 WHEN 'risk_accepted' THEN 2 WHEN 'fixed' THEN 3 WHEN 'false_positive' THEN 4 END, v.cvss_score DESC", host)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Ticket
+	for rows.Next() {
+		var t Ticket
+		if err := scanTicket(rows, &t); err != nil {
+			return nil, err
+		}
+		items = append(items, t)
+	}
+	return items, rows.Err()
+}
