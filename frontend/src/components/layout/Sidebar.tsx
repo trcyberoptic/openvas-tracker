@@ -17,12 +17,16 @@ export function Sidebar() {
       <div className="text-xl font-bold text-white mb-8 px-2">OpenVAS-Tracker</div>
       <nav className="space-y-1">
         {links.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
-                isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+          <NavLink key={to} to={to} end
+            className={({ isActive }) => {
+              // For query-param links, compare full path+search
+              const active = to.includes('?')
+                ? window.location.pathname + window.location.search === to
+                : isActive
+              return `flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
+                active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`
-            }>
+            }}>
             <Icon size={18} />
             {label}
           </NavLink>
