@@ -14,7 +14,7 @@ interface Ticket {
 interface Comment { id: string; user_id: string; content: string; created_at: string }
 interface Activity { id: string; action: string; old_value?: string; new_value?: string; changed_by: string; note?: string; created_at: string }
 interface UserRef { id: string; username: string; email: string }
-interface AlsoAffected { host: string; ticket_id: string; status: string }
+interface AlsoAffected { host: string; hostname?: string; ticket_id: string; status: string }
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
@@ -178,6 +178,7 @@ export function TicketDetail() {
                   <Link key={a.ticket_id} to={`/tickets/${a.ticket_id}`}
                     className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">
                     <span className="font-mono text-slate-300">{a.host}</span>
+                    {a.hostname && <span className="text-slate-500 text-[10px]">({a.hostname})</span>}
                     <span className={`px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[a.status] || 'bg-slate-700 text-slate-300'}`}>{a.status.replace(/_/g, ' ')}</span>
                   </Link>
                 ))}
