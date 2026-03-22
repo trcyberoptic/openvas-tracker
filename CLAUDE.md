@@ -46,42 +46,36 @@ handler (Echo HTTP) → service (business logic) → queries (database/sql) → 
                                                 → report (html/pdf/excel/md)
 ```
 
-- **`internal/handler/`** — Echo route handlers. Each has a `RegisterRoutes(*echo.Group)` method mounted in main.go.
-  - **`auth.go`** — Login only (no registration). Admin auth via `OT_ADMIN_PASSWORD`, LDAP auth via AD, fallback to DB user. Login by username.
-  - **`import.go`** — Thin HTTP adapter for import. Parses XML, delegates to `ImportService`. Also `GET /api/import/openvas` triggers `openvas-tracker-fetch-latest` script.
-  - **`tickets.go`** — CRUD + status changes + comments + activity log + bulk operations + risk accept rule creation from ticket. All inputs validated via `c.Validate()`.
-  - **`scans.go`** — List/Get scans + scan diff comparison endpoint.
-  - **`settings.go`** — Setup guide, user list (local + LDAP), .env file read/write, LDAP test, risk accept rules list/delete.
-  - **`pagination.go`** — Shared `paginate(c)` helper, returns `(limit, offset int32)`. Default 500, max 5000.
-- **`internal/service/`** — Business logic. Each takes `*sql.DB` in constructor.
-  - **`import.go`** — Core import logic: transaction-wrapped scan+vuln+ticket creation, system user management, auto-resolve, risk expiry, hostname PTR resolution + normalization, risk accept rule matching. All ticket lifecycle logic lives here.
-  - **`ldap.go`** — LDAP authentication against Active Directory with group membership check, group member listing, connection test.
-  - **`envfile.go`** — Read/write `.env` file for config management via Settings UI.
-- **`internal/database/queries/`** — Hand-written query stubs. Uses `database/sql` with `go-sql-driver/mysql`.
-  - **`db.go`** — `DBTX` interface accepted by `New()` — supports both `*sql.DB` and `*sql.Tx` for transaction support.
-  - **`tickets.go`** — Ticket queries including `FindTicketByFingerprint`, `AutoResolveStaleTickets` (SELECT-then-UPDATE), `LogTicketActivity`, `ListTicketsByHost`, `AlsoAffectedHosts`.
-  - **`scans.go`** — Scan queries including `DiffScans` for scan comparison.
-  - **`risk_rules.go`** — Risk accept rule CRUD, matching, and batch application to existing tickets.
-- **`internal/scanner/`** — `ParseOpenVASXML` XML parser. Extracts CVE from `<nvt><cve>` and `<nvt><refs><ref type="cve">`. Parses hostname from `<host><hostname>`.
-- **`internal/report/`** — Report generators: `GenerateHTML`, `GeneratePDF` (maroto v2), `GenerateExcel` (excelize), `GenerateMarkdown`.
-- **`internal/websocket/`** — Hub + Client for real-time per-user push via gorilla/websocket. Origin-validated.
-- **`internal/auth/`** — JWT (golang-jwt) and bcrypt password utilities.
-- **`internal/middleware/`** — Echo middleware: JWT auth, API key auth (timing-safe), rate limiting, security headers (CSP + Permissions-Policy), audit logging.
+- **`internal/handler/`** — Echo route handlers. Each has a `RegisterRoutes(*echo.Group)` method.
+  - `auth.go` — Login (no registration). Admin + LDAP + DB fallback. By username.
+  - `import.go` — Thin adapter → `ImportService`. GET triggers fetch script.
+  - `tickets.go` — CRUD, status, comments, activity, bulk ops, risk rule creation. Validated via `c.Validate()`.
+  - `scans.go` — List/Get + diff endpoint.
+  - `settings.go` — Setup guide, user list, .env read/write, LDAP test, risk rules.
+  - `pagination.go` — `paginate(c)` → `(limit, offset int32)`. Default 500, max 5000.
+- **`internal/service/`** — Business logic.
+  - `import.go` — Transaction-wrapped import: scan+vulns+tickets, risk rule matching, auto-resolve, PTR hostname backfill.
+  - `ldap.go` — AD auth, group membership check, member listing.
+  - `envfile.go` — Read/write `.env` for Settings UI.
+- **`internal/database/queries/`** — Hand-written SQL. `db.go` defines `DBTX` interface (accepts `*sql.DB` and `*sql.Tx`).
+- **`internal/scanner/`** — `ParseOpenVASXML`: CVE from `<refs><ref type="cve">` and `<nvt><cve>`, hostname from `<host><hostname>`.
+- **`internal/report/`** — HTML, PDF (maroto v2), Excel (excelize), Markdown generators.
+- **`internal/middleware/`** — JWT auth, API key auth (timing-safe), rate limiting, security headers.
 
-**Frontend:** React 19 + Vite + Tailwind + shadcn/ui, embedded in the Go binary via `//go:embed all:static` in `cmd/openvas-tracker/frontend.go`. The Makefile copies `frontend/dist/` → `cmd/openvas-tracker/static/` before Go build.
+**Frontend:** React 19 + Vite + Tailwind, embedded via `//go:embed all:static` in `cmd/openvas-tracker/frontend.go`.
 
 ## Configuration
 
-All config via `.env` file (`godotenv` + `os.Getenv`, `internal/config/config.go`). Editable via Settings page in the UI.
+All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto-detects `/etc/openvas-tracker/env` on production, override with `OT_ENV_FILE`.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `OT_SERVER_PORT` | 8080 | HTTP listen port |
 | `OT_DATABASE_DSN` | `...@tcp(localhost:3306)/openvas-tracker?parseTime=true` | MariaDB DSN |
 | `OT_JWT_SECRET` | (none — **required**, min 32 chars) | JWT signing key |
-| `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars) |
+| `OT_IMPORT_APIKEY` | (empty) | Import webhook API key (min 32 chars) |
 | `OT_ADMIN_PASSWORD` | (empty) | Admin user password (username: `admin`) |
-| `OT_LDAP_URL` | (empty) | LDAP server URL (e.g. `ldaps://dc01.example.com:636`) |
+| `OT_LDAP_URL` | (empty) | e.g. `ldaps://dc01.example.com:636` |
 | `OT_LDAP_BASE_DN` | (empty) | LDAP base DN |
 | `OT_LDAP_BIND_DN` | (empty) | LDAP service account DN |
 | `OT_LDAP_BIND_PASSWORD` | (empty) | LDAP service account password |
@@ -91,76 +85,57 @@ All config via `.env` file (`godotenv` + `os.Getenv`, `internal/config/config.go
 ## Database
 
 - **MariaDB** with `database/sql` + `go-sql-driver/mysql`
-- 17 migrations in `sql/migrations/` (golang-migrate format, numbered 001-017)
-- `sql/docker-init.sql` sources all migrations for fresh Docker setup
-- UUIDs are `CHAR(36)`, generated in Go code (`uuid.New().String()`), not DB-side
-- Connection pool: `SetMaxOpenConns`, `SetMaxIdleConns`, `SetConnMaxLifetime(5m)`, `SetConnMaxIdleTime(3m)`
+- 17 migrations in `sql/migrations/` (001-017). `sql/docker-init.sql` sources all.
+- UUIDs are `CHAR(36)`, generated in Go (`uuid.New().String()`)
+- Pool: `MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime(5m)`, `ConnMaxIdleTime(3m)`
 
 ## Key Patterns
 
-- **Auth flow:** Login by username. Three auth sources tried in order: (1) admin user if username is `admin` and `OT_ADMIN_PASSWORD` matches, (2) LDAP bind if configured, (3) DB user fallback. No registration endpoint. JWT Bearer tokens for API auth. Import endpoint uses `X-API-Key` header. Login rate limited to 30/min/IP. LDAP config re-read from `.env` on each login for live updates.
-- **LDAP:** Optional Active Directory integration. Configured via `.env` (editable in Settings page). Authenticates via bind, checks group membership. Auto-creates DB user on first LDAP login. Group members listed for ticket assignment.
-- **No roles:** All authenticated users have equal access. Role column exists in DB but is not checked.
-- **Import flow:** OpenVAS webhook → parse XML → `ImportService.Import()` → transaction: create scan + vulnerabilities → for each vuln: check risk accept rules → find existing ticket by fingerprint (host + CVE/title) → create new / reopen fixed / update last_seen → auto-resolve open tickets not in current scan → commit. PTR hostname backfill runs async after each import.
-- **Ticket statuses:** `open` → `fixed` | `risk_accepted` | `false_positive`. Auto-resolve sets `fixed`. Recurring finding reopens to `open`. False positives never reopened. Risk accepted has optional expiry date. All changes logged in `ticket_activity` table.
-- **Risk accept rules:** `risk_accept_rules` table with fingerprint (CVE or `title:` + vuln title) + host pattern (`*` or specific IP). Created from ticket detail page. Applied to existing open tickets on creation and checked during import. Managed via Auto-Accept Rules page.
-- **Scan diff:** `GET /api/scans/diff?old=X&new=Y` compares two scans by vuln fingerprint, returns new/fixed/unchanged.
-- **Bulk actions:** `POST /api/tickets/bulk` accepts array of ticket IDs + status/assigned_to for batch operations.
-- **Trend:** Daily snapshot of open ticket count over last 30 days, using `created_at`/`resolved_at` timestamps. Excludes false positives.
-- **Hostname normalization:** All hostnames stored as UPPERCASE.domain.lowercase (e.g. `VGITLAB01.example.local`). Applied during import and PTR resolution.
-- **System user:** Import creates vulns/tickets under a dedicated `openvas-import` system user (auto-created on first import, mutex-protected with retry on failure).
-- **Settings page:** Reads/writes `.env` file directly. Sensitive values masked. LDAP test connection button. Changes require service restart. Auto-detects `/etc/openvas-tracker/env` on production.
-- **SPA routing:** `cmd/openvas-tracker/frontend.go` serves embedded static files with fallback to `index.html` for client-side routing.
-- **Frontend tables:** All list views use `TableFilter` + `SortHeader` components. Search matches all visible columns. Ticket list has checkbox bulk selection. Default filter: status=open.
-- **Security headers:** CSP (no unsafe-inline), Permissions-Policy, X-Frame-Options DENY, global 5M body limit with skipper for import (50M).
+### Auth
+- Login by username, three sources in order: (1) admin + `OT_ADMIN_PASSWORD`, (2) LDAP bind + group check, (3) DB user fallback. No registration. Rate limited 30/min/IP.
+- LDAP re-reads `.env` on each login for live config changes. Auto-creates DB user on first LDAP login.
+- No roles — all users have equal access. Role column exists but is never checked.
+
+### Import
+- OpenVAS webhook → `ImportService.Import()` → single transaction: scan + vulns + tickets.
+- Per vuln: check risk accept rules → find ticket by fingerprint (host + CVE/title) → create/reopen/touch → auto-resolve stale → commit.
+- PTR hostname backfill runs async after each import. Hostnames normalized: `UPPERCASE.domain.lowercase`.
+
+### Tickets
+- Statuses: `open` → `fixed` | `risk_accepted` | `false_positive`. False positives never reopened.
+- Risk accepted supports optional expiry date (auto-reopens when expired).
+- All changes logged in `ticket_activity` with actor (user ID or "Automatic").
+- Bulk: `POST /api/tickets/bulk` with `ticket_ids` + `status`/`assigned_to`.
+
+### Risk Accept Rules
+- `risk_accept_rules` table: fingerprint (CVE or `title:` + vuln title) + host pattern (`*` or IP).
+- Created from ticket detail page ("this host" or "all hosts"). Applied to existing open tickets on creation.
+- Checked during import — matching new tickets auto-set to `risk_accepted`.
+
+### Frontend
+- `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns.
+- Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted.
+- Sidebar: Dashboard, My Tickets, All Tickets, Scans, Scan Diff, Auto-Accept Rules, Settings.
+- Trend chart: 30-day daily snapshots of open tickets via recursive CTE.
 
 ## Deployment
 
-Docker Compose (MariaDB + single Go binary). Also supports Debian Trixie as a systemd service. Deploy files in `deploy/`:
-- `Dockerfile` — multi-stage build (node → go → debian runtime)
-- `docker-compose.yml` — MariaDB + app with health checks
-- `openvas-tracker.service` — systemd unit with security hardening, `ReadWritePaths` includes `/etc/openvas-tracker` for .env editing
-- `install.sh` — creates user, installs binary, copies config, enables service
-- `.github/workflows/release-deb.yml` — builds .deb on `v*` tag push (self-hosted runner), uploads to GitHub release
+Docker Compose or Debian Trixie systemd service. Use the `/deploy` skill for automated production deploys.
 
-**Production server:** `SCANNER01` (192.168.1.100), Debian Trixie 13, accessible via `ssh scanner01`. Service runs as `openvas-tracker` user, config in `/etc/openvas-tracker/env`.
+**Production:** `SCANNER01` (192.168.1.100), `ssh scanner01`, config in `/etc/openvas-tracker/env`.
 
-## GVM Integration (scanner01)
-
-- **Greenbone Community Edition** runs as Docker stack (~16 containers) on scanner01.
-- **GMP socket:** `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`
-- **GVM admin creds:** `admin` / `admin`
-- **Import trigger:** GVM "HTTP Get" alert → `GET /api/import/openvas?api_key=...` → Go handler calls `sudo /usr/local/bin/openvas-tracker-fetch-latest` (120s timeout) → script connects GMP socket, fetches report, POSTs to self.
-- **LDAP:** AD auth via `ldaps://pdc.example.local`, group `IT-Security`, service account `svc_scanner`.
-
-## Quick Deploy to Production
-
-```bash
-cd frontend && npm run build && cd ..
-rm -rf cmd/openvas-tracker/static && cp -r frontend/dist cmd/openvas-tracker/static
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/openvas-tracker-linux-amd64 ./cmd/openvas-tracker
-scp bin/openvas-tracker-linux-amd64 scanner01:/usr/local/bin/openvas-tracker.new
-ssh scanner01 "chmod 755 /usr/local/bin/openvas-tracker.new && systemctl stop openvas-tracker && mv /usr/local/bin/openvas-tracker.new /usr/local/bin/openvas-tracker && systemctl start openvas-tracker"
-```
+**GVM:** Greenbone CE Docker stack. GMP socket at `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`. Import triggered by GVM "HTTP Get" alert → fetch script → GMP socket → POST to self.
 
 ## Gotchas
 
-- **No Redis**: Was removed — no async task queue, no caching. Don't re-introduce.
-- **No active scanning**: No Nmap, no gvm-cli, no scan launching. Import-only via webhook.
-- **No registration**: Users authenticate via admin password or LDAP. No self-registration endpoint.
-- **No roles/RBAC**: All users have equal access. Role column exists but is never checked.
-- **JWT secret required**: App refuses to start with default or short secret.
-- **docker-init.sql**: Must be updated when adding new migrations (add `SOURCE` line).
-- **DBTX interface**: `queries.New()` accepts both `*sql.DB` and `*sql.Tx` — use `*sql.Tx` in transactional flows (see `ImportService`).
-- **Graceful shutdown**: Handles both SIGINT and SIGTERM (important for systemd/Docker).
-- **Body limit**: Global 5M with skipper for `/api/import` (50M). Large OpenVAS reports can be 10MB+.
-- **LDAP config**: Stored in `.env`, editable via Settings page. `currentLDAPConfig()` re-reads `.env` on each login.
-- **Hostname normalization**: `normalizeHostname()` in import service — UPPERCASE host, lowercase domain. Applied to all imports and PTR lookups.
-- **Risk accept fingerprint**: Uses `VulnFingerprint()` — CVE ID if available, otherwise `title:` + raw vulnerability title (not formatted ticket title).
-- **Env file path**: Auto-detects `/etc/openvas-tracker/env` if it exists, otherwise `.env`. Override with `OT_ENV_FILE`.
-- **SSH $ escaping**: Passwords with `$` get shell-expanded via SSH. Use Python `chr(36)` or heredoc with single-quoted delimiter to write literal `$` to files on remote hosts.
-- **Echo BodyLimit stacking**: Global `BodyLimit` cannot be overridden by group-level limits. Use `BodyLimitWithConfig` with a `Skipper` function to exempt specific paths.
-- **GMP XML quirks**: CVEs are in `<refs><ref type="cve">`, not `<nvt><cve>`. Hostnames are in `<host><hostname>` as a child element, IP is chardata.
-- **Ticket title ≠ vuln title**: Ticket titles are formatted `[SEV] Title — Host`. Risk rule fingerprints and dedup must use raw vulnerability title from `vulnerabilities` table.
-- **MariaDB no FULL OUTER JOIN**: Use UNION ALL with NOT EXISTS for each direction instead.
-- **Recursive CTE for date series**: MariaDB has no `generate_series`. Use `WITH RECURSIVE dates AS (SELECT CURDATE() - INTERVAL 29 DAY AS d UNION ALL SELECT d + INTERVAL 1 DAY FROM dates WHERE d < CURDATE())`.
+- **No Redis, no active scanning, no registration** — import-only dashboard.
+- **JWT secret required** — app refuses to start with default or short secret.
+- **docker-init.sql** — must add `SOURCE` line when adding migrations.
+- **DBTX interface** — `queries.New()` accepts `*sql.DB` and `*sql.Tx`. Use `*sql.Tx` in transactional flows.
+- **Graceful shutdown** — handles SIGINT + SIGTERM (systemd/Docker).
+- **Body limit** — global 5M with `Skipper` for `/api/import` (50M). `BodyLimitWithConfig` required — group-level limits can't override global.
+- **GMP XML** — CVEs in `<refs><ref type="cve">`, not `<nvt><cve>`. Hostnames in `<host><hostname>` child element, IP is chardata.
+- **Ticket title ≠ vuln title** — tickets formatted `[SEV] Title — Host`. Risk rules and dedup use raw vuln title.
+- **MariaDB** — no FULL OUTER JOIN (use UNION ALL + NOT EXISTS), no `generate_series` (use `WITH RECURSIVE dates`).
+- **SSH $ escaping** — passwords with `$` get shell-expanded. Use Python `chr(36)` or single-quoted heredoc.
+- **Hostname normalization** — `normalizeHostname()`: UPPERCASE host, lowercase domain. Applied to imports + PTR.
