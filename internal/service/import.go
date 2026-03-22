@@ -324,7 +324,7 @@ func resolveHostname(ip, xmlHostname string) string {
 }
 
 // normalizeHostname: hostname part UPPERCASE, domain part lowercase.
-// e.g. "vgitlab01.example.local" → "VGITLAB01.example.local"
+// e.g. "server01.example.com" → "SERVER01.example.com"
 func normalizeHostname(h string) string {
 	if h == "" {
 		return ""
