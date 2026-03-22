@@ -158,3 +158,9 @@ ssh scanner01 "chmod 755 /usr/local/bin/openvas-tracker.new && systemctl stop op
 - **Hostname normalization**: `normalizeHostname()` in import service — UPPERCASE host, lowercase domain. Applied to all imports and PTR lookups.
 - **Risk accept fingerprint**: Uses `VulnFingerprint()` — CVE ID if available, otherwise `title:` + raw vulnerability title (not formatted ticket title).
 - **Env file path**: Auto-detects `/etc/openvas-tracker/env` if it exists, otherwise `.env`. Override with `OT_ENV_FILE`.
+- **SSH $ escaping**: Passwords with `$` get shell-expanded via SSH. Use Python `chr(36)` or heredoc with single-quoted delimiter to write literal `$` to files on remote hosts.
+- **Echo BodyLimit stacking**: Global `BodyLimit` cannot be overridden by group-level limits. Use `BodyLimitWithConfig` with a `Skipper` function to exempt specific paths.
+- **GMP XML quirks**: CVEs are in `<refs><ref type="cve">`, not `<nvt><cve>`. Hostnames are in `<host><hostname>` as a child element, IP is chardata.
+- **Ticket title ≠ vuln title**: Ticket titles are formatted `[SEV] Title — Host`. Risk rule fingerprints and dedup must use raw vulnerability title from `vulnerabilities` table.
+- **MariaDB no FULL OUTER JOIN**: Use UNION ALL with NOT EXISTS for each direction instead.
+- **Recursive CTE for date series**: MariaDB has no `generate_series`. Use `WITH RECURSIVE dates AS (SELECT CURDATE() - INTERVAL 29 DAY AS d UNION ALL SELECT d + INTERVAL 1 DAY FROM dates WHERE d < CURDATE())`.
