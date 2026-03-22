@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Build frontend + Go binary and deploy to scanner01 production server
+description: Build frontend + Go binary and deploy to production server
 ---
 
 Build and deploy OpenVAS-Tracker to production. Run these steps in order:
@@ -18,13 +18,13 @@ Build and deploy OpenVAS-Tracker to production. Run these steps in order:
 
 3. Deploy to server:
    ```bash
-   scp bin/openvas-tracker-linux-amd64 scanner01:/usr/local/bin/openvas-tracker.new
-   ssh scanner01 "chmod 755 /usr/local/bin/openvas-tracker.new && systemctl stop openvas-tracker && mv /usr/local/bin/openvas-tracker.new /usr/local/bin/openvas-tracker && systemctl start openvas-tracker"
+   scp bin/openvas-tracker-linux-amd64 $DEPLOY_HOST:/usr/local/bin/openvas-tracker.new
+   ssh $DEPLOY_HOST "chmod 755 /usr/local/bin/openvas-tracker.new && systemctl stop openvas-tracker && mv /usr/local/bin/openvas-tracker.new /usr/local/bin/openvas-tracker && systemctl start openvas-tracker"
    ```
 
 4. Verify:
    ```bash
-   sleep 2 && ssh scanner01 "curl -s http://localhost:8080/api/health"
+   sleep 2 && ssh $DEPLOY_HOST "curl -s http://localhost:8080/api/health"
    ```
 
 Report the health check result to the user.

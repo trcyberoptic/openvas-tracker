@@ -122,9 +122,9 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 
 Docker Compose or Debian Trixie systemd service. Use the `/deploy` skill for automated production deploys.
 
-**Production:** `SCANNER01` (192.168.1.100), `ssh scanner01`, config in `/etc/openvas-tracker/env`.
+**Production:** Debian server accessible via SSH. Service runs as `openvas-tracker` user, config in `/etc/openvas-tracker/env`.
 
-**GVM:** Greenbone CE Docker stack. GMP socket at `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`. Import triggered by GVM "HTTP Get" alert → fetch script → GMP socket → POST to self.
+**GVM:** Greenbone CE Docker stack on production server. GMP socket at `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`. Import triggered by GVM "HTTP Get" alert → fetch script → GMP socket → POST to self.
 
 ## Gotchas
 
