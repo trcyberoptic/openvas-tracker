@@ -29,6 +29,7 @@ services:
       OT_DATABASE_DSN: "ot:ot@tcp(db:3306)/openvas_tracker?parseTime=true"
       OT_JWT_SECRET: "local-dev-secret-change-in-prod!!"
       OT_IMPORT_APIKEY: "local-dev-import-key-min-32-characters"
+      OT_ADMIN_PASSWORD: "admin"
     depends_on:
       db:
         condition: service_healthy
