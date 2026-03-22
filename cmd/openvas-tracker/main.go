@@ -91,7 +91,7 @@ func main() {
 		Limit:   "5M",
 		Skipper: func(c echo.Context) bool { return strings.HasPrefix(c.Path(), "/api/import") },
 	}))
-	rl := mw.NewRateLimiter(100, time.Minute)
+	rl := mw.NewRateLimiter(500, time.Minute)
 	e.Use(rl.Middleware())
 
 	// Health
@@ -110,7 +110,7 @@ func main() {
 	})
 
 	// Auth routes (public) with dedicated rate limiter
-	authLimiter := mw.NewRateLimiter(30, time.Minute)
+	authLimiter := mw.NewRateLimiter(60, time.Minute)
 	jwtExpiry := time.Duration(cfg.JWT.ExpireHours) * time.Hour
 	q := queries.New(db)
 	authH := handler.NewAuthHandler(userSvc, ldapSvc, cfg, q, cfg.JWT.Secret, jwtExpiry)

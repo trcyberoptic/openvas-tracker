@@ -2,6 +2,12 @@
 
 Vulnerability management dashboard that imports OpenVAS scan results and tracks remediation through automated ticketing.
 
+## Screenshots
+
+| Dashboard | Tickets | Ticket Detail |
+|-----------|---------|---------------|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Tickets](docs/screenshots/tickets.png) | ![Ticket Detail](docs/screenshots/ticket-detail.png) |
+
 ## Features
 
 - **OpenVAS Import**: Webhook endpoint receives scan results automatically when scans complete
