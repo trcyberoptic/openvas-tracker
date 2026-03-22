@@ -8,7 +8,7 @@ const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300',
 
 interface Ticket {
   id: string; title: string; description?: string; priority: string; status: string
-  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string; affected_host?: string; hostname?: string; cve_id?: string
+  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string; affected_host?: string; hostname?: string; cve_id?: string; cvss_score?: number
   first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface Comment { id: string; user_id: string; content: string; created_at: string }
@@ -84,7 +84,7 @@ export function TicketDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         {/* Status actions */}
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
           <h3 className="text-sm font-medium text-slate-400 mb-3">Change Status</h3>
@@ -161,6 +161,24 @@ export function TicketDetail() {
             ))}
           </select>
           {assignedUser && <p className="text-xs text-slate-500 mt-1">{assignedUser.email}</p>}
+        </div>
+
+        {/* CVSS Score */}
+        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 flex flex-col items-center justify-center">
+          <h3 className="text-sm font-medium text-slate-400 mb-2">CVSS Score</h3>
+          <div className={`text-5xl font-bold ${
+            (ticket.cvss_score ?? 0) >= 9 ? 'text-red-400' :
+            (ticket.cvss_score ?? 0) >= 7 ? 'text-orange-400' :
+            (ticket.cvss_score ?? 0) >= 4 ? 'text-yellow-400' : 'text-blue-400'
+          }`}>
+            {ticket.cvss_score?.toFixed(1) ?? '—'}
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            {(ticket.cvss_score ?? 0) >= 9 ? 'Critical' :
+             (ticket.cvss_score ?? 0) >= 7 ? 'High' :
+             (ticket.cvss_score ?? 0) >= 4 ? 'Medium' :
+             (ticket.cvss_score ?? 0) > 0 ? 'Low' : ''}
+          </p>
         </div>
       </div>
 
