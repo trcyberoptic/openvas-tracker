@@ -49,7 +49,7 @@ handler (Echo HTTP) → service (business logic) → queries (database/sql) → 
 - **`internal/handler/`** — Echo route handlers. Each has a `RegisterRoutes(*echo.Group)` method.
   - `auth.go` — Login (no registration). Admin + LDAP + DB fallback. By username.
   - `import.go` — Thin adapter → `ImportService`. GET triggers fetch script.
-  - `tickets.go` — CRUD, status, comments, activity, bulk ops, risk rule creation. Validated via `c.Validate()`.
+  - `tickets.go` — CRUD, status, comments, activity, bulk ops, risk rule creation. Validated via `c.Validate()`. Detail page shows prominent CVSS score box.
   - `scans.go` — List/Get + diff endpoint.
   - `settings.go` — Setup guide, user list, .env read/write, LDAP test, risk rules.
   - `pagination.go` — `paginate(c)` → `(limit, offset int32)`. Default 500, max 5000.

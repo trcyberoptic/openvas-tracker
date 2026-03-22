@@ -18,7 +18,7 @@ The dev server proxies `/api/*` and `/ws` requests to the Go backend on port 808
 - **Dashboard** — Open ticket counts by priority, severity pie chart, 30-day trend of open tickets, quick links to "My Tickets" and "Unassigned"
 - **My Tickets** — Filtered view of tickets assigned to current user (default: open)
 - **All Tickets** — Full ticket list with checkbox bulk actions (status change, assign), CVSS-sorted by default, full-text search across all columns, default filter on open
-- **Ticket Detail** — Affected host + also-affected hosts, change status/assignment, risk accept rule creation (this host / all hosts), CVE reference links (NVD/MITRE/Google), description, notes, activity log
+- **Ticket Detail** — Affected host + also-affected hosts, change status/assignment, prominent CVSS score box, risk accept rule creation (this host / all hosts), CVE reference links (NVD/MITRE/Google), description, notes, activity log
 - **Scans** — List of imports with detail view
 - **Scan Diff** — Compare two scans: new / fixed / unchanged. Defaults to two most recent
 - **Auto-Accept Rules** — List and delete risk accept rules, shows finding, scope, reason, expiry
