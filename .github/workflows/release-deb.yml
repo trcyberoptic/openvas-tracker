@@ -99,7 +99,7 @@ jobs:
           sed -i 's/^          //' "$PKG_DIR/DEBIAN/prerm"
           chmod 0755 "$PKG_DIR/DEBIAN/prerm"
 
-          echo "/etc/openvas-tracker/env" > "$PKG_DIR/DEBIAN/conffiles"
+          echo "/etc/openvas-tracker/env.example" > "$PKG_DIR/DEBIAN/conffiles"
           dpkg-deb --build "$PKG_DIR"
 
       - name: Create GitHub Release
