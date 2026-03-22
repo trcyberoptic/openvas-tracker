@@ -1,13 +1,16 @@
-name: Build .deb Package
+name: Release
 
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  build-deb:
-    runs-on: self-hosted
+  release:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -19,7 +22,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24'
 
       - name: Get version from tag
         id: version
@@ -37,6 +40,9 @@ jobs:
             -o bin/openvas-tracker-linux-amd64 \
             ./cmd/openvas-tracker
 
+      - name: Run tests
+        run: go test ./... -count=1
+
       - name: Build .deb package
         run: |
           PKG_DIR="$(pwd)/pkg-build/openvas-tracker_${{ steps.version.outputs.VERSION }}_amd64"
@@ -47,19 +53,11 @@ jobs:
           mkdir -p "$PKG_DIR/lib/systemd/system"
           mkdir -p "$PKG_DIR/usr/share/openvas-tracker/migrations"
 
-          # Binary
           install -m 0755 bin/openvas-tracker-linux-amd64 "$PKG_DIR/usr/local/bin/openvas-tracker"
-
-          # Config
           install -m 0600 deploy/openvas-tracker.env.example "$PKG_DIR/etc/openvas-tracker/env.example"
-
-          # Systemd unit
           install -m 0644 deploy/openvas-tracker.service "$PKG_DIR/lib/systemd/system/openvas-tracker.service"
-
-          # Migrations
           cp sql/migrations/*.up.sql "$PKG_DIR/usr/share/openvas-tracker/migrations/"
 
-          # Control file
           cat > "$PKG_DIR/DEBIAN/control" <<CTRL
           Package: openvas-tracker
           Version: ${{ steps.version.outputs.VERSION }}
@@ -72,33 +70,26 @@ jobs:
            Receives OpenVAS scan results via webhook, tracks vulnerabilities
            per host, and manages remediation through automated ticketing.
           CTRL
-          # Remove leading spaces from control file (heredoc indentation)
           sed -i 's/^          //' "$PKG_DIR/DEBIAN/control"
 
-          # Post-install script
           cat > "$PKG_DIR/DEBIAN/postinst" <<'POSTINST'
           #!/bin/bash
           set -e
-          # Create system user
           useradd --system --shell /usr/sbin/nologin --home-dir /var/lib/openvas-tracker openvas-tracker 2>/dev/null || true
           chown -R openvas-tracker:openvas-tracker /var/lib/openvas-tracker
           chown -R openvas-tracker:openvas-tracker /etc/openvas-tracker
-
-          # Hint about config
           if [ ! -f /etc/openvas-tracker/env ]; then
               cp /etc/openvas-tracker/env.example /etc/openvas-tracker/env
               chmod 0600 /etc/openvas-tracker/env
               chown openvas-tracker:openvas-tracker /etc/openvas-tracker/env
-              echo ">>> Edit /etc/openvas-tracker/env with your database and API key settings"
+              echo ">>> Edit /etc/openvas-tracker/env with your settings"
           fi
-
           systemctl daemon-reload
           echo ">>> Run: systemctl enable --now openvas-tracker"
           POSTINST
           sed -i 's/^          //' "$PKG_DIR/DEBIAN/postinst"
           chmod 0755 "$PKG_DIR/DEBIAN/postinst"
 
-          # Pre-remove script
           cat > "$PKG_DIR/DEBIAN/prerm" <<'PRERM'
           #!/bin/bash
           set -e
@@ -108,14 +99,17 @@ jobs:
           sed -i 's/^          //' "$PKG_DIR/DEBIAN/prerm"
           chmod 0755 "$PKG_DIR/DEBIAN/prerm"
 
-          # conffiles — protect user config on upgrade
           echo "/etc/openvas-tracker/env" > "$PKG_DIR/DEBIAN/conffiles"
-
           dpkg-deb --build "$PKG_DIR"
 
-      - name: Upload .deb to release
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DEB="pkg-build/openvas-tracker_${{ steps.version.outputs.VERSION }}_amd64.deb"
-          gh release upload "$GITHUB_REF_NAME" "$DEB" --clobber
+          BIN="bin/openvas-tracker-linux-amd64"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "OpenVAS-Tracker $GITHUB_REF_NAME" \
+            --generate-notes \
+            "$DEB" \
+            "$BIN"
