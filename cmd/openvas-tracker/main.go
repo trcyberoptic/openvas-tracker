@@ -19,6 +19,7 @@ import (
 	"github.com/cyberoptic/openvas-tracker/internal/config"
 	"github.com/cyberoptic/openvas-tracker/internal/database"
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/sql/migrations"
 	"github.com/cyberoptic/openvas-tracker/internal/handler"
 	mw "github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
@@ -53,6 +54,11 @@ func main() {
 		log.Fatalf("database: %v", err)
 	}
 	defer db.Close()
+
+	// Auto-apply pending database migrations
+	if err := database.AutoMigrate(db, migrations.FS); err != nil {
+		log.Fatalf("migrations: %v", err)
+	}
 
 	// Services
 	userSvc := service.NewUserService(db)

@@ -85,7 +85,8 @@ jobs:
               echo ">>> Edit /etc/openvas-tracker/env with your settings"
           fi
           systemctl daemon-reload
-          echo ">>> Run: systemctl enable --now openvas-tracker"
+          systemctl enable openvas-tracker
+          systemctl restart openvas-tracker
           POSTINST
           sed -i 's/^          //' "$PKG_DIR/DEBIAN/postinst"
           chmod 0755 "$PKG_DIR/DEBIAN/postinst"

@@ -99,6 +99,20 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 
 	res := &ImportResult{ScanID: scan.ID}
 
+	// Collect all distinct hosts from the raw results (before info-filter)
+	// so we know which hosts were in scope for this scan.
+	scannedHosts := make(map[string]bool)
+	for _, r := range results {
+		if r.Host != "" {
+			scannedHosts[r.Host] = true
+		}
+	}
+	for host := range scannedHosts {
+		if err := tq.InsertScanHost(ctx, scan.ID, host); err != nil {
+			log.Printf("import: failed to record scan host %s: %v", host, err)
+		}
+	}
+
 	for _, r := range results {
 		port, proto := parsePort(r.Port)
 		severity := mapSeverity(r.Severity, r.CVSSScore)
@@ -166,7 +180,31 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 	case queries.TicketStatusFalsePositive:
 		return false, false
 
-	case queries.TicketStatusFixed, queries.TicketStatusRiskAccepted:
+	case queries.TicketStatusRiskAccepted:
+		// Check if an active auto-accept rule still matches — if so, keep accepted
+		fp := vulnFingerprint(r.CVE, r.Title)
+		if _, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
+			if err := q.TouchTicket(ctx, queries.TouchTicketParams{
+				ID: existing.ID, VulnerabilityID: vulnID,
+			}); err != nil {
+				log.Printf("import: failed to touch ticket %s: %v", existing.ID, err)
+			}
+			note := fmt.Sprintf("Finding still present in scan, kept risk-accepted by rule. CVE: %s, Host: %s", r.CVE, r.Host)
+			logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
+			return false, false
+		}
+		// No active rule — reopen
+		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
+			ID: existing.ID, VulnerabilityID: vulnID,
+		}); err != nil {
+			return false, false
+		}
+		newStatus := "open"
+		note := fmt.Sprintf("Finding reappeared in scan — reopened (no active rule). CVE: %s, Host: %s", r.CVE, r.Host)
+		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		return false, true
+
+	case queries.TicketStatusFixed:
 		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
 			ID: existing.ID, VulnerabilityID: vulnID,
 		}); err != nil {
