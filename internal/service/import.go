@@ -166,7 +166,31 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 	case queries.TicketStatusFalsePositive:
 		return false, false
 
-	case queries.TicketStatusFixed, queries.TicketStatusRiskAccepted:
+	case queries.TicketStatusRiskAccepted:
+		// Check if an active auto-accept rule still matches — if so, keep accepted
+		fp := vulnFingerprint(r.CVE, r.Title)
+		if _, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
+			if err := q.TouchTicket(ctx, queries.TouchTicketParams{
+				ID: existing.ID, VulnerabilityID: vulnID,
+			}); err != nil {
+				log.Printf("import: failed to touch ticket %s: %v", existing.ID, err)
+			}
+			note := fmt.Sprintf("Finding still present in scan, kept risk-accepted by rule. CVE: %s, Host: %s", r.CVE, r.Host)
+			logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
+			return false, false
+		}
+		// No active rule — reopen
+		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
+			ID: existing.ID, VulnerabilityID: vulnID,
+		}); err != nil {
+			return false, false
+		}
+		newStatus := "open"
+		note := fmt.Sprintf("Finding reappeared in scan — reopened (no active rule). CVE: %s, Host: %s", r.CVE, r.Host)
+		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		return false, true
+
+	case queries.TicketStatusFixed:
 		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
 			ID: existing.ID, VulnerabilityID: vulnID,
 		}); err != nil {
