@@ -336,7 +336,7 @@ func (q *Queries) TouchTicket(ctx context.Context, arg TouchTicketParams) error 
 // Uses SELECT-then-UPDATE to avoid TOCTOU race with the 5-second window.
 func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
 	// Step 1: find IDs to resolve
-	idRows, err := q.db.QueryContext(ctx, `SELECT t.id FROM tickets t WHERE t.status = 'open' AND t.vulnerability_id IS NOT NULL AND t.vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`, scanID)
+	idRows, err := q.db.QueryContext(ctx, `SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND t.vulnerability_id IS NOT NULL AND v.affected_host IN (SELECT host FROM scan_hosts WHERE scan_id = ?) AND t.vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`, scanID, scanID)
 	if err != nil {
 		return nil, err
 	}
