@@ -21,8 +21,9 @@ The dev server proxies `/api/*` and `/ws` requests to the Go backend on port 808
 - **Ticket Detail** — Affected host + also-affected hosts, change status/assignment, prominent CVSS score box, risk accept rule creation (this host / all hosts), CVE reference links (NVD/MITRE/Google), description, notes, activity log
 - **Scans** — List of imports with detail view
 - **Scan Diff** — Compare two scans: new / fixed / unchanged. Defaults to two most recent
-- **Auto-Accept Rules** — List and delete risk accept rules, shows finding, scope, reason, expiry
+- **Auto-Accept Rules** — List and delete risk accept rules, shows finding, scope, reason, expiry. "Refresh Tickets" button re-applies all rules to existing open tickets
 - **Settings** — Profile, OpenVAS setup guide, .env config editor, LDAP config with test button
+- **Sidebar** — Navigation with GitHub repo link at the bottom
 
 ## Key Components
 
