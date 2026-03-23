@@ -99,6 +99,20 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 
 	res := &ImportResult{ScanID: scan.ID}
 
+	// Collect all distinct hosts from the raw results (before info-filter)
+	// so we know which hosts were in scope for this scan.
+	scannedHosts := make(map[string]bool)
+	for _, r := range results {
+		if r.Host != "" {
+			scannedHosts[r.Host] = true
+		}
+	}
+	for host := range scannedHosts {
+		if err := tq.InsertScanHost(ctx, scan.ID, host); err != nil {
+			log.Printf("import: failed to record scan host %s: %v", host, err)
+		}
+	}
+
 	for _, r := range results {
 		port, proto := parsePort(r.Port)
 		severity := mapSeverity(r.Severity, r.CVSSScore)
