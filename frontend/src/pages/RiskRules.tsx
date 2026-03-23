@@ -16,7 +16,7 @@ export function RiskRules() {
   })
 
   const applyMut = useMutation({
-    mutationFn: () => api.post<{ tickets_affected: number }>('/settings/risk-rules/apply'),
+    mutationFn: () => api.post<{ tickets_affected: number }>('/settings/risk-rules/apply', {}),
     onSuccess: (data) => { alert(`${data.tickets_affected} ticket(s) updated.`) },
   })
 
