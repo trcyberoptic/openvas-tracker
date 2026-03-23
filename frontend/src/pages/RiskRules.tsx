@@ -15,6 +15,11 @@ export function RiskRules() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['risk-rules'] }),
   })
 
+  const applyMut = useMutation({
+    mutationFn: () => api.post<{ tickets_affected: number }>('/settings/risk-rules/apply'),
+    onSuccess: (data) => { alert(`${data.tickets_affected} ticket(s) updated.`) },
+  })
+
   const formatFingerprint = (fp: string) => {
     if (fp.startsWith('title:')) return fp.slice(6)
     return fp // CVE ID
@@ -23,10 +28,16 @@ export function RiskRules() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Auto-Accept Rules</h1>
-      <p className="text-slate-400 text-sm mb-6">
-        Findings matching these rules are automatically set to <span className="text-yellow-300">risk accepted</span> on import.
-        Rules can be created from any ticket's detail page.
-      </p>
+      <div className="flex items-center justify-between mb-6">
+        <p className="text-slate-400 text-sm">
+          Findings matching these rules are automatically set to <span className="text-yellow-300">risk accepted</span> on import.
+          Rules can be created from any ticket's detail page.
+        </p>
+        <button onClick={() => applyMut.mutate()} disabled={applyMut.isPending}
+          className="ml-4 shrink-0 px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white text-sm rounded transition-colors">
+          {applyMut.isPending ? 'Applying…' : 'Refresh Tickets'}
+        </button>
+      </div>
 
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
         <table className="w-full text-sm">
