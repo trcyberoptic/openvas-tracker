@@ -3,7 +3,9 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/cyberoptic/openvas-tracker/internal/config"
@@ -189,6 +191,42 @@ func (h *SettingsHandler) DeleteRiskRule(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// ApplyRiskRules re-applies all active rules to existing open tickets.
+func (h *SettingsHandler) ApplyRiskRules(c echo.Context) error {
+	ctx := c.Request().Context()
+	rules, err := h.q.ListRiskAcceptRules(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list rules")
+	}
+
+	total := 0
+	for _, rule := range rules {
+		if rule.ExpiresAt != nil && rule.ExpiresAt.Before(time.Now()) {
+			continue
+		}
+		affected, err := h.q.ApplyRuleToExistingTickets(ctx, rule.Fingerprint, rule.HostPattern, rule.ExpiresAt)
+		if err != nil {
+			continue
+		}
+		for _, tid := range affected {
+			newStatus := "risk_accepted"
+			note := fmt.Sprintf("Risk accepted via rule refresh: %s", rule.Reason)
+			h.q.LogTicketActivity(ctx, queries.LogTicketActivityParams{
+				ID: uuid.New().String(), TicketID: tid, Action: "status_changed",
+				OldValue: strPtr("open"), NewValue: &newStatus, ChangedBy: "Automatic", Note: &note,
+			})
+		}
+		total += len(affected)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":           "ok",
+		"tickets_affected": total,
+	})
+}
+
+func strPtr(s string) *string { return &s }
+
 func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/setup", h.GetSetup)
 	g.GET("/users", h.ListUsers)
@@ -198,4 +236,5 @@ func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/ldap/test", h.TestLDAP)
 	g.GET("/risk-rules", h.ListRiskRules)
 	g.DELETE("/risk-rules/:id", h.DeleteRiskRule)
+	g.POST("/risk-rules/apply", h.ApplyRiskRules)
 }
