@@ -180,6 +180,15 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 - **Frontend**: React 19, Vite, Tailwind CSS, TanStack Query, Recharts, Zustand
 - **Deploy**: Docker Compose or systemd (Debian). Database migrations auto-applied on startup
 
+## Donate
+
+If you find this project useful, consider supporting development:
+
+**XMR (Monero):**
+```
+89fMD41wm8n88tgVj836qf3m16odqRjBhLti8dmVbvgsYAuEpTGfHBL7zNW8hingxQJNLWXfP3c2tgyyUMxYBiqHVYWR2rU
+```
+
 ## License
 
 GPL v3
