@@ -3,7 +3,9 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/cyberoptic/openvas-tracker/internal/config"
@@ -61,20 +63,33 @@ func (h *SettingsHandler) ListUsers(c echo.Context) error {
 		}
 	}
 
-	// LDAP group members (if configured)
+	// LDAP group members (if configured) — auto-create DB users so they
+	// have a real UUID that satisfies the tickets.assigned_to FK.
 	ldapCfg := h.currentLDAPConfig()
 	if ldapCfg.Enabled() {
 		members, err := h.ldapSvc.ListGroupMembers(ldapCfg)
 		if err == nil {
-			// Add LDAP users not already in local list
 			localNames := make(map[string]bool)
 			for _, u := range result {
 				localNames[u.Username] = true
 			}
 			for _, m := range members {
-				if !localNames[m.Username] {
-					result = append(result, userRef{ID: "ldap:" + m.Username, Username: m.Username, Email: m.Email, Source: "ldap"})
+				if localNames[m.Username] || m.Email == "" {
+					continue
 				}
+				// Auto-create a DB user so the UUID works for ticket assignment
+				user, err := h.q.CreateUser(c.Request().Context(), queries.CreateUserParams{
+					ID: uuid.New().String(), Email: m.Email, Username: m.Username,
+					Password: "-", Role: queries.UserRoleViewer,
+				})
+				if err != nil {
+					// Already exists (race) — fetch
+					user, err = h.q.GetUserByUsername(c.Request().Context(), m.Username)
+					if err != nil {
+						continue
+					}
+				}
+				result = append(result, userRef{ID: user.ID, Username: user.Username, Email: user.Email, Source: "ldap"})
 			}
 		}
 	}
@@ -189,6 +204,42 @@ func (h *SettingsHandler) DeleteRiskRule(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// ApplyRiskRules re-applies all active rules to existing open tickets.
+func (h *SettingsHandler) ApplyRiskRules(c echo.Context) error {
+	ctx := c.Request().Context()
+	rules, err := h.q.ListRiskAcceptRules(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list rules")
+	}
+
+	total := 0
+	for _, rule := range rules {
+		if rule.ExpiresAt != nil && rule.ExpiresAt.Before(time.Now()) {
+			continue
+		}
+		affected, err := h.q.ApplyRuleToExistingTickets(ctx, rule.Fingerprint, rule.HostPattern, rule.ExpiresAt)
+		if err != nil {
+			continue
+		}
+		for _, tid := range affected {
+			newStatus := "risk_accepted"
+			note := fmt.Sprintf("Risk accepted via rule refresh: %s", rule.Reason)
+			h.q.LogTicketActivity(ctx, queries.LogTicketActivityParams{
+				ID: uuid.New().String(), TicketID: tid, Action: "status_changed",
+				OldValue: strPtr("open"), NewValue: &newStatus, ChangedBy: "Automatic", Note: &note,
+			})
+		}
+		total += len(affected)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":           "ok",
+		"tickets_affected": total,
+	})
+}
+
+func strPtr(s string) *string { return &s }
+
 func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/setup", h.GetSetup)
 	g.GET("/users", h.ListUsers)
@@ -198,4 +249,5 @@ func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/ldap/test", h.TestLDAP)
 	g.GET("/risk-rules", h.ListRiskRules)
 	g.DELETE("/risk-rules/:id", h.DeleteRiskRule)
+	g.POST("/risk-rules/apply", h.ApplyRiskRules)
 }

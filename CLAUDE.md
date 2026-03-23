@@ -85,7 +85,8 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 ## Database
 
 - **MariaDB** with `database/sql` + `go-sql-driver/mysql`
-- 17 migrations in `sql/migrations/` (001-017). `sql/docker-init.sql` sources all.
+- 18 migrations in `sql/migrations/` (001-018). `sql/docker-init.sql` sources all.
+- **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically when the app starts. Bootstraps `schema_migrations` for existing databases.
 - UUIDs are `CHAR(36)`, generated in Go (`uuid.New().String()`)
 - Pool: `MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime(5m)`, `ConnMaxIdleTime(3m)`
 
@@ -93,12 +94,13 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 
 ### Auth
 - Login by username, three sources in order: (1) admin + `OT_ADMIN_PASSWORD`, (2) LDAP bind + group check, (3) DB user fallback. No registration. Rate limited 30/min/IP.
-- LDAP re-reads `.env` on each login for live config changes. Auto-creates DB user on first LDAP login.
+- LDAP re-reads `.env` on each login for live config changes. Auto-creates DB user on first LDAP login. LDAP group members are also auto-created (with real UUIDs) when the user list is loaded, so they can be assigned to tickets before first login. Users without email are skipped.
 - No roles — all users have equal access. Role column exists but is never checked.
 
 ### Import
 - OpenVAS webhook → `ImportService.Import()` → single transaction: scan + vulns + tickets.
 - Per vuln: check risk accept rules → find ticket by fingerprint (host + CVE/title) → create/reopen/touch → auto-resolve stale → commit.
+- `scan_hosts` table (migration 018) tracks which hosts were in each scan. Auto-resolve is scoped to only hosts present in the current scan, preventing incorrect resolution of tickets for out-of-scope subnets.
 - PTR hostname backfill runs async after each import. Hostnames normalized: `UPPERCASE.domain.lowercase`.
 
 ### Tickets
@@ -111,11 +113,12 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 - `risk_accept_rules` table: fingerprint (CVE or `title:` + vuln title) + host pattern (`*` or IP).
 - Created from ticket detail page ("this host" or "all hosts"). Applied to existing open tickets on creation.
 - Checked during import — matching new tickets auto-set to `risk_accepted`.
+- "Refresh Tickets" button on Auto-Accept Rules page re-applies all rules to existing open tickets (`POST /api/settings/risk-rules/apply`).
 
 ### Frontend
 - `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns.
 - Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted.
-- Sidebar: Dashboard, My Tickets, All Tickets, Scans, Scan Diff, Auto-Accept Rules, Settings.
+- Sidebar: Dashboard, My Tickets, All Tickets, Scans, Scan Diff, Auto-Accept Rules, Settings. GitHub repo link at bottom.
 - Trend chart: 30-day daily snapshots of open tickets via recursive CTE.
 
 ## Deployment

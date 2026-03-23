@@ -18,3 +18,4 @@ SOURCE /docker-entrypoint-initdb.d/migrations/014_update_ticket_statuses.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/015_add_false_positive_and_risk_expiry.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/016_add_vuln_hostname.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/017_create_risk_accept_rules.up.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/018_create_scan_hosts.up.sql;
