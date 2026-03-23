@@ -43,6 +43,36 @@ func AutoMigrate(db *sql.DB, migrationsFS fs.FS) error {
 		applied[v] = true
 	}
 
+	// Bootstrap: if schema_migrations is empty but the database already has tables
+	// (e.g. set up via docker-init.sql or manual migrate-up), mark pre-existing
+	// migrations as applied. We detect this by checking for the users table
+	// (created by migration 001). Only migrations whose CREATE TABLE target
+	// already exists are marked — new migrations will run normally.
+	if len(applied) == 0 {
+		var exists int
+		db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'users'`).Scan(&exists)
+		if exists > 0 {
+			for _, file := range files {
+				version := strings.TrimSuffix(file, ".up.sql")
+				// Check if this migration creates a table that already exists
+				content, _ := fs.ReadFile(migrationsFS, file)
+				tableName := extractCreateTable(string(content))
+				if tableName != "" {
+					var tblExists int
+					db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?`, tableName).Scan(&tblExists)
+					if tblExists == 0 {
+						continue // table doesn't exist yet — this migration needs to run
+					}
+				}
+				if _, err := db.Exec(`INSERT IGNORE INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+					return fmt.Errorf("bootstrap migration %s: %w", version, err)
+				}
+				applied[version] = true
+			}
+			log.Printf("migration: existing database detected, marked %d migrations as already applied", len(applied))
+		}
+	}
+
 	// Apply pending migrations in order
 	for _, file := range files {
 		version := strings.TrimSuffix(file, ".up.sql")
@@ -72,6 +102,25 @@ func AutoMigrate(db *sql.DB, migrationsFS fs.FS) error {
 	}
 
 	return nil
+}
+
+// extractCreateTable returns the first table name from a CREATE TABLE statement, or "".
+func extractCreateTable(sqlText string) string {
+	upper := strings.ToUpper(sqlText)
+	idx := strings.Index(upper, "CREATE TABLE ")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(sqlText[idx+len("CREATE TABLE "):])
+	// Skip optional "IF NOT EXISTS"
+	if strings.HasPrefix(strings.ToUpper(rest), "IF NOT EXISTS ") {
+		rest = strings.TrimSpace(rest[len("IF NOT EXISTS "):])
+	}
+	// First token is the table name
+	name := strings.FieldsFunc(rest, func(r rune) bool {
+		return r == ' ' || r == '(' || r == '\n' || r == '\r' || r == '\t'
+	})[0]
+	return strings.Trim(name, "`")
 }
 
 // splitStatements splits SQL text on semicolons, trimming whitespace and
