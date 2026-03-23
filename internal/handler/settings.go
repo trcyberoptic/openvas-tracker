@@ -63,20 +63,33 @@ func (h *SettingsHandler) ListUsers(c echo.Context) error {
 		}
 	}
 
-	// LDAP group members (if configured)
+	// LDAP group members (if configured) — auto-create DB users so they
+	// have a real UUID that satisfies the tickets.assigned_to FK.
 	ldapCfg := h.currentLDAPConfig()
 	if ldapCfg.Enabled() {
 		members, err := h.ldapSvc.ListGroupMembers(ldapCfg)
 		if err == nil {
-			// Add LDAP users not already in local list
 			localNames := make(map[string]bool)
 			for _, u := range result {
 				localNames[u.Username] = true
 			}
 			for _, m := range members {
-				if !localNames[m.Username] {
-					result = append(result, userRef{ID: "ldap:" + m.Username, Username: m.Username, Email: m.Email, Source: "ldap"})
+				if localNames[m.Username] || m.Email == "" {
+					continue
 				}
+				// Auto-create a DB user so the UUID works for ticket assignment
+				user, err := h.q.CreateUser(c.Request().Context(), queries.CreateUserParams{
+					ID: uuid.New().String(), Email: m.Email, Username: m.Username,
+					Password: "-", Role: queries.UserRoleViewer,
+				})
+				if err != nil {
+					// Already exists (race) — fetch
+					user, err = h.q.GetUserByUsername(c.Request().Context(), m.Username)
+					if err != nil {
+						continue
+					}
+				}
+				result = append(result, userRef{ID: user.ID, Username: user.Username, Email: user.Email, Source: "ldap"})
 			}
 		}
 	}
