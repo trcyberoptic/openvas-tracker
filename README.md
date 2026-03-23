@@ -12,6 +12,7 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 
 - **OpenVAS Import**: Webhook endpoint receives scan results automatically when scans complete
 - **Automatic Ticketing**: New findings create tickets, missing findings auto-resolve, recurring findings reopen
+- **Scope-aware Auto-resolve**: Importing a scan only auto-resolves tickets for hosts that were in that scan's scope — other subnets are unaffected
 - **Ticket Lifecycle**: open → fixed / risk_accepted / false_positive, with full activity audit trail
 - **Risk Acceptance with Expiry**: Risk-accepted tickets auto-reopen after expiry date
 - **Auto-Accept Rules**: Define rules (by CVE or title, per host or globally) to automatically accept known risks on future imports — configurable from any ticket
@@ -115,7 +116,7 @@ All config via `.env` file. Editable from the Settings page in the UI.
 2. **LDAP**: Bind against Active Directory, verify group membership → if configured
 3. **DB fallback**: Existing database users → for backwards compatibility
 
-No self-registration. LDAP users auto-created in DB on first login.
+No self-registration. LDAP users auto-created in DB on first login and also when the user list is loaded (Settings → Users), so they can be assigned to tickets before their first login.
 
 ## OpenVAS Setup
 
@@ -169,6 +170,7 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 | GET/PUT | /api/settings/env | Read/write .env config |
 | POST | /api/settings/ldap/test | Test LDAP connection |
 | GET | /api/settings/risk-rules | List auto-accept rules |
+| POST | /api/settings/risk-rules/apply | Re-apply rules to existing open tickets |
 | DELETE | /api/settings/risk-rules/:id | Delete rule |
 | GET | /api/health | Health check |
 
@@ -176,7 +178,7 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 
 - **Backend**: Go 1.26, Echo v4, MariaDB, golang-jwt, bcrypt, godotenv, go-ldap
 - **Frontend**: React 19, Vite, Tailwind CSS, TanStack Query, Recharts, Zustand
-- **Deploy**: Docker Compose or systemd (Debian)
+- **Deploy**: Docker Compose or systemd (Debian). Database migrations auto-applied on startup
 
 ## License
 
