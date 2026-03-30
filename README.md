@@ -19,7 +19,6 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 - **Auto-Accept Rules**: Define rules (by CVE or title, per host or globally) to automatically accept known risks on future imports — configurable from any ticket
 - **Scan Comparison**: Side-by-side diff of two scans — new, fixed, unchanged findings
 - **Bulk Actions**: Select multiple tickets for batch status change or assignment
-- **Host-centric View**: Aggregated vulnerability counts and ticket status per host with expandable ticket list
 - **Dashboard**: Open ticket counts by priority, 30-day trend chart, "My Tickets" and "Unassigned" quick filters
 - **CVE References**: NVD, MITRE, and Google links on tickets with CVE; title-based search for tickets without
 - **Also Affected**: See which other hosts have the same vulnerability
@@ -158,8 +157,7 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 | POST | /api/auth/login | Login (username + password) |
 | POST | /api/import/openvas | Import OpenVAS XML (API-Key) |
 | GET | /api/import/openvas | Trigger GMP fetch (API-Key) |
-| GET | /api/hosts | Host summaries with ticket status |
-| GET | /api/hosts/:host/tickets | Tickets for a host |
+| GET | /api/hosts/:host/vulnerabilities | Vulnerabilities for a host |
 | GET | /api/scans | List scans |
 | GET | /api/scans/diff?old=X&new=Y | Compare two scans |
 | GET | /api/scans/:id | Scan detail |
