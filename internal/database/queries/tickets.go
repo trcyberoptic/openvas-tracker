@@ -339,16 +339,19 @@ func (q *Queries) TouchTicket(ctx context.Context, arg TouchTicketParams) error 
 // IncrementMissesForStaleTickets increments consecutive_misses for open/pending_resolution
 // tickets whose findings were not seen in the given scan. Returns all affected tickets
 // (with their UPDATED consecutive_misses values).
-func (q *Queries) IncrementMissesForStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
+func (q *Queries) IncrementMissesForStaleTickets(ctx context.Context, scanID string, scanType string) ([]Ticket, error) {
 	// Step 1: find IDs of stale tickets (open or pending_resolution, host in scan scope, finding not in scan)
+	// Scoped to the same scan_type to avoid cross-scanner interference.
 	idRows, err := q.db.QueryContext(ctx, `
 		SELECT t.id FROM tickets t
 		JOIN vulnerabilities v ON t.vulnerability_id = v.id
+		JOIN scans s ON v.scan_id = s.id
 		WHERE t.status IN ('open', 'pending_resolution')
 		AND t.vulnerability_id IS NOT NULL
 		AND v.affected_host IN (SELECT host FROM scan_hosts WHERE scan_id = ?)
+		AND s.scan_type = ?
 		AND t.vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`,
-		scanID, scanID)
+		scanID, scanType, scanID)
 	if err != nil {
 		return nil, err
 	}
