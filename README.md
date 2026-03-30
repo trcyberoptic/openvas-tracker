@@ -1,6 +1,6 @@
 # OpenVAS-Tracker
 
-Vulnerability management dashboard that imports OpenVAS scan results and tracks remediation through automated ticketing.
+Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan results and tracks remediation through automated ticketing.
 
 ## Screenshots
 
@@ -11,6 +11,8 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 ## Features
 
 - **OpenVAS Import**: Webhook endpoint receives scan results automatically when scans complete
+- **OWASP ZAP Import**: Webhook endpoint for ZAP Traditional JSON Reports — URL-granular ticketing for web application findings
+- **Multi-Scanner Architecture**: Pluggable parser interface supports multiple scanner types with scan-type-scoped auto-resolve
 - **Automatic Ticketing**: New findings create tickets, missing findings auto-resolve, recurring findings reopen
 - **Flapping Protection**: Configurable threshold (default 3) of consecutive scan misses before auto-resolve — prevents noisy ticket churn from intermittent scan results, with visible `pending_resolution` intermediate status
 - **Scope-aware Auto-resolve**: Importing a scan only auto-resolves tickets for hosts that were in that scan's scope — other subnets are unaffected
@@ -41,19 +43,24 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 ```mermaid
 sequenceDiagram
     participant OV as OpenVAS (GVM)
+    participant ZAP as OWASP ZAP
     participant TR as OpenVAS-Tracker
     participant AD as Active Directory
     participant DB as MariaDB
     participant UI as React Dashboard
 
-    Note over OV: Scan completes
+    Note over OV: Network scan completes
     OV->>TR: HTTP GET /api/import/openvas?api_key=...
     TR->>OV: GMP Socket: fetch latest report
     OV-->>TR: XML report
-    TR->>DB: Begin transaction
     TR->>DB: Create scan + vulnerabilities + tickets
+
+    Note over ZAP: Web app scan completes
+    ZAP->>TR: POST /api/import/zap (JSON report)
+    TR->>DB: Create scan + vulnerabilities + tickets
+
     TR->>DB: Check risk accept rules → auto-accept matches
-    TR->>DB: Auto-fix/reopen tickets
+    TR->>DB: Auto-fix/reopen tickets (scoped by scanner type)
     TR->>DB: Commit
     TR->>UI: WebSocket push
 
@@ -130,6 +137,70 @@ No self-registration. LDAP users auto-created in DB on first login and also when
 2. In GSA: **Configuration → Alerts → New Alert** → HTTP Get → `http://<host>:8080/api/import/openvas?api_key=<key>`
 3. Attach alert to scan task
 
+## ZAP Setup
+
+ZAP scans are run externally — the tracker receives results via webhook. The same `OT_IMPORT_APIKEY` is used for both OpenVAS and ZAP imports.
+
+### Manual (ZAP Desktop)
+
+1. Run your scan in ZAP (Spider + Active Scan)
+2. Export report: **Report → Generate Report → Traditional JSON**
+3. Send to tracker:
+
+```bash
+curl -X POST https://your-server:8080/api/import/zap \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d @zap-report.json
+```
+
+### Automated (ZAP Docker)
+
+```bash
+# Full scan (spider + active scan)
+docker run --rm -v $(pwd):/zap/wrk ghcr.io/zaproxy/zaproxy:stable \
+  zap-full-scan.py -t https://target-app.example.com -J zap-report.json
+
+# Send results to tracker
+curl -X POST https://your-server:8080/api/import/zap \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d @zap-report.json
+```
+
+ZAP Docker scan modes:
+- `zap-baseline.py` — Passive checks only (fast, safe for production)
+- `zap-full-scan.py` — Spider + active scan (thorough, sends attack payloads)
+- `zap-api-scan.py` — API scan against OpenAPI/Swagger definitions
+
+### Cron Example
+
+```bash
+#!/bin/bash
+# /usr/local/bin/zap-scan-and-import.sh
+TARGET="https://internal-app.example.com"
+APIKEY="your-32-char-api-key"
+REPORT="/tmp/zap-report.json"
+
+docker run --rm --network host \
+  -v /tmp:/zap/wrk ghcr.io/zaproxy/zaproxy:stable \
+  zap-full-scan.py -t "$TARGET" -J zap-report.json
+
+curl -s -X POST http://localhost:8080/api/import/zap \
+  -H "X-API-Key: $APIKEY" \
+  -H "Content-Type: application/json" \
+  -d @"$REPORT"
+
+rm -f "$REPORT"
+```
+
+### How ZAP Findings Become Tickets
+
+- Each alert instance (URL + parameter combination) creates a separate ticket
+- Fingerprint: `cwe:<ID>:url:<path>:param:<name>` (or CVE if present)
+- Severity mapping: ZAP riskcode 3→high (CVSS 7.0), 2→medium (4.0), 1→low (2.0), 0→info (skipped)
+- Auto-resolve is scoped by scanner type — ZAP scans only affect ZAP tickets, never OpenVAS tickets
+
 ## Ticket Lifecycle
 
 ```
@@ -157,6 +228,7 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 | POST | /api/auth/login | Login (username + password) |
 | POST | /api/import/openvas | Import OpenVAS XML (API-Key) |
 | GET | /api/import/openvas | Trigger GMP fetch (API-Key) |
+| POST | /api/import/zap | Import ZAP JSON report (API-Key) |
 | GET | /api/hosts/:host/vulnerabilities | Vulnerabilities for a host |
 | GET | /api/scans | List scans |
 | GET | /api/scans/diff?old=X&new=Y | Compare two scans |
