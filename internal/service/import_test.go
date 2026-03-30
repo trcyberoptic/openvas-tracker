@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -57,3 +58,30 @@ func derefInt32(p *int32) string     { if p == nil { return "<nil>" }; return fm
 func derefStr(p *string) string      { if p == nil { return "<nil>" }; return *p }
 func int32PtrEq(a, b *int32) bool    { if a == nil && b == nil { return true }; if a == nil || b == nil { return false }; return *a == *b }
 func strPtrEq(a, b *string) bool     { if a == nil && b == nil { return true }; if a == nil || b == nil { return false }; return *a == *b }
+
+func TestAutoResolveThreshold(t *testing.T) {
+	// Default value
+	os.Unsetenv("OT_AUTORESOLVE_THRESHOLD")
+	if got := autoResolveThreshold(); got != 3 {
+		t.Errorf("expected default 3, got %d", got)
+	}
+
+	// Custom value
+	os.Setenv("OT_AUTORESOLVE_THRESHOLD", "5")
+	defer os.Unsetenv("OT_AUTORESOLVE_THRESHOLD")
+	if got := autoResolveThreshold(); got != 5 {
+		t.Errorf("expected 5, got %d", got)
+	}
+
+	// Invalid value falls back to default
+	os.Setenv("OT_AUTORESOLVE_THRESHOLD", "abc")
+	if got := autoResolveThreshold(); got != 3 {
+		t.Errorf("expected default 3 for invalid value, got %d", got)
+	}
+
+	// Zero falls back to default (minimum is 1)
+	os.Setenv("OT_AUTORESOLVE_THRESHOLD", "0")
+	if got := autoResolveThreshold(); got != 3 {
+		t.Errorf("expected default 3 for zero, got %d", got)
+	}
+}
