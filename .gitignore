@@ -35,3 +35,6 @@ coverage.out
 
 # Database (local dev)
 *.db
+
+# Worktrees
+.worktrees/
