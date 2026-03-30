@@ -21,11 +21,12 @@ func NewDashboardHandler(vulns *service.VulnerabilityService, tickets *service.T
 }
 
 type dashboardResponse struct {
-	VulnsBySeverity    []severityCount `json:"vulns_by_severity"`
-	MyTickets          int64           `json:"my_tickets"`
-	UnassignedTickets  int64           `json:"unassigned_tickets"`
-	OpenTicketsTotal   int64           `json:"open_tickets_total"`
-	ResolvedTickets    int64           `json:"resolved_tickets"`
+	VulnsBySeverity        []severityCount `json:"vulns_by_severity"`
+	MyTickets              int64           `json:"my_tickets"`
+	UnassignedTickets      int64           `json:"unassigned_tickets"`
+	OpenTicketsTotal       int64           `json:"open_tickets_total"`
+	PendingResolutionTotal int64           `json:"pending_resolution_total"`
+	ResolvedTickets        int64           `json:"resolved_tickets"`
 }
 
 type severityCount struct {
@@ -56,11 +57,12 @@ func (h *DashboardHandler) Get(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, dashboardResponse{
-		VulnsBySeverity:   sevCounts,
-		MyTickets:         stats.MyTickets,
-		UnassignedTickets: stats.UnassignedTickets,
-		OpenTicketsTotal:  stats.OpenTicketsTotal,
-		ResolvedTickets:   stats.ResolvedTickets,
+		VulnsBySeverity:        sevCounts,
+		MyTickets:              stats.MyTickets,
+		UnassignedTickets:      stats.UnassignedTickets,
+		OpenTicketsTotal:       stats.OpenTicketsTotal,
+		PendingResolutionTotal: stats.PendingResolutionTotal,
+		ResolvedTickets:        stats.ResolvedTickets,
 	})
 }
 

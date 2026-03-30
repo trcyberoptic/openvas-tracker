@@ -139,7 +139,7 @@ func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Tic
 }
 
 func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (Ticket, error) {
-	const updateTicketStatus = `UPDATE tickets SET status = ?, resolved_at = CASE WHEN ? IN ('fixed', 'risk_accepted') THEN NOW() ELSE resolved_at END, updated_at = NOW() WHERE id = ?`
+	const updateTicketStatus = `UPDATE tickets SET status = ?, consecutive_misses = 0, resolved_at = CASE WHEN ? IN ('fixed', 'risk_accepted') THEN NOW() ELSE resolved_at END, updated_at = NOW() WHERE id = ?`
 	_, err := q.db.ExecContext(ctx, updateTicketStatus, arg.Status, arg.Status, arg.ID)
 	if err != nil {
 		return Ticket{}, err
@@ -210,7 +210,7 @@ type OpenTicketsByPriorityRow struct {
 }
 
 func (q *Queries) OpenTicketsByPriority(ctx context.Context) ([]OpenTicketsByPriorityRow, error) {
-	rows, err := q.db.QueryContext(ctx, `SELECT priority, COUNT(*) as count FROM tickets WHERE status = 'open' GROUP BY priority`)
+	rows, err := q.db.QueryContext(ctx, `SELECT priority, COUNT(*) as count FROM tickets WHERE status IN ('open', 'pending_resolution') GROUP BY priority`)
 	if err != nil {
 		return nil, err
 	}
@@ -227,21 +227,23 @@ func (q *Queries) OpenTicketsByPriority(ctx context.Context) ([]OpenTicketsByPri
 }
 
 type DashboardTicketStatsRow struct {
-	MyTickets         int64 `json:"my_tickets"`
-	UnassignedTickets int64 `json:"unassigned_tickets"`
-	OpenTicketsTotal  int64 `json:"open_tickets_total"`
-	ResolvedTickets   int64 `json:"resolved_tickets"`
+	MyTickets              int64 `json:"my_tickets"`
+	UnassignedTickets      int64 `json:"unassigned_tickets"`
+	OpenTicketsTotal       int64 `json:"open_tickets_total"`
+	PendingResolutionTotal int64 `json:"pending_resolution_total"`
+	ResolvedTickets        int64 `json:"resolved_tickets"`
 }
 
 func (q *Queries) DashboardTicketStats(ctx context.Context, userID string) (DashboardTicketStatsRow, error) {
 	const query = `SELECT
-		COALESCE(SUM(CASE WHEN assigned_to = ? AND status = 'open' THEN 1 ELSE 0 END), 0) as my_tickets,
-		COALESCE(SUM(CASE WHEN assigned_to IS NULL AND status = 'open' THEN 1 ELSE 0 END), 0) as unassigned_tickets,
+		COALESCE(SUM(CASE WHEN assigned_to = ? AND status IN ('open', 'pending_resolution') THEN 1 ELSE 0 END), 0) as my_tickets,
+		COALESCE(SUM(CASE WHEN assigned_to IS NULL AND status IN ('open', 'pending_resolution') THEN 1 ELSE 0 END), 0) as unassigned_tickets,
 		COALESCE(SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END), 0) as open_tickets_total,
+		COALESCE(SUM(CASE WHEN status = 'pending_resolution' THEN 1 ELSE 0 END), 0) as pending_resolution_total,
 		COALESCE(SUM(CASE WHEN status IN ('fixed', 'risk_accepted') THEN 1 ELSE 0 END), 0) as resolved_tickets
 		FROM tickets`
 	var s DashboardTicketStatsRow
-	err := q.db.QueryRowContext(ctx, query, userID).Scan(&s.MyTickets, &s.UnassignedTickets, &s.OpenTicketsTotal, &s.ResolvedTickets)
+	err := q.db.QueryRowContext(ctx, query, userID).Scan(&s.MyTickets, &s.UnassignedTickets, &s.OpenTicketsTotal, &s.PendingResolutionTotal, &s.ResolvedTickets)
 	return s, err
 }
 

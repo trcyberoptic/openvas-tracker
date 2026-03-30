@@ -244,14 +244,15 @@ func (q *Queries) ListVulnsByHost(ctx context.Context, host string) ([]Vulnerabi
 }
 
 type TrendPoint struct {
-	ScanID    string  `json:"scan_id"`
-	ScanName  string  `json:"scan_name"`
-	ScanDate  time.Time `json:"scan_date"`
-	Total     int64   `json:"total"`
-	Critical  int64   `json:"critical"`
-	High      int64   `json:"high"`
-	Medium    int64   `json:"medium"`
-	Low       int64   `json:"low"`
+	ScanID            string    `json:"scan_id"`
+	ScanName          string    `json:"scan_name"`
+	ScanDate          time.Time `json:"scan_date"`
+	Total             int64     `json:"total"`
+	Critical          int64     `json:"critical"`
+	High              int64     `json:"high"`
+	Medium            int64     `json:"medium"`
+	Low               int64     `json:"low"`
+	PendingResolution int64     `json:"pending_resolution"`
 }
 
 func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
@@ -267,7 +268,8 @@ func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
 			SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END) as critical,
 			SUM(CASE WHEN t.priority = 'high' THEN 1 ELSE 0 END) as high,
 			SUM(CASE WHEN t.priority = 'medium' THEN 1 ELSE 0 END) as medium,
-			SUM(CASE WHEN t.priority = 'low' THEN 1 ELSE 0 END) as low
+			SUM(CASE WHEN t.priority = 'low' THEN 1 ELSE 0 END) as low,
+			SUM(CASE WHEN t.status = 'pending_resolution' THEN 1 ELSE 0 END) as pending_resolution
 		FROM dates
 		LEFT JOIN tickets t ON t.created_at <= dates.d + INTERVAL 1 DAY
 			AND (t.resolved_at IS NULL OR t.resolved_at > dates.d)
@@ -282,7 +284,7 @@ func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
 	var items []TrendPoint
 	for rows.Next() {
 		var i TrendPoint
-		if err := rows.Scan(&i.ScanID, &i.ScanName, &i.ScanDate, &i.Total, &i.Critical, &i.High, &i.Medium, &i.Low); err != nil {
+		if err := rows.Scan(&i.ScanID, &i.ScanName, &i.ScanDate, &i.Total, &i.Critical, &i.High, &i.Medium, &i.Low, &i.PendingResolution); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

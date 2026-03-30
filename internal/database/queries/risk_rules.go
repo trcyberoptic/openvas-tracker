@@ -67,10 +67,10 @@ func (q *Queries) ApplyRuleToExistingTickets(ctx context.Context, fingerprint, h
 	var query string
 	var args []any
 	if hostPattern == "*" {
-		query = "SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND (v.cve_id = ? OR (v.cve_id IS NULL AND CONCAT('title:', v.title) = ?))"
+		query = "SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status IN ('open', 'pending_resolution') AND (v.cve_id = ? OR (v.cve_id IS NULL AND CONCAT('title:', v.title) = ?))"
 		args = []any{fingerprint, fingerprint}
 	} else {
-		query = "SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND v.affected_host = ? AND (v.cve_id = ? OR (v.cve_id IS NULL AND CONCAT('title:', v.title) = ?))"
+		query = "SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status IN ('open', 'pending_resolution') AND v.affected_host = ? AND (v.cve_id = ? OR (v.cve_id IS NULL AND CONCAT('title:', v.title) = ?))"
 		args = []any{hostPattern, fingerprint, fingerprint}
 	}
 
