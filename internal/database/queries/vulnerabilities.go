@@ -44,10 +44,14 @@ type Vulnerability struct {
 	CweID          *string       `json:"cwe_id"`
 	AffectedHost   *string       `json:"affected_host"`
 	Hostname       *string       `json:"hostname"`
+	URL            *string       `json:"url"`
+	Parameter      *string       `json:"parameter"`
 	AffectedPort   *int32        `json:"affected_port"`
 	Protocol       *string       `json:"protocol"`
 	Service        *string       `json:"service"`
 	Solution       *string       `json:"solution"`
+	Evidence       *string       `json:"evidence"`
+	Confidence     *string       `json:"confidence"`
 	VulnReferences []byte        `json:"vuln_references"`
 	EnrichmentData []byte        `json:"enrichment_data"`
 	RiskScore      *float64      `json:"risk_score"`
@@ -70,10 +74,14 @@ type CreateVulnerabilityParams struct {
 	CweID        *string       `json:"cwe_id"`
 	AffectedHost *string       `json:"affected_host"`
 	Hostname     *string       `json:"hostname"`
+	URL          *string       `json:"url"`
+	Parameter    *string       `json:"parameter"`
 	AffectedPort *int32        `json:"affected_port"`
 	Protocol     *string       `json:"protocol"`
 	Service      *string       `json:"service"`
 	Solution     *string       `json:"solution"`
+	Evidence     *string       `json:"evidence"`
+	Confidence   *string       `json:"confidence"`
 	VulnReferences []byte      `json:"vuln_references"`
 }
 
@@ -104,15 +112,15 @@ type CountVulnsBySeverityRow struct {
 	Count    int64         `json:"count"`
 }
 
-const vulnCols = `id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, hostname, affected_port, protocol, service, solution, vuln_references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at`
+const vulnCols = `id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, hostname, url, parameter, affected_port, protocol, service, solution, evidence, confidence, vuln_references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at`
 
 func scanVuln(row interface{ Scan(...any) error }, i *Vulnerability) error {
-	return row.Scan(&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description, &i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID, &i.AffectedHost, &i.Hostname, &i.AffectedPort, &i.Protocol, &i.Service, &i.Solution, &i.VulnReferences, &i.EnrichmentData, &i.RiskScore, &i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt)
+	return row.Scan(&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description, &i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID, &i.AffectedHost, &i.Hostname, &i.URL, &i.Parameter, &i.AffectedPort, &i.Protocol, &i.Service, &i.Solution, &i.Evidence, &i.Confidence, &i.VulnReferences, &i.EnrichmentData, &i.RiskScore, &i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt)
 }
 
 func (q *Queries) CreateVulnerability(ctx context.Context, arg CreateVulnerabilityParams) (Vulnerability, error) {
-	const createVulnerability = `INSERT INTO vulnerabilities (id, scan_id, target_id, user_id, title, description, severity, cvss_score, cve_id, cwe_id, affected_host, hostname, affected_port, protocol, service, solution, vuln_references) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := q.db.ExecContext(ctx, createVulnerability, arg.ID, arg.ScanID, arg.TargetID, arg.UserID, arg.Title, arg.Description, arg.Severity, arg.CvssScore, arg.CveID, arg.CweID, arg.AffectedHost, arg.Hostname, arg.AffectedPort, arg.Protocol, arg.Service, arg.Solution, arg.VulnReferences)
+	const createVulnerability = `INSERT INTO vulnerabilities (id, scan_id, target_id, user_id, title, description, severity, cvss_score, cve_id, cwe_id, affected_host, hostname, url, parameter, affected_port, protocol, service, solution, evidence, confidence, vuln_references) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createVulnerability, arg.ID, arg.ScanID, arg.TargetID, arg.UserID, arg.Title, arg.Description, arg.Severity, arg.CvssScore, arg.CveID, arg.CweID, arg.AffectedHost, arg.Hostname, arg.URL, arg.Parameter, arg.AffectedPort, arg.Protocol, arg.Service, arg.Solution, arg.Evidence, arg.Confidence, arg.VulnReferences)
 	if err != nil {
 		return Vulnerability{}, err
 	}
