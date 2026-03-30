@@ -25,6 +25,10 @@ cmd/openvas-tracker/static/
 .DS_Store
 Thumbs.db
 
+# Tool caches
+.playwright-mcp/
+.serena/
+
 # Test
 coverage.out
 *.test
