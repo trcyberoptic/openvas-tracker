@@ -20,7 +20,7 @@ function cvssColor(score: number | null | undefined): string {
 interface Ticket {
   id: string; title: string; priority: string; priority_order?: number; status: string
   affected_host?: string; hostname?: string; cvss_score?: number; cve_id?: string; assigned_to?: string
-  first_seen_at?: string; last_seen_at?: string; created_at: string
+  scan_type?: string; first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface UserRef { id: string; username: string; email: string }
 
@@ -31,7 +31,7 @@ export function Tickets() {
   const qc = useQueryClient()
   const { data: raw = [] } = useQuery({ queryKey: ['tickets'], queryFn: () => api.get<Ticket[]>('/tickets') })
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
-  const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'host'], { status: 'open' })
+  const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'host', 'source'], { status: 'open' })
   const { sort, toggle } = useSortable()
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -51,6 +51,7 @@ export function Tickets() {
     if (values.priority) result = result.filter(t => t.priority === values.priority)
     if (values.status) result = result.filter(t => t.status === values.status)
     if (values.host) result = result.filter(t => t.affected_host === values.host)
+    if (values.source) result = result.filter(t => t.scan_type === values.source)
     if (values.search) {
       const q = values.search.toLowerCase()
       result = result.filter(t => {
@@ -133,6 +134,7 @@ export function Tickets() {
           { key: 'priority', label: 'Priority', options: ['critical', 'high', 'medium', 'low'] },
           { key: 'status', label: 'Status', options: ['open', 'pending_resolution', 'fixed', 'risk_accepted', 'false_positive'] },
           { key: 'host', label: 'Host', options: hosts },
+          { key: 'source', label: 'Source', options: ['openvas', 'zap'] },
         ]}
         values={values} onChange={setValues}
       />
