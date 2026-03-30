@@ -9,9 +9,9 @@ func TestParseZAPJSON(t *testing.T) {
 	json := `{
   "@version": "2.16.0",
   "site": [{
-    "host": "example.com",
-    "port": "443",
-    "ssl": "true",
+    "@host": "example.com",
+    "@port": "443",
+    "@ssl": "true",
     "alerts": [{
       "pluginid": "40012",
       "alertRef": "40012",
@@ -164,9 +164,9 @@ func TestParseZAPJSON_Empty(t *testing.T) {
 func TestParseZAPJSON_URLPathExtraction(t *testing.T) {
 	json := `{
   "site": [{
-    "host": "10.0.0.1",
-    "port": "8080",
-    "ssl": "false",
+    "@host": "10.0.0.1",
+    "@port": "8080",
+    "@ssl": "false",
     "alerts": [{
       "alert": "SQL Injection",
       "riskcode": "3",

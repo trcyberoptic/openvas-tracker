@@ -14,9 +14,10 @@ type zapReport struct {
 }
 
 type zapSite struct {
-	Host   string     `json:"host"`
-	Port   string     `json:"port"`
-	SSL    string     `json:"ssl"`
+	Host   string     `json:"@host"`
+	Port   string     `json:"@port"`
+	SSL    string     `json:"@ssl"`
+	Name   string     `json:"@name"`
 	Alerts []zapAlert `json:"alerts"`
 }
 
