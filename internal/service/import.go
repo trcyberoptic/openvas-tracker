@@ -228,11 +228,29 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 		return false, true
 
-	default:
+	case queries.TicketStatusPendingResolution:
+		// Finding reappeared while in pending_resolution — reset counter, go back to open
+		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
+			ID: existing.ID, VulnerabilityID: vulnID,
+		}); err != nil {
+			log.Printf("import: failed to reopen pending_resolution ticket %s: %v", existing.ID, err)
+			return false, false
+		}
+		newStatus := "open"
+		note := fmt.Sprintf("Finding reappeared after %d/%d misses — counter reset. CVE: %s, Host: %s",
+			existing.ConsecutiveMisses, autoResolveThreshold(), r.CVE, r.Host)
+		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		return false, true
+
+	default: // open
 		if err := q.TouchTicket(ctx, queries.TouchTicketParams{
 			ID: existing.ID, VulnerabilityID: vulnID,
 		}); err != nil {
 			log.Printf("import: failed to touch ticket %s: %v", existing.ID, err)
+		}
+		// Reset any accumulated misses (e.g. from a previous flap cycle that was manually reopened)
+		if existing.ConsecutiveMisses > 0 {
+			q.ResetConsecutiveMisses(ctx, existing.ID)
 		}
 		note := fmt.Sprintf("Finding still present in scan. CVE: %s, Host: %s", r.CVE, r.Host)
 		logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
@@ -295,18 +313,45 @@ func (s *ImportService) reopenExpiredRiskAccepted(ctx context.Context, q *querie
 }
 
 func (s *ImportService) autoResolveStale(ctx context.Context, q *queries.Queries, scanID string) int {
-	resolved, err := q.AutoResolveStaleTickets(ctx, scanID)
+	threshold := autoResolveThreshold()
+
+	staleTickets, err := q.IncrementMissesForStaleTickets(ctx, scanID)
 	if err != nil {
 		log.Printf("auto-resolve error: %v", err)
 		return 0
 	}
-	for _, t := range resolved {
-		oldStatus := "open"
-		newStatus := "fixed"
-		note := "Finding not present in latest scan — auto-fixed"
-		logActivity(ctx, q, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+
+	resolved := 0
+	for _, t := range staleTickets {
+		oldStatus := string(t.Status)
+		misses := t.ConsecutiveMisses // already incremented by the query
+
+		if misses >= threshold {
+			// Threshold reached — resolve
+			if err := q.ResolveTicket(ctx, t.ID); err != nil {
+				log.Printf("auto-resolve: failed to resolve ticket %s: %v", t.ID, err)
+				continue
+			}
+			newStatus := "fixed"
+			note := fmt.Sprintf("Finding not present in %d consecutive scans — auto-fixed", misses)
+			logActivity(ctx, q, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+			resolved++
+		} else if t.Status == queries.TicketStatusOpen {
+			// First miss — transition to pending_resolution
+			if err := q.SetTicketPendingResolution(ctx, t.ID); err != nil {
+				log.Printf("auto-resolve: failed to set pending_resolution for ticket %s: %v", t.ID, err)
+				continue
+			}
+			newStatus := "pending_resolution"
+			note := fmt.Sprintf("Finding not present in scan — pending resolution (%d/%d consecutive misses)", misses, threshold)
+			logActivity(ctx, q, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		} else {
+			// Already pending_resolution, just log the miss count
+			note := fmt.Sprintf("Finding not present in scan (%d/%d consecutive misses)", misses, threshold)
+			logActivity(ctx, q, t.ID, "still_present", nil, nil, "Automatic", &note)
+		}
 	}
-	return len(resolved)
+	return resolved
 }
 
 func (s *ImportService) resolveSystemUser(ctx context.Context) error {

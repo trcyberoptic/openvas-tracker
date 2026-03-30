@@ -313,7 +313,7 @@ type ReopenTicketParams struct {
 }
 
 func (q *Queries) ReopenTicket(ctx context.Context, arg ReopenTicketParams) error {
-	const query = `UPDATE tickets SET status = 'open', vulnerability_id = ?, resolved_at = NULL, last_seen_at = NOW(), updated_at = NOW() WHERE id = ?`
+	const query = `UPDATE tickets SET status = 'open', vulnerability_id = ?, resolved_at = NULL, consecutive_misses = 0, last_seen_at = NOW(), updated_at = NOW() WHERE id = ?`
 	_, err := q.db.ExecContext(ctx, query, arg.VulnerabilityID, arg.ID)
 	return err
 }
@@ -334,11 +334,19 @@ func (q *Queries) TouchTicket(ctx context.Context, arg TouchTicketParams) error 
 	return err
 }
 
-// AutoResolveStaleTickets resolves open tickets whose findings were not seen in the given scan.
-// Uses SELECT-then-UPDATE to avoid TOCTOU race with the 5-second window.
-func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
-	// Step 1: find IDs to resolve
-	idRows, err := q.db.QueryContext(ctx, `SELECT t.id FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.status = 'open' AND t.vulnerability_id IS NOT NULL AND v.affected_host IN (SELECT host FROM scan_hosts WHERE scan_id = ?) AND t.vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`, scanID, scanID)
+// IncrementMissesForStaleTickets increments consecutive_misses for open/pending_resolution
+// tickets whose findings were not seen in the given scan. Returns all affected tickets
+// (with their UPDATED consecutive_misses values).
+func (q *Queries) IncrementMissesForStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
+	// Step 1: find IDs of stale tickets (open or pending_resolution, host in scan scope, finding not in scan)
+	idRows, err := q.db.QueryContext(ctx, `
+		SELECT t.id FROM tickets t
+		JOIN vulnerabilities v ON t.vulnerability_id = v.id
+		WHERE t.status IN ('open', 'pending_resolution')
+		AND t.vulnerability_id IS NOT NULL
+		AND v.affected_host IN (SELECT host FROM scan_hosts WHERE scan_id = ?)
+		AND t.vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`,
+		scanID, scanID)
 	if err != nil {
 		return nil, err
 	}
@@ -356,19 +364,19 @@ func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([
 		return nil, nil
 	}
 
-	// Step 2: update those specific IDs
+	// Step 2: increment consecutive_misses for all stale tickets
 	placeholders := strings.Repeat("?,", len(ids))
 	placeholders = placeholders[:len(placeholders)-1]
 	args := make([]any, len(ids))
 	for i, id := range ids {
 		args[i] = id
 	}
-	_, err = q.db.ExecContext(ctx, `UPDATE tickets SET status = 'fixed', resolved_at = NOW(), updated_at = NOW() WHERE id IN (`+placeholders+`)`, args...)
+	_, err = q.db.ExecContext(ctx, `UPDATE tickets SET consecutive_misses = consecutive_misses + 1, updated_at = NOW() WHERE id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 3: return the resolved tickets
+	// Step 3: return the updated tickets (with new consecutive_misses values)
 	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
@@ -383,6 +391,24 @@ func (q *Queries) AutoResolveStaleTickets(ctx context.Context, scanID string) ([
 		items = append(items, t)
 	}
 	return items, rows.Err()
+}
+
+// ResolveTicket sets a ticket to fixed status.
+func (q *Queries) ResolveTicket(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, `UPDATE tickets SET status = 'fixed', resolved_at = NOW(), consecutive_misses = 0, updated_at = NOW() WHERE id = ?`, id)
+	return err
+}
+
+// SetTicketPendingResolution transitions an open ticket to pending_resolution.
+func (q *Queries) SetTicketPendingResolution(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, `UPDATE tickets SET status = 'pending_resolution', updated_at = NOW() WHERE id = ?`, id)
+	return err
+}
+
+// ResetConsecutiveMisses resets the miss counter to zero.
+func (q *Queries) ResetConsecutiveMisses(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, `UPDATE tickets SET consecutive_misses = 0, updated_at = NOW() WHERE id = ?`, id)
+	return err
 }
 
 // ReopenExpiredRiskAccepted reopens risk_accepted tickets whose expiry date has passed.
