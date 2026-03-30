@@ -28,8 +28,8 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 - **Settings UI**: Edit all configuration (.env file) from the browser, test LDAP connection
 - **Filterable & Sortable Tables**: Column sorting, multi-filter, full-text search across all columns, default filter on open tickets
 - **Report Generation**: HTML, PDF, Excel, Markdown — technical, executive, compliance, comparison, and trend report types
-- **Teams & Collaboration**: Create teams with member roles (owner, admin, member), invite users, assign tickets to teams
-- **Assets Management**: Automatic asset inventory — hostname, IP, MAC, OS, open ports, services, risk score
+- **Teams & Collaboration** (API only): Create teams with member roles (owner, admin, member), invite users, assign tickets to teams
+- **Assets Management** (API only): Automatic asset inventory — hostname, IP, MAC, OS, open ports, services, risk score
 - **Targets Management**: Define and manage scan targets/scopes
 - **Notifications**: In-app notification system with unread counts and WebSocket real-time push
 - **Audit Logging**: Full audit trail of all user actions
