@@ -12,8 +12,9 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 
 - **OpenVAS Import**: Webhook endpoint receives scan results automatically when scans complete
 - **Automatic Ticketing**: New findings create tickets, missing findings auto-resolve, recurring findings reopen
+- **Flapping Protection**: Configurable threshold (default 3) of consecutive scan misses before auto-resolve — prevents noisy ticket churn from intermittent scan results, with visible `pending_resolution` intermediate status
 - **Scope-aware Auto-resolve**: Importing a scan only auto-resolves tickets for hosts that were in that scan's scope — other subnets are unaffected
-- **Ticket Lifecycle**: open → fixed / risk_accepted / false_positive, with full activity audit trail
+- **Ticket Lifecycle**: open → pending_resolution → fixed / risk_accepted / false_positive, with full activity audit trail
 - **Risk Acceptance with Expiry**: Risk-accepted tickets auto-reopen after expiry date
 - **Auto-Accept Rules**: Define rules (by CVE or title, per host or globally) to automatically accept known risks on future imports — configurable from any ticket
 - **Scan Comparison**: Side-by-side diff of two scans — new, fixed, unchanged findings
@@ -27,8 +28,13 @@ Vulnerability management dashboard that imports OpenVAS scan results and tracks 
 - **Admin + LDAP Auth**: Built-in admin user plus optional LDAP for team access, login by username
 - **Settings UI**: Edit all configuration (.env file) from the browser, test LDAP connection
 - **Filterable & Sortable Tables**: Column sorting, multi-filter, full-text search across all columns, default filter on open tickets
-- **Report Generation**: HTML, PDF, Excel, Markdown
-- **Real-time Updates**: WebSocket push notifications
+- **Report Generation**: HTML, PDF, Excel, Markdown — technical, executive, compliance, comparison, and trend report types
+- **Teams & Collaboration**: Create teams with member roles (owner, admin, member), invite users, assign tickets to teams
+- **Assets Management**: Automatic asset inventory — hostname, IP, MAC, OS, open ports, services, risk score
+- **Targets Management**: Define and manage scan targets/scopes
+- **Notifications**: In-app notification system with unread counts and WebSocket real-time push
+- **Audit Logging**: Full audit trail of all user actions
+- **Global Search**: Search across tickets, vulnerabilities, and hosts
 - **Embedded React SPA**: Single binary, no separate frontend deploy
 
 ## Architecture
@@ -103,6 +109,7 @@ All config via `.env` file. Editable from the Settings page in the UI.
 | `OT_JWT_SECRET` | (none — **required**) | JWT signing key (min 32 chars) |
 | `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars) |
 | `OT_ADMIN_PASSWORD` | (empty) | Admin user password |
+| `OT_AUTORESOLVE_THRESHOLD` | `3` | Consecutive scans without finding before auto-resolve |
 | `OT_LDAP_URL` | (empty) | LDAP server URL |
 | `OT_LDAP_BASE_DN` | (empty) | LDAP search base DN |
 | `OT_LDAP_BIND_DN` | (empty) | LDAP service account DN |
@@ -130,7 +137,9 @@ No self-registration. LDAP users auto-created in DB on first login and also when
 Import finds new vulnerability     →  Ticket created (open)
 Import matches risk accept rule    →  Ticket created (risk_accepted)
 Import finds same vulnerability    →  Ticket updated (last_seen_at)
-Import missing old vulnerability   →  Ticket auto-fixed
+Import missing old vulnerability   →  Ticket pending_resolution (miss counter +1)
+Consecutive misses reach threshold →  Ticket auto-fixed
+Finding reappears while pending    →  Counter reset, ticket back to open
 Import re-finds fixed vuln        →  Ticket reopened (open)
 Import re-finds false_positive     →  Skipped (never reopened)
 Risk acceptance expires            →  Ticket auto-reopened
@@ -172,6 +181,23 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 | GET | /api/settings/risk-rules | List auto-accept rules |
 | POST | /api/settings/risk-rules/apply | Re-apply rules to existing open tickets |
 | DELETE | /api/settings/risk-rules/:id | Delete rule |
+| GET | /api/vulnerabilities | List vulnerabilities |
+| GET | /api/vulnerabilities/:id | Vulnerability detail |
+| PATCH | /api/vulnerabilities/:id/status | Update vulnerability status |
+| POST | /api/tickets | Create ticket manually |
+| GET | /api/search?q= | Global search |
+| GET | /api/assets | List assets |
+| GET | /api/assets/:id | Asset detail |
+| GET | /api/targets | List targets |
+| POST | /api/targets | Create target |
+| GET | /api/teams | List teams |
+| POST | /api/teams | Create team |
+| GET | /api/notifications | List notifications |
+| PUT | /api/notifications/read-all | Mark all read |
+| GET | /api/audit | Audit log |
+| POST | /api/reports | Generate report |
+| GET | /api/reports/:id | Download report |
+| PUT | /api/settings/env/batch | Batch update config |
 | GET | /api/health | Health check |
 
 ## Tech Stack
