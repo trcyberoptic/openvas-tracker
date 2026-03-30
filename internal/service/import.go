@@ -250,7 +250,9 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 		}
 		// Reset any accumulated misses (e.g. from a previous flap cycle that was manually reopened)
 		if existing.ConsecutiveMisses > 0 {
-			q.ResetConsecutiveMisses(ctx, existing.ID)
+			if err := q.ResetConsecutiveMisses(ctx, existing.ID); err != nil {
+				log.Printf("import: failed to reset misses for ticket %s: %v", existing.ID, err)
+			}
 		}
 		note := fmt.Sprintf("Finding still present in scan. CVE: %s, Host: %s", r.CVE, r.Host)
 		logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
