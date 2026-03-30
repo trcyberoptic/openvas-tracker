@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"net"
 	"encoding/hex"
+	"os"
 	"fmt"
 	"log"
 	"strconv"
@@ -40,6 +41,18 @@ type ImportService struct {
 
 func NewImportService(db *sql.DB) *ImportService {
 	return &ImportService{db: db, q: queries.New(db)}
+}
+
+// autoResolveThreshold returns the configured number of consecutive scan misses
+// required before a ticket is auto-resolved. Re-reads .env on each call so
+// Settings page changes take effect without restart.
+func autoResolveThreshold() int {
+	if v := os.Getenv("OT_AUTORESOLVE_THRESHOLD"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			return n
+		}
+	}
+	return 3
 }
 
 // BackfillHostnames resolves PTR records for all vulnerabilities missing a hostname.

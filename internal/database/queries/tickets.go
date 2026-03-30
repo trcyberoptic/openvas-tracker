@@ -16,7 +16,8 @@ const (
 	TicketStatusOpen          TicketStatus = "open"
 	TicketStatusFixed         TicketStatus = "fixed"
 	TicketStatusRiskAccepted  TicketStatus = "risk_accepted"
-	TicketStatusFalsePositive TicketStatus = "false_positive"
+	TicketStatusFalsePositive      TicketStatus = "false_positive"
+	TicketStatusPendingResolution TicketStatus = "pending_resolution"
 )
 
 type TicketPriority string
@@ -40,6 +41,7 @@ type Ticket struct {
 	DueDate         *time.Time     `json:"due_date"`
 	ResolvedAt         *time.Time     `json:"resolved_at"`
 	RiskAcceptedUntil  *time.Time     `json:"risk_accepted_until"`
+	ConsecutiveMisses  int            `json:"consecutive_misses"`
 	FirstSeenAt        *time.Time     `json:"first_seen_at"`
 	LastSeenAt      *time.Time     `json:"last_seen_at"`
 	CreatedAt       time.Time      `json:"created_at"`
@@ -96,10 +98,10 @@ type CountTicketsByStatusRow struct {
 	Count  int64        `json:"count"`
 }
 
-const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id`
+const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id`
 
 func scanTicket(row interface{ Scan(...any) error }, i *Ticket) error {
-	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.RiskAcceptedUntil, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost, &i.Hostname, &i.CvssScore, &i.CveID)
+	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.RiskAcceptedUntil, &i.ConsecutiveMisses, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost, &i.Hostname, &i.CvssScore, &i.CveID)
 }
 
 func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
@@ -250,7 +252,7 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 }
 
 // FindTicketByFingerprint finds an existing ticket matching a vulnerability fingerprint (host + CVE or host + title).
-const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id`
+const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id`
 
 func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
 	var t Ticket
