@@ -12,6 +12,7 @@ interface DashboardData {
   my_tickets: number
   unassigned_tickets: number
   open_tickets_total: number
+  pending_resolution_total: number
   resolved_tickets: number
 }
 
@@ -24,6 +25,7 @@ interface TrendPoint {
   high: number
   medium: number
   low: number
+  pending_resolution: number
 }
 
 export function Dashboard() {
@@ -80,6 +82,7 @@ export function Dashboard() {
           <h2 className="text-lg font-semibold mb-4">Tickets Overview</h2>
           <div className="space-y-2">
             <div className="flex justify-between"><span className="text-slate-400">Open</span><span className="font-bold">{data?.open_tickets_total ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-amber-400">Pending Resolution</span><span className="font-bold text-amber-400">{data?.pending_resolution_total ?? 0}</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Resolved</span><span className="font-bold text-green-400">{data?.resolved_tickets ?? 0}</span></div>
           </div>
         </div>
@@ -103,6 +106,7 @@ export function Dashboard() {
               <Line type="monotone" dataKey="high" stroke="#ea580c" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="medium" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="low" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="pending_resolution" name="Pending Resolution" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="total" stroke="#e2e8f0" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>

@@ -59,6 +59,7 @@ const ENV_FIELDS = [
   { key: 'OT_JWT_EXPIREHOURS', label: 'JWT Expire (hours)', type: 'text' },
   { key: 'OT_IMPORT_APIKEY', label: 'Import API Key', type: 'password' },
   { key: 'OT_ADMIN_PASSWORD', label: 'Admin Password', type: 'password' },
+  { key: 'OT_AUTORESOLVE_THRESHOLD', label: 'Auto-Resolve Threshold', type: 'text', placeholder: '3 (consecutive scans without finding before auto-resolve)' },
   { key: 'OT_LDAP_URL', label: 'LDAP URL', type: 'text', placeholder: 'ldaps://dc01.example.com:636' },
   { key: 'OT_LDAP_BASE_DN', label: 'LDAP Base DN', type: 'text', placeholder: 'DC=example,DC=com' },
   { key: 'OT_LDAP_BIND_DN', label: 'LDAP Bind DN', type: 'text', placeholder: 'CN=svc-openvas,OU=Service,DC=example,DC=com' },

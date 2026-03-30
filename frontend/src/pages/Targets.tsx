@@ -5,7 +5,7 @@ import { api } from '@/api/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
 
-const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300' }
+const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300', pending_resolution: 'bg-amber-900 text-amber-300' }
 const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
 
 interface HostSummary {

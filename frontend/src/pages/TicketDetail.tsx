@@ -4,11 +4,11 @@ import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 
 const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
-const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300' }
+const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300', pending_resolution: 'bg-amber-900 text-amber-300' }
 
 interface Ticket {
   id: string; title: string; description?: string; priority: string; status: string
-  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string; affected_host?: string; hostname?: string; cve_id?: string; cvss_score?: number
+  vulnerability_id?: string; assigned_to?: string; risk_accepted_until?: string; affected_host?: string; hostname?: string; cve_id?: string; cvss_score?: number; consecutive_misses?: number
   first_seen_at?: string; last_seen_at?: string; created_at: string
 }
 interface Comment { id: string; user_id: string; content: string; created_at: string }
@@ -78,6 +78,9 @@ export function TicketDetail() {
           <div className="flex items-center gap-3">
             <span className={`px-2 py-1 rounded text-xs font-medium text-white ${PRIORITY_COLORS[ticket.priority]}`}>{ticket.priority}</span>
             <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[ticket.status] || 'bg-slate-700 text-slate-300'}`}>{ticket.status.replace(/_/g, ' ')}</span>
+            {ticket.status === 'pending_resolution' && ticket.consecutive_misses != null && ticket.consecutive_misses > 0 && (
+              <span className="text-xs text-amber-400 ml-2">({ticket.consecutive_misses} consecutive misses)</span>
+            )}
             {ticket.first_seen_at && <span className="text-slate-500 text-xs">First seen: {new Date(ticket.first_seen_at).toLocaleString()}</span>}
             {ticket.last_seen_at && <span className="text-slate-500 text-xs">Last seen: {new Date(ticket.last_seen_at).toLocaleString()}</span>}
           </div>
@@ -90,13 +93,13 @@ export function TicketDetail() {
           <h3 className="text-sm font-medium text-slate-400 mb-3">Change Status</h3>
           <div className="flex flex-col gap-2">
             <div className="flex gap-2 flex-wrap">
-              {ticket.status !== 'open' && ticket.status !== 'false_positive' && (
+              {ticket.status !== 'open' && ticket.status !== 'false_positive' && ticket.status !== 'pending_resolution' && (
                 <button onClick={() => statusMut.mutate({ status: 'open' })} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Reopen</button>
               )}
               {ticket.status === 'false_positive' && (
                 <button onClick={() => statusMut.mutate({ status: 'open' })} className="px-3 py-1.5 rounded text-sm bg-red-900 text-red-300 hover:bg-red-800">Not False Positive</button>
               )}
-              {ticket.status === 'open' && (
+              {(ticket.status === 'open' || ticket.status === 'pending_resolution') && (
                 <>
                   <button onClick={() => statusMut.mutate({ status: 'fixed' })} className="px-3 py-1.5 rounded text-sm bg-green-900 text-green-300 hover:bg-green-800">Mark Fixed</button>
                   <button onClick={() => statusMut.mutate({ status: 'risk_accepted', risk_accepted_until: riskUntil || undefined })} className="px-3 py-1.5 rounded text-sm bg-yellow-900 text-yellow-300 hover:bg-yellow-800">Accept Risk</button>
@@ -104,7 +107,7 @@ export function TicketDetail() {
                 </>
               )}
             </div>
-            {ticket.status === 'open' && (
+            {(ticket.status === 'open' || ticket.status === 'pending_resolution') && (
               <>
                 <div className="flex items-center gap-2 mt-1">
                   <label className="text-xs text-slate-500">Risk until:</label>
