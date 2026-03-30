@@ -30,7 +30,7 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "empty report — no results found")
 	}
 
-	res, err := h.importSvc.Import(c.Request().Context(), results)
+	res, err := h.importSvc.Import(c.Request().Context(), results, "openvas")
 	if err != nil {
 		log.Printf("import error: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "import failed")
@@ -60,7 +60,34 @@ func (h *ImportHandler) TriggerFetch(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"output": string(out)})
 }
 
+func (h *ImportHandler) HandleZAP(c echo.Context) error {
+	results, err := scanner.ParseZAPJSON(c.Request().Body)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse ZAP JSON")
+	}
+	if len(results) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "empty report — no results found")
+	}
+
+	res, err := h.importSvc.Import(c.Request().Context(), results, "zap")
+	if err != nil {
+		log.Printf("import error: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "import failed")
+	}
+
+	go func() {
+		if n, err := h.importSvc.BackfillHostnames(context.Background()); err != nil {
+			log.Printf("hostname backfill error: %v", err)
+		} else if n > 0 {
+			log.Printf("hostname backfill: resolved %d hosts", n)
+		}
+	}()
+
+	return c.JSON(http.StatusCreated, res)
+}
+
 func (h *ImportHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/openvas", h.HandleOpenVAS)
 	g.GET("/openvas", h.TriggerFetch)
+	g.POST("/zap", h.HandleZAP)
 }
