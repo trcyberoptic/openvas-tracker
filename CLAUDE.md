@@ -75,6 +75,7 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 | `OT_JWT_SECRET` | (none — **required**, min 32 chars) | JWT signing key |
 | `OT_IMPORT_APIKEY` | (empty) | Import webhook API key (min 32 chars) |
 | `OT_ADMIN_PASSWORD` | (empty) | Admin user password (username: `admin`) |
+| `OT_AUTORESOLVE_THRESHOLD` | `3` | Consecutive scans without finding before auto-resolve |
 | `OT_LDAP_URL` | (empty) | e.g. `ldaps://dc01.example.com:636` |
 | `OT_LDAP_BASE_DN` | (empty) | LDAP base DN |
 | `OT_LDAP_BIND_DN` | (empty) | LDAP service account DN |
@@ -85,7 +86,7 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 ## Database
 
 - **MariaDB** with `database/sql` + `go-sql-driver/mysql`
-- 18 migrations in `sql/migrations/` (001-018). `sql/docker-init.sql` sources all.
+- 19 migrations in `sql/migrations/` (001-019). `sql/docker-init.sql` sources all.
 - **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically when the app starts. Bootstraps `schema_migrations` for existing databases.
 - UUIDs are `CHAR(36)`, generated in Go (`uuid.New().String()`)
 - Pool: `MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime(5m)`, `ConnMaxIdleTime(3m)`
@@ -104,16 +105,17 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 - PTR hostname backfill runs async after each import. Hostnames normalized: `UPPERCASE.domain.lowercase`.
 
 ### Tickets
-- Statuses: `open` → `fixed` | `risk_accepted` | `false_positive`. False positives never reopened.
+- Statuses: `open` → `pending_resolution` (after 1+ scan miss) → `fixed` (after N consecutive misses, configurable via `OT_AUTORESOLVE_THRESHOLD`, default 3) | `risk_accepted` | `false_positive`. False positives never reopened.
+- Flapping protection: findings not present in a scan increment `consecutive_misses` counter. After threshold consecutive misses, ticket auto-resolves to `fixed`. If finding reappears before threshold, counter resets and ticket returns to `open` with activity log. `pending_resolution` is visible in UI with amber badge.
 - Risk accepted supports optional expiry date (auto-reopens when expired).
 - All changes logged in `ticket_activity` with actor (user ID or "Automatic").
 - Bulk: `POST /api/tickets/bulk` with `ticket_ids` + `status`/`assigned_to`.
 
 ### Risk Accept Rules
 - `risk_accept_rules` table: fingerprint (CVE or `title:` + vuln title) + host pattern (`*` or IP).
-- Created from ticket detail page ("this host" or "all hosts"). Applied to existing open tickets on creation.
+- Created from ticket detail page ("this host" or "all hosts"). Applied to existing open and pending_resolution tickets on creation.
 - Checked during import — matching new tickets auto-set to `risk_accepted`.
-- "Refresh Tickets" button on Auto-Accept Rules page re-applies all rules to existing open tickets (`POST /api/settings/risk-rules/apply`).
+- "Refresh Tickets" button on Auto-Accept Rules page re-applies all rules to existing open and pending_resolution tickets (`POST /api/settings/risk-rules/apply`).
 
 ### Frontend
 - `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns.
