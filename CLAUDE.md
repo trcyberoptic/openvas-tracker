@@ -144,3 +144,6 @@ Docker Compose or Debian Trixie systemd service. Use the `/deploy` skill for aut
 - **MariaDB** — no FULL OUTER JOIN (use UNION ALL + NOT EXISTS), no `generate_series` (use `WITH RECURSIVE dates`).
 - **SSH $ escaping** — passwords with `$` get shell-expanded. Use Python `chr(36)` or single-quoted heredoc.
 - **Hostname normalization** — `normalizeHostname()`: UPPERCASE host, lowercase domain. Applied to imports + PTR.
+- **ticketCols / qualifiedTicketCols / scanTicket** — these three must stay in sync when adding columns to `tickets` table. All are in `internal/database/queries/tickets.go`.
+- **Backend-only features** — Teams (`/api/teams`) and Assets (`/api/assets`) have full backend handlers but no frontend UI beyond a read-only teams list.
+- **git-filter-repo** — removes `origin` remote (re-add with `git remote add origin <url>`), resets working copy (uncommitted edits lost), and breaks tracking (`git branch --set-upstream-to=origin/master master`).
