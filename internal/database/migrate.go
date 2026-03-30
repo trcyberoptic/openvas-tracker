@@ -54,15 +54,18 @@ func AutoMigrate(db *sql.DB, migrationsFS fs.FS) error {
 		if exists > 0 {
 			for _, file := range files {
 				version := strings.TrimSuffix(file, ".up.sql")
-				// Check if this migration creates a table that already exists
+				// Check if this migration creates a table that already exists.
+				// Only mark CREATE TABLE migrations as applied (if the table exists).
+				// Non-CREATE migrations (ALTER TABLE, etc.) must always run.
 				content, _ := fs.ReadFile(migrationsFS, file)
 				tableName := extractCreateTable(string(content))
-				if tableName != "" {
-					var tblExists int
-					db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?`, tableName).Scan(&tblExists)
-					if tblExists == 0 {
-						continue // table doesn't exist yet — this migration needs to run
-					}
+				if tableName == "" {
+					continue // not a CREATE TABLE — must run, don't mark as applied
+				}
+				var tblExists int
+				db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?`, tableName).Scan(&tblExists)
+				if tblExists == 0 {
+					continue // table doesn't exist yet — this migration needs to run
 				}
 				if _, err := db.Exec(`INSERT IGNORE INTO schema_migrations (version) VALUES (?)`, version); err != nil {
 					return fmt.Errorf("bootstrap migration %s: %w", version, err)
