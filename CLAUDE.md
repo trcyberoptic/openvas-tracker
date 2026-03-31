@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OpenVAS-Tracker is a vulnerability management dashboard built in Go with an embedded React SPA. It receives OpenVAS scan results via webhook, tracks vulnerabilities per host, and manages remediation through automated ticketing. No active scanning — purely a results viewer and ticket tracker. Licensed under GPL v3.
+OpenVAS-Tracker is a vulnerability management dashboard built in Go with an embedded React SPA. It receives OpenVAS and OWASP ZAP scan results via webhook, tracks vulnerabilities per host/URL, and manages remediation through automated ticketing. Multi-scanner architecture with pluggable parsers. No active scanning — purely a results viewer and ticket tracker. Licensed under GPL v3.
 
 ## Build & Development Commands
 
@@ -42,13 +42,13 @@ make migrate-down  # rollback one migration
 
 ```
 handler (Echo HTTP) → service (business logic) → queries (database/sql) → MariaDB
-                                                → scanner (XML parser only)
+                                                → scanner (XML/JSON parsers)
                                                 → report (html/pdf/excel/md)
 ```
 
 - **`internal/handler/`** — Echo route handlers. Each has a `RegisterRoutes(*echo.Group)` method.
   - `auth.go` — Login (no registration). Admin + LDAP + DB fallback. By username.
-  - `import.go` — Thin adapter → `ImportService`. GET triggers fetch script.
+  - `import.go` — Thin adapter → `ImportService`. `POST /openvas` (XML), `POST /zap` (JSON), `GET /openvas` triggers fetch script.
   - `tickets.go` — CRUD, status, comments, activity, bulk ops, risk rule creation. Validated via `c.Validate()`. Detail page shows prominent CVSS score box.
   - `scans.go` — List/Get + diff endpoint.
   - `settings.go` — Setup guide, user list, .env read/write, LDAP test, risk rules.
@@ -58,7 +58,10 @@ handler (Echo HTTP) → service (business logic) → queries (database/sql) → 
   - `ldap.go` — AD auth, group membership check, member listing.
   - `envfile.go` — Read/write `.env` for Settings UI.
 - **`internal/database/queries/`** — Hand-written SQL. `db.go` defines `DBTX` interface (accepts `*sql.DB` and `*sql.Tx`).
-- **`internal/scanner/`** — `ParseOpenVASXML`: CVE from `<refs><ref type="cve">` and `<nvt><cve>`, hostname from `<host><hostname>`.
+- **`internal/scanner/`** — Multi-scanner parser package.
+  - `scanner.go` — `Finding` struct (scanner-agnostic) + `Parser` interface + `Fingerprint()` method.
+  - `openvas.go` — `ParseOpenVASXML`: CVE from `<refs><ref type="cve">` and `<nvt><cve>`, hostname from `<host><hostname>`. Returns `[]Finding`.
+  - `zap.go` — `ParseZAPJSON`: ZAP Traditional JSON Report. Each alert instance → one Finding. Uses `@host`/`@port`/`@ssl` keys. Strips HTML from desc/solution. Maps riskcode 3→high, 2→medium, 1→low, 0→info (skipped). Default CVSS: 7.0/4.0/2.0/0.0.
 - **`internal/report/`** — HTML, PDF (maroto v2), Excel (excelize), Markdown generators.
 - **`internal/middleware/`** — JWT auth, API key auth (timing-safe), rate limiting, security headers.
 
@@ -86,8 +89,8 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 ## Database
 
 - **MariaDB** with `database/sql` + `go-sql-driver/mysql`
-- 19 migrations in `sql/migrations/` (001-019). `sql/docker-init.sql` sources all.
-- **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically when the app starts. Bootstraps `schema_migrations` for existing databases.
+- 20 migrations in `sql/migrations/` (001-020). `sql/docker-init.sql` sources all.
+- **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically when the app starts. Bootstraps `schema_migrations` for existing databases. Bootstrap only marks CREATE TABLE migrations as applied — ALTER TABLE migrations always run.
 - UUIDs are `CHAR(36)`, generated in Go (`uuid.New().String()`)
 - Pool: `MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime(5m)`, `ConnMaxIdleTime(3m)`
 
@@ -99,9 +102,13 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 - No roles — all users have equal access. Role column exists but is never checked.
 
 ### Import
-- OpenVAS webhook → `ImportService.Import()` → single transaction: scan + vulns + tickets.
-- Per vuln: check risk accept rules → find ticket by fingerprint (host + CVE/title) → create/reopen/touch → auto-resolve stale → commit.
-- `scan_hosts` table (migration 018) tracks which hosts were in each scan. Auto-resolve is scoped to only hosts present in the current scan, preventing incorrect resolution of tickets for out-of-scope subnets.
+- OpenVAS/ZAP webhook → `ImportService.Import(ctx, []Finding, scanType)` → single transaction: scan + vulns + tickets.
+- `Finding` struct is scanner-agnostic. Parsers (`ParseOpenVASXML`, `ParseZAPJSON`) return `[]Finding`.
+- **Fingerprinting** (dedup key per finding):
+  - Network findings (OpenVAS): CVE or `"title:" + title`. Key: `(host, fingerprint)`.
+  - Web findings (ZAP): `"cwe:" + cweid + ":url:" + urlPath + ":param:" + param`. Falls back to `"title:" + title + ":url:" + urlPath` if no CWE. CVE always takes priority if present.
+- Per vuln: check risk accept rules → find ticket by fingerprint (host + CVE/title/CWE+URL) → create/reopen/touch → auto-resolve stale → commit.
+- **Auto-resolve scoped by scan type** — a ZAP scan only auto-resolves ZAP tickets, never OpenVAS tickets and vice versa. Uses `(host, scan_type)` scope via `scan_hosts` table (migration 018).
 - PTR hostname backfill runs async after each import. Hostnames normalized: `UPPERCASE.domain.lowercase`.
 
 ### Tickets
@@ -119,7 +126,10 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 
 ### Frontend
 - `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns.
-- Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted.
+- Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted. Source filter (OpenVAS/ZAP).
+- Scan list: scan type badges (OpenVAS green, ZAP blue) with type filter.
+- Ticket detail: web finding details section (URL, parameter, evidence, confidence badges, CWE links) — only shown for ZAP findings.
+- Dashboard: open tickets by scan source pie chart (OpenVAS vs ZAP).
 - Sidebar: Dashboard, My Tickets, All Tickets, Scans, Scan Diff, Auto-Accept Rules, Settings. GitHub repo link at bottom.
 - Trend chart: 30-day daily snapshots of open tickets via recursive CTE.
 
@@ -144,6 +154,8 @@ Docker Compose or Debian Trixie systemd service. Use the `/deploy` skill for aut
 - **MariaDB** — no FULL OUTER JOIN (use UNION ALL + NOT EXISTS), no `generate_series` (use `WITH RECURSIVE dates`).
 - **SSH $ escaping** — passwords with `$` get shell-expanded. Use Python `chr(36)` or single-quoted heredoc.
 - **Hostname normalization** — `normalizeHostname()`: UPPERCASE host, lowercase domain. Applied to imports + PTR.
-- **ticketCols / qualifiedTicketCols / scanTicket** — these three must stay in sync when adding columns to `tickets` table. All are in `internal/database/queries/tickets.go`.
+- **ticketCols / qualifiedTicketCols / scanTicket** — these three must stay in sync when adding columns to `tickets` table. All are in `internal/database/queries/tickets.go`. Ticket queries JOIN vulnerabilities AND scans (for `scan_type` field).
+- **ZAP JSON `@`-prefixed keys** — ZAP Traditional JSON Reports use `@host`, `@port`, `@ssl` (not `host`, `port`, `ssl`). The `zapSite` struct uses `json:"@host"` etc.
+- **vulnCols / scanVuln** — must stay in sync with vulnerabilities table. Includes `url`, `parameter`, `evidence`, `confidence` (migration 020).
 - **Backend-only features** — Teams (`/api/teams`) and Assets (`/api/assets`) have full backend handlers but no frontend UI beyond a read-only teams list.
 - **git-filter-repo** — removes `origin` remote (re-add with `git remote add origin <url>`), resets working copy (uncommitted edits lost), and breaks tracking (`git branch --set-upstream-to=origin/master master`).

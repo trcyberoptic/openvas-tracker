@@ -21,14 +21,14 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 - **Auto-Accept Rules**: Define rules (by CVE or title, per host or globally) to automatically accept known risks on future imports — configurable from any ticket
 - **Scan Comparison**: Side-by-side diff of two scans — new, fixed, unchanged findings
 - **Bulk Actions**: Select multiple tickets for batch status change or assignment
-- **Dashboard**: Open ticket counts by priority, 30-day trend chart, "My Tickets" and "Unassigned" quick filters
-- **CVE References**: NVD, MITRE, and Google links on tickets with CVE; title-based search for tickets without
+- **Dashboard**: Open ticket counts by priority, scan source distribution pie chart (OpenVAS vs ZAP), 30-day trend chart, "My Tickets" and "Unassigned" quick filters
+- **CVE & CWE References**: NVD, MITRE, and Google links on tickets with CVE; CWE links for ZAP findings; title-based search for tickets without
 - **Also Affected**: See which other hosts have the same vulnerability
 - **DNS Hostname Resolution**: Automatic PTR lookup, normalized (UPPERCASE.domain.lowercase), shown everywhere
 - **LDAP / Active Directory**: Optional AD authentication with group-based access control
 - **Admin + LDAP Auth**: Built-in admin user plus optional LDAP for team access, login by username
 - **Settings UI**: Edit all configuration (.env file) from the browser, test LDAP connection
-- **Filterable & Sortable Tables**: Column sorting, multi-filter, full-text search across all columns, default filter on open tickets
+- **Filterable & Sortable Tables**: Column sorting, multi-filter (priority, status, host, scan source), full-text search across all columns, default filter on open tickets
 - **Report Generation**: HTML, PDF, Excel, Markdown — technical, executive, compliance, comparison, and trend report types
 - **Teams & Collaboration** (API only): Create teams with member roles (owner, admin, member), invite users, assign tickets to teams
 - **Assets Management** (API only): Automatic asset inventory — hostname, IP, MAC, OS, open ports, services, risk score
