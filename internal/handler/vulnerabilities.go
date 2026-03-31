@@ -6,15 +6,21 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type VulnHandler struct {
 	vulns *service.VulnerabilityService
+	q     *queries.Queries
 }
 
-func NewVulnHandler(vulns *service.VulnerabilityService) *VulnHandler {
-	return &VulnHandler{vulns: vulns}
+func NewVulnHandler(vulns *service.VulnerabilityService, q ...*queries.Queries) *VulnHandler {
+	h := &VulnHandler{vulns: vulns}
+	if len(q) > 0 {
+		h.q = q[0]
+	}
+	return h
 }
 
 func (h *VulnHandler) List(c echo.Context) error {
@@ -52,8 +58,21 @@ func (h *VulnHandler) UpdateStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, vuln)
 }
 
+func (h *VulnHandler) AffectedURLs(c echo.Context) error {
+	id := c.Param("id")
+	if h.q == nil {
+		return c.JSON(http.StatusOK, []queries.AffectedURL{})
+	}
+	urls, err := h.q.AffectedURLsByPeer(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(http.StatusOK, []queries.AffectedURL{})
+	}
+	return c.JSON(http.StatusOK, urls)
+}
+
 func (h *VulnHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
+	g.GET("/:id/affected-urls", h.AffectedURLs)
 	g.PATCH("/:id/status", h.UpdateStatus)
 }

@@ -306,6 +306,38 @@ func (q *Queries) DeleteVulnerability(ctx context.Context, arg DeleteVulnerabili
 	return err
 }
 
+// AffectedURLsByPeer returns distinct URL+parameter pairs from vulnerabilities
+// that share the same title and host as the given vulnerability.
+type AffectedURL struct {
+	URL       string  `json:"url"`
+	Parameter *string `json:"parameter,omitempty"`
+}
+
+func (q *Queries) AffectedURLsByPeer(ctx context.Context, vulnID string) ([]AffectedURL, error) {
+	const query = `SELECT DISTINCT v2.url, v2.parameter
+		FROM vulnerabilities v1
+		JOIN vulnerabilities v2 ON v2.title = v1.title
+			AND v2.affected_host = v1.affected_host
+			AND v2.scan_id = v1.scan_id
+		WHERE v1.id = ?
+		AND v2.url IS NOT NULL AND v2.url != ''
+		ORDER BY v2.url`
+	rows, err := q.db.QueryContext(ctx, query, vulnID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AffectedURL
+	for rows.Next() {
+		var a AffectedURL
+		if err := rows.Scan(&a.URL, &a.Parameter); err != nil {
+			return nil, err
+		}
+		items = append(items, a)
+	}
+	return items, rows.Err()
+}
+
 // DistinctHostsWithoutHostname returns unique affected_host values where hostname is NULL.
 func (q *Queries) DistinctHostsWithoutHostname(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, "SELECT DISTINCT affected_host FROM vulnerabilities WHERE affected_host IS NOT NULL AND affected_host != '' AND (hostname IS NULL OR hostname = '')")

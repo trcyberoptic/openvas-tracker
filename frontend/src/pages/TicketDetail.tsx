@@ -18,6 +18,7 @@ interface AlsoAffected { host: string; hostname?: string; ticket_id: string; sta
 interface VulnDetail {
   id: string; url?: string; parameter?: string; evidence?: string; confidence?: string; cwe_id?: string
 }
+interface AffectedURL { url: string; parameter?: string }
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
@@ -41,6 +42,11 @@ export function TicketDetail() {
   const { data: vuln } = useQuery({
     queryKey: ['vulnerability', ticket?.vulnerability_id],
     queryFn: () => api.get<VulnDetail>(`/vulnerabilities/${ticket!.vulnerability_id}`),
+    enabled: !!ticket?.vulnerability_id,
+  })
+  const { data: affectedURLs = [] } = useQuery({
+    queryKey: ['vuln-affected-urls', ticket?.vulnerability_id],
+    queryFn: () => api.get<AffectedURL[]>(`/vulnerabilities/${ticket!.vulnerability_id}/affected-urls`),
     enabled: !!ticket?.vulnerability_id,
   })
 
@@ -218,21 +224,35 @@ export function TicketDetail() {
       )}
 
       {/* Web Finding Details */}
-      {vuln?.url && (
+      {(vuln?.url || affectedURLs.length > 0) && (
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
           <h3 className="text-sm font-medium text-slate-400 mb-2">Web Finding Details</h3>
           <div className="space-y-2 text-sm">
-            <div className="flex items-start gap-2">
-              <span className="text-slate-500 w-20 shrink-0">URL</span>
-              <span className="text-slate-300 font-mono">{vuln.url}</span>
-            </div>
-            {vuln.parameter && (
+            {affectedURLs.length > 1 ? (
+              <div className="flex items-start gap-2">
+                <span className="text-slate-500 w-20 shrink-0">URLs</span>
+                <div className="space-y-1">
+                  {affectedURLs.map((u, i) => (
+                    <div key={i} className="font-mono text-slate-300">
+                      {u.url}{u.parameter && <span className="text-slate-500">?{u.parameter}=...</span>}
+                    </div>
+                  ))}
+                  <span className="text-slate-500 text-xs">{affectedURLs.length} affected locations</span>
+                </div>
+              </div>
+            ) : vuln?.url ? (
+              <div className="flex items-start gap-2">
+                <span className="text-slate-500 w-20 shrink-0">URL</span>
+                <span className="text-slate-300 font-mono">{vuln.url}</span>
+              </div>
+            ) : null}
+            {vuln?.parameter && affectedURLs.length <= 1 && (
               <div className="flex items-start gap-2">
                 <span className="text-slate-500 w-20 shrink-0">Parameter</span>
                 <span className="text-slate-300 font-mono">{vuln.parameter}</span>
               </div>
             )}
-            {vuln.confidence && (
+            {vuln?.confidence && (
               <div className="flex items-start gap-2">
                 <span className="text-slate-500 w-20 shrink-0">Confidence</span>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -243,7 +263,7 @@ export function TicketDetail() {
                 }`}>{vuln.confidence}</span>
               </div>
             )}
-            {vuln.evidence && (
+            {vuln?.evidence && (
               <div className="flex items-start gap-2">
                 <span className="text-slate-500 w-20 shrink-0">Evidence</span>
                 <code className="text-slate-300 bg-slate-800 rounded px-2 py-1 text-xs block max-w-full overflow-x-auto">

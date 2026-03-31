@@ -129,7 +129,7 @@ func main() {
 	handler.NewScanHandler(q, vulnSvc).RegisterRoutes(p.Group("/scans"))
 
 	handler.NewHostHandler(q).RegisterRoutes(p.Group("/hosts"))
-	handler.NewVulnHandler(vulnSvc).RegisterRoutes(p.Group("/vulnerabilities"))
+	handler.NewVulnHandler(vulnSvc, q).RegisterRoutes(p.Group("/vulnerabilities"))
 
 	// Ticket routes — status/assign require admin or analyst role
 	ticketH := handler.NewTicketHandler(ticketSvc, q)
