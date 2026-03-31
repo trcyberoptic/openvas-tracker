@@ -15,6 +15,9 @@ interface Comment { id: string; user_id: string; content: string; created_at: st
 interface Activity { id: string; action: string; old_value?: string; new_value?: string; changed_by: string; note?: string; created_at: string }
 interface UserRef { id: string; username: string; email: string }
 interface AlsoAffected { host: string; hostname?: string; ticket_id: string; status: string }
+interface VulnDetail {
+  id: string; url?: string; parameter?: string; evidence?: string; confidence?: string; cwe_id?: string
+}
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
@@ -35,6 +38,11 @@ export function TicketDetail() {
   const { data: activity = [] } = useQuery({ queryKey: ['ticket-activity', id], queryFn: () => api.get<Activity[]>(`/tickets/${id}/activity`) })
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
   const { data: alsoAffected = [] } = useQuery({ queryKey: ['ticket-also-affected', id], queryFn: () => api.get<AlsoAffected[]>(`/tickets/${id}/also-affected`) })
+  const { data: vuln } = useQuery({
+    queryKey: ['vulnerability', ticket?.vulnerability_id],
+    queryFn: () => api.get<VulnDetail>(`/vulnerabilities/${ticket!.vulnerability_id}`),
+    enabled: !!ticket?.vulnerability_id,
+  })
 
   const invalidateTicket = () => {
     qc.invalidateQueries({ queryKey: ['ticket', id] })
@@ -209,6 +217,44 @@ export function TicketDetail() {
         </div>
       )}
 
+      {/* Web Finding Details */}
+      {vuln?.url && (
+        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
+          <h3 className="text-sm font-medium text-slate-400 mb-2">Web Finding Details</h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-start gap-2">
+              <span className="text-slate-500 w-20 shrink-0">URL</span>
+              <span className="text-slate-300 font-mono">{vuln.url}</span>
+            </div>
+            {vuln.parameter && (
+              <div className="flex items-start gap-2">
+                <span className="text-slate-500 w-20 shrink-0">Parameter</span>
+                <span className="text-slate-300 font-mono">{vuln.parameter}</span>
+              </div>
+            )}
+            {vuln.confidence && (
+              <div className="flex items-start gap-2">
+                <span className="text-slate-500 w-20 shrink-0">Confidence</span>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  vuln.confidence === 'confirmed' ? 'bg-green-900 text-green-300' :
+                  vuln.confidence === 'high' ? 'bg-blue-900 text-blue-300' :
+                  vuln.confidence === 'medium' ? 'bg-yellow-900 text-yellow-300' :
+                  'bg-slate-700 text-slate-300'
+                }`}>{vuln.confidence}</span>
+              </div>
+            )}
+            {vuln.evidence && (
+              <div className="flex items-start gap-2">
+                <span className="text-slate-500 w-20 shrink-0">Evidence</span>
+                <code className="text-slate-300 bg-slate-800 rounded px-2 py-1 text-xs block max-w-full overflow-x-auto">
+                  {vuln.evidence.length > 500 ? vuln.evidence.slice(0, 500) + '...' : vuln.evidence}
+                </code>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* References */}
       <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
         <h3 className="text-sm font-medium text-slate-400 mb-2">References</h3>
@@ -226,6 +272,12 @@ export function TicketDetail() {
               <span className="text-xs text-slate-500 w-12">Search</span>
               <a href={`https://www.google.com/search?q=${ticket.cve_id}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-sm">Google {ticket.cve_id}</a>
             </div>
+            {vuln?.cwe_id && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 w-12">CWE</span>
+                <a href={`https://cwe.mitre.org/data/definitions/${vuln.cwe_id}.html`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-sm">CWE-{vuln.cwe_id}</a>
+              </div>
+            )}
           </div>
         ) : (
           <div>
@@ -235,6 +287,14 @@ export function TicketDetail() {
               <span>Search for &quot;{ticket.title.length > 60 ? ticket.title.slice(0, 60) + '...' : ticket.title}&quot;</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Google</span>
             </a>
+            {vuln?.cwe_id && (
+              <div className="mt-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 w-12">CWE</span>
+                  <a href={`https://cwe.mitre.org/data/definitions/${vuln.cwe_id}.html`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-sm">CWE-{vuln.cwe_id}</a>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

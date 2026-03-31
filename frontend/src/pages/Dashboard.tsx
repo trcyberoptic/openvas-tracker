@@ -7,8 +7,13 @@ const COLORS: Record<string, string> = {
   critical: '#dc2626', high: '#ea580c', medium: '#d97706', low: '#2563eb', info: '#6b7280',
 }
 
+const SOURCE_COLORS: Record<string, string> = {
+  openvas: '#22c55e', zap: '#3b82f6', unknown: '#6b7280',
+}
+
 interface DashboardData {
   vulns_by_severity: { severity: string; count: number }[]
+  tickets_by_scan_type: { scan_type: string; count: number }[] | null
   my_tickets: number
   unassigned_tickets: number
   open_tickets_total: number
@@ -130,9 +135,17 @@ export function Dashboard() {
           ) : <p className="text-slate-500">No vulnerabilities found</p>}
         </div>
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-6">
-          <h2 className="text-lg font-semibold mb-4">Vulnerabilities</h2>
-          <p className="text-4xl font-bold">{totalVulns}</p>
-          <p className="text-slate-400">Total open vulnerabilities</p>
+          <h2 className="text-lg font-semibold mb-4">Open Tickets by Source</h2>
+          {(data?.tickets_by_scan_type?.length ?? 0) > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie data={data!.tickets_by_scan_type!.map(s => ({ name: s.scan_type.toUpperCase(), value: s.count, fill: SOURCE_COLORS[s.scan_type] || '#6b7280' }))} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                  {data!.tickets_by_scan_type!.map((s, i) => <Cell key={i} fill={SOURCE_COLORS[s.scan_type] || '#6b7280'} />)}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <p className="text-slate-500">No open tickets</p>}
         </div>
       </div>
     </div>

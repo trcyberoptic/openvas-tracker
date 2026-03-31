@@ -77,8 +77,8 @@ func (s *ImportService) BackfillHostnames(ctx context.Context) (int, error) {
 	return updated, nil
 }
 
-// Import processes parsed OpenVAS results: creates scan, vulns, tickets in a single transaction.
-func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASResult) (*ImportResult, error) {
+// Import processes parsed scanner findings: creates scan, vulns, tickets in a single transaction.
+func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, scanType string) (*ImportResult, error) {
 	if err := s.resolveSystemUser(ctx); err != nil {
 		return nil, fmt.Errorf("resolve system user: %w", err)
 	}
@@ -95,8 +95,8 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 
 	scan, err := tq.CreateScan(ctx, queries.CreateScanParams{
 		ID:       scanID,
-		Name:     fmt.Sprintf("OpenVAS Import %s", now.Format("2006-01-02 15:04:05")),
-		ScanType: queries.ScanTypeOpenvas,
+		Name:     fmt.Sprintf("%s Import %s", strings.ToUpper(scanType), now.Format("2006-01-02 15:04:05")),
+		ScanType: queries.ScanType(scanType),
 		Status:   queries.ScanStatusCompleted,
 		UserID:   s.systemUserID,
 	})
@@ -144,12 +144,17 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 			Description:    strPtr(r.Description),
 			Severity:       queries.SeverityLevel(severity),
 			CvssScore:      f64Ptr(r.CVSSScore),
-			CveID:          cvePtr(r.CVE),
+			CveID:          cvePtr(r.CVEID),
+			CweID:          strPtr(r.CWEID),
 			AffectedHost:   strPtr(r.Host),
 			Hostname:       strPtr(resolveHostname(r.Host, r.Hostname)),
+			URL:            strPtr(r.URL),
+			Parameter:      strPtr(r.Parameter),
 			AffectedPort:   port,
 			Protocol:       proto,
 			Solution:       strPtr(r.Solution),
+			Evidence:       strPtr(r.Evidence),
+			Confidence:     strPtr(r.Confidence),
 			VulnReferences: []byte("[]"),
 		})
 		if err != nil {
@@ -169,7 +174,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 	}
 
 	s.reopenExpiredRiskAccepted(ctx, tq)
-	res.TicketsAutoResolved = s.autoResolveStale(ctx, tq, scan.ID)
+	res.TicketsAutoResolved = s.autoResolveStale(ctx, tq, scan.ID, scanType)
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
@@ -177,12 +182,12 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.OpenVASRes
 	return res, nil
 }
 
-func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r scanner.OpenVASResult, vulnID, severity string, now time.Time) (created, reopened bool) {
+func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r scanner.Finding, vulnID, severity string, now time.Time) (created, reopened bool) {
 	if r.Host == "" {
 		return false, false
 	}
 
-	existing, err := q.FindTicketByFingerprint(ctx, r.Host, r.CVE, r.Title)
+	existing, err := q.FindTicketByFingerprint(ctx, r.Host, r.CVEID, r.Title)
 	if err != nil {
 		return s.createTicket(ctx, q, r, vulnID, severity), false
 	}
@@ -195,14 +200,14 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 
 	case queries.TicketStatusRiskAccepted:
 		// Check if an active auto-accept rule still matches — if so, keep accepted
-		fp := vulnFingerprint(r.CVE, r.Title)
+		fp := r.Fingerprint()
 		if _, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
 			if err := q.TouchTicket(ctx, queries.TouchTicketParams{
 				ID: existing.ID, VulnerabilityID: vulnID,
 			}); err != nil {
 				log.Printf("import: failed to touch ticket %s: %v", existing.ID, err)
 			}
-			note := fmt.Sprintf("Finding still present in scan, kept risk-accepted by rule. CVE: %s, Host: %s", r.CVE, r.Host)
+			note := fmt.Sprintf("Finding still present in scan, kept risk-accepted by rule. CVE: %s, Host: %s", r.CVEID, r.Host)
 			logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
 			return false, false
 		}
@@ -213,7 +218,7 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 			return false, false
 		}
 		newStatus := "open"
-		note := fmt.Sprintf("Finding reappeared in scan — reopened (no active rule). CVE: %s, Host: %s", r.CVE, r.Host)
+		note := fmt.Sprintf("Finding reappeared in scan — reopened (no active rule). CVE: %s, Host: %s", r.CVEID, r.Host)
 		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 		return false, true
 
@@ -224,7 +229,7 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 			return false, false
 		}
 		newStatus := "open"
-		note := fmt.Sprintf("Finding reappeared in scan — reopened. CVE: %s, Host: %s", r.CVE, r.Host)
+		note := fmt.Sprintf("Finding reappeared in scan — reopened. CVE: %s, Host: %s", r.CVEID, r.Host)
 		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 		return false, true
 
@@ -238,7 +243,7 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 		}
 		newStatus := "open"
 		note := fmt.Sprintf("Finding reappeared after %d/%d misses — counter reset. CVE: %s, Host: %s",
-			existing.ConsecutiveMisses, autoResolveThreshold(), r.CVE, r.Host)
+			existing.ConsecutiveMisses, autoResolveThreshold(), r.CVEID, r.Host)
 		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
 		return false, true
 
@@ -254,13 +259,13 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 				log.Printf("import: failed to reset misses for ticket %s: %v", existing.ID, err)
 			}
 		}
-		note := fmt.Sprintf("Finding still present in scan. CVE: %s, Host: %s", r.CVE, r.Host)
+		note := fmt.Sprintf("Finding still present in scan. CVE: %s, Host: %s", r.CVEID, r.Host)
 		logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
 		return false, false
 	}
 }
 
-func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r scanner.OpenVASResult, vulnID, severity string) bool {
+func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r scanner.Finding, vulnID, severity string) bool {
 	priority := mapSeverityToPriority(severity)
 	title := fmt.Sprintf("[%s] %s — %s", strings.ToUpper(severity), r.Title, r.Host)
 	var desc *string
@@ -279,7 +284,7 @@ func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r 
 	}
 
 	// Check if a risk accept rule matches this finding
-	fp := vulnFingerprint(r.CVE, r.Title)
+	fp := r.Fingerprint()
 	if rule, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
 		q.UpdateTicketStatus(ctx, queries.UpdateTicketStatusParams{ID: ticketID, Status: queries.TicketStatusRiskAccepted})
 		if rule.ExpiresAt != nil {
@@ -295,7 +300,7 @@ func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r 
 	}
 
 	newStatus := "open"
-	note := fmt.Sprintf("Ticket created from OpenVAS import. CVE: %s, Host: %s, CVSS: %.1f", r.CVE, r.Host, r.CVSSScore)
+	note := fmt.Sprintf("Ticket created from %s import. CVE: %s, Host: %s, CVSS: %.1f", r.ScanType, r.CVEID, r.Host, r.CVSSScore)
 	logActivity(ctx, q, ticketID, "created", nil, &newStatus, "Automatic", &note)
 	return true
 }
@@ -314,10 +319,10 @@ func (s *ImportService) reopenExpiredRiskAccepted(ctx context.Context, q *querie
 	}
 }
 
-func (s *ImportService) autoResolveStale(ctx context.Context, q *queries.Queries, scanID string) int {
+func (s *ImportService) autoResolveStale(ctx context.Context, q *queries.Queries, scanID string, scanType string) int {
 	threshold := autoResolveThreshold()
 
-	staleTickets, err := q.IncrementMissesForStaleTickets(ctx, scanID)
+	staleTickets, err := q.IncrementMissesForStaleTickets(ctx, scanID, scanType)
 	if err != nil {
 		log.Printf("auto-resolve error: %v", err)
 		return 0

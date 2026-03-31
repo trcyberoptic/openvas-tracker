@@ -50,6 +50,7 @@ type Ticket struct {
 	Hostname        *string        `json:"hostname"`
 	CvssScore       *float64       `json:"cvss_score"`
 	CveID           *string        `json:"cve_id"`
+	ScanType        *string        `json:"scan_type"`
 }
 
 type TicketComment struct {
@@ -98,10 +99,10 @@ type CountTicketsByStatusRow struct {
 	Count  int64        `json:"count"`
 }
 
-const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id`
+const ticketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id, s.scan_type`
 
 func scanTicket(row interface{ Scan(...any) error }, i *Ticket) error {
-	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.RiskAcceptedUntil, &i.ConsecutiveMisses, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost, &i.Hostname, &i.CvssScore, &i.CveID)
+	return row.Scan(&i.ID, &i.Title, &i.Description, &i.Status, &i.Priority, &i.VulnerabilityID, &i.AssignedTo, &i.CreatedBy, &i.DueDate, &i.ResolvedAt, &i.RiskAcceptedUntil, &i.ConsecutiveMisses, &i.FirstSeenAt, &i.LastSeenAt, &i.CreatedAt, &i.UpdatedAt, &i.AffectedHost, &i.Hostname, &i.CvssScore, &i.CveID, &i.ScanType)
 }
 
 func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
@@ -114,14 +115,14 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Tic
 }
 
 func (q *Queries) GetTicket(ctx context.Context, id string) (Ticket, error) {
-	row := q.db.QueryRowContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.id = ?`, id)
+	row := q.db.QueryRowContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE t.id = ?`, id)
 	var i Ticket
 	err := scanTicket(row, &i)
 	return i, err
 }
 
 func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Ticket, error) {
-	const listTickets = `SELECT ` + ticketCols + ` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id ORDER BY CASE t.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, t.created_at DESC LIMIT ? OFFSET ?`
+	const listTickets = `SELECT ` + ticketCols + ` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id ORDER BY CASE t.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END, t.created_at DESC LIMIT ? OFFSET ?`
 	rows, err := q.db.QueryContext(ctx, listTickets, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
@@ -209,6 +210,28 @@ type OpenTicketsByPriorityRow struct {
 	Count    int64  `json:"count"`
 }
 
+type OpenTicketsByScanTypeRow struct {
+	ScanType string `json:"scan_type"`
+	Count    int64  `json:"count"`
+}
+
+func (q *Queries) OpenTicketsByScanType(ctx context.Context) ([]OpenTicketsByScanTypeRow, error) {
+	rows, err := q.db.QueryContext(ctx, `SELECT COALESCE(s.scan_type, 'unknown') as scan_type, COUNT(*) as count FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE t.status IN ('open', 'pending_resolution') GROUP BY s.scan_type`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OpenTicketsByScanTypeRow
+	for rows.Next() {
+		var i OpenTicketsByScanTypeRow
+		if err := rows.Scan(&i.ScanType, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
 func (q *Queries) OpenTicketsByPriority(ctx context.Context) ([]OpenTicketsByPriorityRow, error) {
 	rows, err := q.db.QueryContext(ctx, `SELECT priority, COUNT(*) as count FROM tickets WHERE status IN ('open', 'pending_resolution') GROUP BY priority`)
 	if err != nil {
@@ -254,16 +277,16 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 }
 
 // FindTicketByFingerprint finds an existing ticket matching a vulnerability fingerprint (host + CVE or host + title).
-const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id`
+const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id, s.scan_type`
 
 func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
 	var t Ticket
 	var err error
 	if cveID != "" && cveID != "NOCVE" {
-		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE v.affected_host = ? AND v.cve_id = ? ORDER BY t.created_at DESC LIMIT 1`, host, cveID)
+		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? AND v.cve_id = ? ORDER BY t.created_at DESC LIMIT 1`, host, cveID)
 		err = scanTicket(r, &t)
 	} else {
-		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE v.affected_host = ? AND (v.cve_id IS NULL OR v.cve_id = '') AND v.title = ? ORDER BY t.created_at DESC LIMIT 1`, host, title)
+		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? AND (v.cve_id IS NULL OR v.cve_id = '') AND v.title = ? ORDER BY t.created_at DESC LIMIT 1`, host, title)
 		err = scanTicket(r, &t)
 	}
 	if err != nil {
@@ -339,16 +362,19 @@ func (q *Queries) TouchTicket(ctx context.Context, arg TouchTicketParams) error 
 // IncrementMissesForStaleTickets increments consecutive_misses for open/pending_resolution
 // tickets whose findings were not seen in the given scan. Returns all affected tickets
 // (with their UPDATED consecutive_misses values).
-func (q *Queries) IncrementMissesForStaleTickets(ctx context.Context, scanID string) ([]Ticket, error) {
+func (q *Queries) IncrementMissesForStaleTickets(ctx context.Context, scanID string, scanType string) ([]Ticket, error) {
 	// Step 1: find IDs of stale tickets (open or pending_resolution, host in scan scope, finding not in scan)
+	// Scoped to the same scan_type to avoid cross-scanner interference.
 	idRows, err := q.db.QueryContext(ctx, `
 		SELECT t.id FROM tickets t
 		JOIN vulnerabilities v ON t.vulnerability_id = v.id
+		JOIN scans s ON v.scan_id = s.id
 		WHERE t.status IN ('open', 'pending_resolution')
 		AND t.vulnerability_id IS NOT NULL
 		AND v.affected_host IN (SELECT host FROM scan_hosts WHERE scan_id = ?)
+		AND s.scan_type = ?
 		AND t.vulnerability_id NOT IN (SELECT id FROM vulnerabilities WHERE scan_id = ?)`,
-		scanID, scanID)
+		scanID, scanType, scanID)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +405,7 @@ func (q *Queries) IncrementMissesForStaleTickets(ctx context.Context, scanID str
 	}
 
 	// Step 3: return the updated tickets (with new consecutive_misses values)
-	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.id IN (`+placeholders+`)`, args...)
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE t.id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +471,7 @@ func (q *Queries) ReopenExpiredRiskAccepted(ctx context.Context) ([]Ticket, erro
 		return nil, err
 	}
 
-	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE t.id IN (`+placeholders+`)`, args...)
+	rows, err := q.db.QueryContext(ctx, `SELECT `+ticketCols+` FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE t.id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +533,7 @@ func (q *Queries) ListTicketActivity(ctx context.Context, ticketID string) ([]Ti
 
 // ListTicketsByHost returns all tickets for a given host IP.
 func (q *Queries) ListTicketsByHost(ctx context.Context, host string) ([]Ticket, error) {
-	rows, err := q.db.QueryContext(ctx, "SELECT "+ticketCols+" FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id WHERE v.affected_host = ? ORDER BY CASE t.status WHEN 'open' THEN 1 WHEN 'risk_accepted' THEN 2 WHEN 'fixed' THEN 3 WHEN 'false_positive' THEN 4 END, v.cvss_score DESC", host)
+	rows, err := q.db.QueryContext(ctx, "SELECT "+ticketCols+" FROM tickets t LEFT JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? ORDER BY CASE t.status WHEN 'open' THEN 1 WHEN 'risk_accepted' THEN 2 WHEN 'fixed' THEN 3 WHEN 'false_positive' THEN 4 END, v.cvss_score DESC", host)
 	if err != nil {
 		return nil, err
 	}

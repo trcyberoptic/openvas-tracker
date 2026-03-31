@@ -47,4 +47,13 @@ func TestParseOpenVASXML(t *testing.T) {
 	if r.Host != "192.168.1.10" {
 		t.Errorf("expected host 192.168.1.10, got %s", r.Host)
 	}
+	if r.CVEID != "CVE-2024-0001" {
+		t.Errorf("expected CVEID CVE-2024-0001, got %s", r.CVEID)
+	}
+	if r.ScanType != "openvas" {
+		t.Errorf("expected ScanType openvas, got %s", r.ScanType)
+	}
+	if r.URL != "" {
+		t.Errorf("expected empty URL, got %s", r.URL)
+	}
 }

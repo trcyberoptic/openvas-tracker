@@ -9,19 +9,6 @@ import (
 	"strings"
 )
 
-type OpenVASResult struct {
-	Title       string
-	Host        string
-	Hostname    string
-	Port        string
-	Severity    string
-	CVSSScore   float64
-	Description string
-	Solution    string
-	CVE         string
-	OID         string
-}
-
 // Standard report format: <report><results><result>
 type ovasReport struct {
 	XMLName xml.Name    `xml:"report"`
@@ -95,7 +82,7 @@ type ovasSeverity struct {
 	Score float64 `xml:"score"`
 }
 
-func ParseOpenVASXML(r io.Reader) ([]OpenVASResult, error) {
+func ParseOpenVASXML(r io.Reader) ([]Finding, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read XML: %w", err)
@@ -124,7 +111,7 @@ func ParseOpenVASXML(r io.Reader) ([]OpenVASResult, error) {
 		}
 	}
 
-	var results []OpenVASResult
+	var results []Finding
 	for _, res := range rawResults {
 		cvss := res.Severity
 		if cvss == 0 {
@@ -166,7 +153,8 @@ func ParseOpenVASXML(r io.Reader) ([]OpenVASResult, error) {
 		host := strings.TrimSpace(res.Host.IP)
 		hostname := strings.TrimSpace(res.Host.Hostname)
 
-		results = append(results, OpenVASResult{
+		results = append(results, Finding{
+			ScanType:    "openvas",
 			Title:       res.Name,
 			Host:        host,
 			Hostname:    hostname,
@@ -175,7 +163,7 @@ func ParseOpenVASXML(r io.Reader) ([]OpenVASResult, error) {
 			CVSSScore:   cvss,
 			Description: description,
 			Solution:    solution,
-			CVE:         cve,
+			CVEID:       cve,
 			OID:         res.NVT.OID,
 		})
 	}

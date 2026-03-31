@@ -25,6 +25,7 @@ const (
 	ScanTypeNmap    ScanType = "nmap"
 	ScanTypeOpenvas ScanType = "openvas"
 	ScanTypeCustom  ScanType = "custom"
+	ScanTypeZap     ScanType = "zap"
 )
 
 type Scan struct {

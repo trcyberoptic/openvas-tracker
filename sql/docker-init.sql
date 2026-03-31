@@ -20,3 +20,4 @@ SOURCE /docker-entrypoint-initdb.d/migrations/016_add_vuln_hostname.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/017_create_risk_accept_rules.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/018_create_scan_hosts.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/019_add_consecutive_misses.up.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/020_add_zap_fields.up.sql;
