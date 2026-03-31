@@ -19,24 +19,34 @@ func TestFindingFingerprint(t *testing.T) {
 			expected: "title:SSL Expired",
 		},
 		{
-			name:     "web finding with CWE and URL",
+			name:     "web finding with CWE, URL, and param — URL-granular",
 			finding:  Finding{CWEID: "79", URL: "/app/search", Parameter: "q", ScanType: "zap"},
 			expected: "cwe:79:url:/app/search:param:q",
 		},
 		{
-			name:     "web finding with CWE, URL, no param",
-			finding:  Finding{CWEID: "352", URL: "/app/transfer", ScanType: "zap"},
-			expected: "cwe:352:url:/app/transfer:param:",
+			name:     "web finding with CWE, URL, no param — server-wide, one per host",
+			finding:  Finding{CWEID: "693", URL: "/sitemap.xml", ScanType: "zap"},
+			expected: "cwe:693",
 		},
 		{
-			name:     "web finding without CWE",
-			finding:  Finding{Title: "Information Disclosure", URL: "/api/debug", ScanType: "zap"},
-			expected: "title:Information Disclosure:url:/api/debug",
+			name:     "web finding without CWE, with param",
+			finding:  Finding{Title: "Information Disclosure", URL: "/api/debug", Parameter: "verbose", ScanType: "zap"},
+			expected: "title:Information Disclosure:url:/api/debug:param:verbose",
+		},
+		{
+			name:     "web finding without CWE, no param — server-wide",
+			finding:  Finding{Title: "Missing Header X", URL: "/robots.txt", ScanType: "zap"},
+			expected: "title:Missing Header X",
 		},
 		{
 			name:     "web finding with CVE takes CVE path",
-			finding:  Finding{CVEID: "CVE-2024-9999", CWEID: "79", URL: "/app", ScanType: "zap"},
+			finding:  Finding{CVEID: "CVE-2024-9999", CWEID: "79", URL: "/app", Parameter: "q", ScanType: "zap"},
 			expected: "CVE-2024-9999",
+		},
+		{
+			name:     "same header finding different URLs — same fingerprint",
+			finding:  Finding{CWEID: "693", URL: "/", Title: "CSP Header Not Set", ScanType: "zap"},
+			expected: "cwe:693",
 		},
 	}
 

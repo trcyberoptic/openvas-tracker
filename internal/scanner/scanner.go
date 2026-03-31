@@ -31,15 +31,18 @@ func (f Finding) Fingerprint() string {
 	if f.CVEID != "" && f.CVEID != "NOCVE" {
 		return f.CVEID
 	}
-	// Web findings with CWE + URL
-	if f.URL != "" && f.CWEID != "" {
+	// Web findings with parameter — URL-granular (e.g. XSS on /search?q=)
+	if f.URL != "" && f.Parameter != "" && f.CWEID != "" {
 		return "cwe:" + f.CWEID + ":url:" + f.URL + ":param:" + f.Parameter
 	}
-	// Web findings without CWE but with URL
-	if f.URL != "" {
-		return "title:" + f.Title + ":url:" + f.URL
+	if f.URL != "" && f.Parameter != "" {
+		return "title:" + f.Title + ":url:" + f.URL + ":param:" + f.Parameter
 	}
-	// Network findings without CVE
+	// Web findings without parameter — server-wide (e.g. missing headers),
+	// one ticket per host, not per URL
+	if f.CWEID != "" {
+		return "cwe:" + f.CWEID
+	}
 	return "title:" + f.Title
 }
 
