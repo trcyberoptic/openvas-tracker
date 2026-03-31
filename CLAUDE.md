@@ -106,7 +106,8 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 - `Finding` struct is scanner-agnostic. Parsers (`ParseOpenVASXML`, `ParseZAPJSON`) return `[]Finding`.
 - **Fingerprinting** (dedup key per finding):
   - Network findings (OpenVAS): CVE or `"title:" + title`. Key: `(host, fingerprint)`.
-  - Web findings (ZAP): `"cwe:" + cweid + ":url:" + urlPath + ":param:" + param`. Falls back to `"title:" + title + ":url:" + urlPath` if no CWE. CVE always takes priority if present.
+  - Web findings (ZAP): `"cwe:" + cweid + ":url:" + urlPath + ":param:" + param` — only when parameter is present. Falls back to `"title:" + title + ":url:" + urlPath + ":param:" + param` if no CWE. CVE always takes priority if present.
+  - **Server-wide findings** (no parameter, e.g. missing headers): `"cwe:" + cweid` or `"title:" + title` — one ticket per host, not per URL. All affected URLs shown in ticket detail via `AffectedURLsByPeer` query.
 - Per vuln: check risk accept rules → find ticket by fingerprint (host + CVE/title/CWE+URL) → create/reopen/touch → auto-resolve stale → commit.
 - **Auto-resolve scoped by scan type** — a ZAP scan only auto-resolves ZAP tickets, never OpenVAS tickets and vice versa. Uses `(host, scan_type)` scope via `scan_hosts` table (migration 018).
 - PTR hostname backfill runs async after each import. Hostnames normalized: `UPPERCASE.domain.lowercase`.
@@ -128,7 +129,7 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 - `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns.
 - Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted. Source filter (OpenVAS/ZAP).
 - Scan list: scan type badges (OpenVAS green, ZAP blue) with type filter.
-- Ticket detail: web finding details section (URL, parameter, evidence, confidence badges, CWE links) — only shown for ZAP findings.
+- Ticket detail: web finding details section (URL, parameter, evidence, confidence badges, CWE links) — only shown for ZAP findings. Server-wide findings show all affected URLs from peer vulnerabilities.
 - Dashboard: open tickets by scan source pie chart (OpenVAS vs ZAP).
 - Sidebar: Dashboard, My Tickets, All Tickets, Scans, Scan Diff, Auto-Accept Rules, Settings. GitHub repo link at bottom.
 - Trend chart: 30-day daily snapshots of open tickets via recursive CTE.

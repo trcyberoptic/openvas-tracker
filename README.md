@@ -196,8 +196,9 @@ rm -f "$REPORT"
 
 ### How ZAP Findings Become Tickets
 
-- Each alert instance (URL + parameter combination) creates a separate ticket
-- Fingerprint: `cwe:<ID>:url:<path>:param:<name>` (or CVE if present)
+- **Parameter-specific findings** (XSS, SQLi): one ticket per URL + parameter combination. Fingerprint: `cwe:<ID>:url:<path>:param:<name>`
+- **Server-wide findings** (missing headers, CSP): one ticket per host, regardless of how many URLs are affected. Fingerprint: `cwe:<ID>`. All affected URLs listed in ticket detail
+- CVE always takes priority as fingerprint if present
 - Severity mapping: ZAP riskcode 3→high (CVSS 7.0), 2→medium (4.0), 1→low (2.0), 0→info (skipped)
 - Auto-resolve is scoped by scanner type — ZAP scans only affect ZAP tickets, never OpenVAS tickets
 
