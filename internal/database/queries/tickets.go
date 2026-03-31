@@ -210,6 +210,28 @@ type OpenTicketsByPriorityRow struct {
 	Count    int64  `json:"count"`
 }
 
+type OpenTicketsByScanTypeRow struct {
+	ScanType string `json:"scan_type"`
+	Count    int64  `json:"count"`
+}
+
+func (q *Queries) OpenTicketsByScanType(ctx context.Context) ([]OpenTicketsByScanTypeRow, error) {
+	rows, err := q.db.QueryContext(ctx, `SELECT COALESCE(s.scan_type, 'unknown') as scan_type, COUNT(*) as count FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE t.status IN ('open', 'pending_resolution') GROUP BY s.scan_type`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OpenTicketsByScanTypeRow
+	for rows.Next() {
+		var i OpenTicketsByScanTypeRow
+		if err := rows.Scan(&i.ScanType, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
 func (q *Queries) OpenTicketsByPriority(ctx context.Context) ([]OpenTicketsByPriorityRow, error) {
 	rows, err := q.db.QueryContext(ctx, `SELECT priority, COUNT(*) as count FROM tickets WHERE status IN ('open', 'pending_resolution') GROUP BY priority`)
 	if err != nil {

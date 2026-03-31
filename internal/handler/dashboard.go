@@ -21,12 +21,18 @@ func NewDashboardHandler(vulns *service.VulnerabilityService, tickets *service.T
 }
 
 type dashboardResponse struct {
-	VulnsBySeverity        []severityCount `json:"vulns_by_severity"`
-	MyTickets              int64           `json:"my_tickets"`
-	UnassignedTickets      int64           `json:"unassigned_tickets"`
-	OpenTicketsTotal       int64           `json:"open_tickets_total"`
-	PendingResolutionTotal int64           `json:"pending_resolution_total"`
-	ResolvedTickets        int64           `json:"resolved_tickets"`
+	VulnsBySeverity        []severityCount  `json:"vulns_by_severity"`
+	TicketsByScanType      []scanTypeCount  `json:"tickets_by_scan_type"`
+	MyTickets              int64            `json:"my_tickets"`
+	UnassignedTickets      int64            `json:"unassigned_tickets"`
+	OpenTicketsTotal       int64            `json:"open_tickets_total"`
+	PendingResolutionTotal int64            `json:"pending_resolution_total"`
+	ResolvedTickets        int64            `json:"resolved_tickets"`
+}
+
+type scanTypeCount struct {
+	ScanType string `json:"scan_type"`
+	Count    int64  `json:"count"`
 }
 
 type severityCount struct {
@@ -56,8 +62,15 @@ func (h *DashboardHandler) Get(c echo.Context) error {
 		stats = queries.DashboardTicketStatsRow{}
 	}
 
+	scanTypeCounts, _ := h.q.OpenTicketsByScanType(ctx)
+	var stCounts []scanTypeCount
+	for _, st := range scanTypeCounts {
+		stCounts = append(stCounts, scanTypeCount{ScanType: st.ScanType, Count: st.Count})
+	}
+
 	return c.JSON(http.StatusOK, dashboardResponse{
 		VulnsBySeverity:        sevCounts,
+		TicketsByScanType:      stCounts,
 		MyTickets:              stats.MyTickets,
 		UnassignedTickets:      stats.UnassignedTickets,
 		OpenTicketsTotal:       stats.OpenTicketsTotal,
