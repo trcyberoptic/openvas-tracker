@@ -10,8 +10,12 @@ const BADGE: Record<string, string> = {
 const SEV_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
 }
+const SCAN_TYPE_COLORS: Record<string, string> = {
+  openvas: 'bg-green-900 text-green-300',
+  zap: 'bg-blue-900 text-blue-300',
+}
 
-interface Scan { id: string; name: string; created_at: string }
+interface Scan { id: string; name: string; scan_type: string; created_at: string }
 interface DiffEntry {
   status: string; vuln_id: string; title: string
   affected_host?: string; hostname?: string; severity: string; cvss_score?: number; cve_id?: string
@@ -23,14 +27,43 @@ export function ScanDiff() {
   const [newId, setNewId] = useState('')
   const [filter, setFilter] = useState<string>('')
 
-  // Default to the two most recent scans
+  const sortedScans = useMemo(() =>
+    [...scans].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [scans])
+
+  // Default to the two most recent scans of the same type
   useEffect(() => {
-    if (scans.length >= 2 && !oldId && !newId) {
-      const sorted = [...scans].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      setNewId(sorted[0].id)
-      setOldId(sorted[1].id)
+    if (sortedScans.length >= 2 && !oldId && !newId) {
+      const newest = sortedScans[0]
+      const prevSameType = sortedScans.find(s => s.id !== newest.id && s.scan_type === newest.scan_type)
+      if (prevSameType) {
+        setNewId(newest.id)
+        setOldId(prevSameType.id)
+      }
     }
-  }, [scans, oldId, newId])
+  }, [sortedScans, oldId, newId])
+
+  // Determine selected scans and their types
+  const newScan = scans.find(s => s.id === newId)
+  const oldScan = scans.find(s => s.id === oldId)
+
+  // Filter old scan options: same type as selected new scan, and older
+  const oldScanOptions = useMemo(() => {
+    if (!newScan) return sortedScans
+    return sortedScans.filter(s =>
+      s.scan_type === newScan.scan_type &&
+      new Date(s.created_at).getTime() < new Date(newScan.created_at).getTime()
+    )
+  }, [sortedScans, newScan])
+
+  // When new scan changes, reset old if incompatible
+  useEffect(() => {
+    if (newScan && oldScan) {
+      const oldIsValid = oldScan.scan_type === newScan.scan_type &&
+        new Date(oldScan.created_at).getTime() < new Date(newScan.created_at).getTime()
+      if (!oldIsValid) setOldId('')
+    }
+  }, [newId])
 
   const { data: diff, isFetching } = useQuery({
     queryKey: ['scan-diff', oldId, newId],
@@ -53,28 +86,41 @@ export function ScanDiff() {
     }
   }, [diff])
 
-  const sortedScans = [...scans].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Scan Comparison</h1>
 
       <div className="flex gap-4 mb-6">
         <div className="flex-1">
-          <label className="text-xs text-slate-500 mb-1 block">Previous Scan</label>
-          <select value={oldId} onChange={e => setOldId(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500">
-            <option value="">Select...</option>
-            {sortedScans.map(s => <option key={s.id} value={s.id}>{s.name} ({new Date(s.created_at).toLocaleDateString()})</option>)}
-          </select>
-        </div>
-        <div className="flex-1">
           <label className="text-xs text-slate-500 mb-1 block">Current Scan</label>
           <select value={newId} onChange={e => setNewId(e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500">
             <option value="">Select...</option>
-            {sortedScans.map(s => <option key={s.id} value={s.id}>{s.name} ({new Date(s.created_at).toLocaleDateString()})</option>)}
+            {sortedScans.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({new Date(s.created_at).toLocaleDateString()})
+              </option>
+            ))}
           </select>
+          {newScan && (
+            <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium ${SCAN_TYPE_COLORS[newScan.scan_type] || 'bg-slate-700 text-slate-300'}`}>
+              {newScan.scan_type.toUpperCase()}
+            </span>
+          )}
+        </div>
+        <div className="flex-1">
+          <label className="text-xs text-slate-500 mb-1 block">Previous Scan</label>
+          <select value={oldId} onChange={e => setOldId(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500">
+            <option value="">Select...</option>
+            {oldScanOptions.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({new Date(s.created_at).toLocaleDateString()})
+              </option>
+            ))}
+          </select>
+          {!newId && <p className="text-xs text-slate-500 mt-1">Select current scan first</p>}
+          {newId && oldScanOptions.length === 0 && <p className="text-xs text-amber-400 mt-1">No older {newScan?.scan_type.toUpperCase()} scans available</p>}
         </div>
       </div>
 
