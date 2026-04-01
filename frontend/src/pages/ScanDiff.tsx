@@ -45,8 +45,6 @@ export function ScanDiff() {
 
   // Determine selected scans and their types
   const newScan = scans.find(s => s.id === newId)
-  const oldScan = scans.find(s => s.id === oldId)
-
   // Filter old scan options: same type as selected new scan, and older
   const oldScanOptions = useMemo(() => {
     if (!newScan) return sortedScans
@@ -56,13 +54,15 @@ export function ScanDiff() {
     )
   }, [sortedScans, newScan])
 
-  // When new scan changes, reset old if incompatible
+  // When new scan changes, auto-select the next older scan of same type
   useEffect(() => {
-    if (newScan && oldScan) {
-      const oldIsValid = oldScan.scan_type === newScan.scan_type &&
-        new Date(oldScan.created_at).getTime() < new Date(newScan.created_at).getTime()
-      if (!oldIsValid) setOldId('')
-    }
+    if (!newScan) return
+    const nextOlder = sortedScans.find(s =>
+      s.id !== newScan.id &&
+      s.scan_type === newScan.scan_type &&
+      new Date(s.created_at).getTime() < new Date(newScan.created_at).getTime()
+    )
+    setOldId(nextOlder?.id || '')
   }, [newId])
 
   const { data: diff, isFetching } = useQuery({
