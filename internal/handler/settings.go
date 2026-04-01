@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,7 +39,8 @@ func (h *SettingsHandler) GetSetup(c echo.Context) error {
 			"curl -X POST http://<tracker-host>:%d/api/import/openvas \\\n  -H 'X-API-Key: <YOUR_API_KEY>' \\\n  -H 'Content-Type: application/xml' \\\n  --data-binary @scan-report.xml",
 			h.cfg.Server.Port,
 		),
-		"ldap_enabled": h.cfg.LDAP.Enabled(),
+		"ldap_enabled":  h.cfg.LDAP.Enabled(),
+		"bugreport_url": os.Getenv("OT_BUGREPORT_URL"),
 	})
 }
 
