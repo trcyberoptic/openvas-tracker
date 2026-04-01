@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 
 // --- Filter ---
@@ -52,9 +53,37 @@ export function TableFilter({ filters, values, onChange }: FilterProps) {
 }
 
 export function useTableFilter(keys: string[], defaults?: Record<string, string>) {
-  const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(keys.map(k => [k, defaults?.[k] || '']))
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Fresh navigation (no filter keys in URL) → apply defaults
+  const hasAnyFilterParam = keys.some(k => searchParams.has(k))
+
+  const values = useMemo(() =>
+    Object.fromEntries(keys.map(k => {
+      if (searchParams.has(k)) return [k, searchParams.get(k)!]
+      if (!hasAnyFilterParam && defaults?.[k]) return [k, defaults[k]]
+      return [k, '']
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [searchParams]
   )
+
+  const setValues = useCallback((next: Record<string, string>) => {
+    setSearchParams(prev => {
+      const updated = new URLSearchParams(prev)
+      for (const k of keys) {
+        const v = next[k]
+        if (v) {
+          updated.set(k, v)
+        } else {
+          updated.delete(k)
+        }
+      }
+      return updated
+    }, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setSearchParams])
+
   return { values, setValues }
 }
 

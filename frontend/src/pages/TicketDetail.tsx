@@ -23,9 +23,11 @@ interface AffectedURL { url: string; parameter?: string }
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const from = searchParams.get('from') // "me" | null
-  const backUrl = from === 'me' ? '/tickets?assigned=me' : '/tickets'
-  const backLabel = from === 'me' ? 'My Tickets' : 'Tickets'
+  const assignedFilter = searchParams.get('assigned')
+  const backLabel = assignedFilter === 'me' ? 'My Tickets' : 'Tickets'
+  const backParams = new URLSearchParams(searchParams)
+  backParams.delete('from') // legacy param cleanup
+  const backUrl = backParams.size > 0 ? `/tickets?${backParams.toString()}` : '/tickets'
   const qc = useQueryClient()
   const [comment, setComment] = useState('')
   const [riskUntil, setRiskUntil] = useState('')

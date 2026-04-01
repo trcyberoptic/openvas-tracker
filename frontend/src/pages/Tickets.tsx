@@ -105,7 +105,7 @@ export function Tickets() {
           {assignedFilter && (
             <span className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-900/50 text-blue-300 text-xs">
               {assignedFilter === 'me' ? 'My tickets' : 'Unassigned'}
-              <button onClick={() => setSearchParams({})} className="hover:text-white">&times;</button>
+              <button onClick={() => { const p = new URLSearchParams(searchParams); p.delete('assigned'); setSearchParams(p, { replace: true }); }} className="hover:text-white">&times;</button>
             </span>
           )}
         </div>
@@ -156,7 +156,7 @@ export function Tickets() {
           </tr></thead>
           <tbody>
             {sorted.map(t => (
-              <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}${assignedFilter === 'me' ? '?from=me' : ''}`)} className={`border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer ${selected.has(t.id) ? 'bg-blue-900/20' : ''}`}>
+              <tr key={t.id} onClick={() => { const params = new URLSearchParams(searchParams); navigate(`/tickets/${t.id}?${params.toString()}`); }} className={`border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer ${selected.has(t.id) ? 'bg-blue-900/20' : ''}`}>
                 <td className="p-3" onClick={e => toggleSelect(t.id, e)}>
                   <input type="checkbox" checked={selected.has(t.id)} readOnly className="rounded border-slate-600 bg-slate-800" />
                 </td>
