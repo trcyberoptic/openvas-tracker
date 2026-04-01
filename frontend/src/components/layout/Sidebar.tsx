@@ -16,9 +16,9 @@ export function Sidebar() {
   const current = location.pathname + location.search
 
   return (
-    <aside className="w-64 bg-slate-900 border-r border-slate-800 min-h-screen p-4 flex flex-col">
+    <aside className="w-64 bg-slate-900 border-r border-slate-800 h-screen sticky top-0 p-4 flex flex-col">
       <div className="text-xl font-bold text-white mb-8 px-2">OpenVAS-Tracker</div>
-      <nav className="space-y-1 flex-1">
+      <nav className="space-y-1 flex-1 overflow-y-auto">
         {links.map(({ to, icon: Icon, label }) => {
           let active: boolean
           if (to.includes('?')) {
@@ -42,11 +42,14 @@ export function Sidebar() {
           )
         })}
       </nav>
-      <a href="https://github.com/trcyberoptic/openvas-tracker" target="_blank" rel="noopener noreferrer"
-        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-800 hover:text-white">
-        <Github size={18} />
-        GitHub
-      </a>
+      <div className="flex items-center gap-3 px-3 py-2 text-sm text-slate-500">
+        <a href="https://github.com/trcyberoptic/openvas-tracker" target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 hover:text-white rounded-lg">
+          <Github size={18} />
+          GitHub
+        </a>
+        <span className="text-slate-600">v{__APP_VERSION__}</span>
+      </div>
     </aside>
   )
 }
