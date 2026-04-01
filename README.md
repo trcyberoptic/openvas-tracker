@@ -28,7 +28,7 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 - **LDAP / Active Directory**: Optional AD authentication with group-based access control
 - **Admin + LDAP Auth**: Built-in admin user plus optional LDAP for team access, login by username
 - **Settings UI**: Edit all configuration (.env file) from the browser, test LDAP connection
-- **Filterable & Sortable Tables**: Column sorting, multi-filter (priority, status, host, scan source), full-text search across all columns, default filter on open tickets
+- **Filterable & Sortable Tables**: Column sorting, multi-filter (priority, status, host, scan source), full-text search across all columns, searchable host filter with hostname autocomplete, default filter on open tickets
 - **Report Generation**: HTML, PDF, Excel, Markdown — technical, executive, compliance, comparison, and trend report types
 - **Teams & Collaboration** (API only): Create teams with member roles (owner, admin, member), invite users, assign tickets to teams
 - **Assets Management** (API only): Automatic asset inventory — hostname, IP, MAC, OS, open ports, services, risk score

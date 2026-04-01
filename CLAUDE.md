@@ -126,8 +126,8 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 - "Refresh Tickets" button on Auto-Accept Rules page re-applies all rules to existing open and pending_resolution tickets (`POST /api/settings/risk-rules/apply`).
 
 ### Frontend
-- `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns.
-- Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted. Source filter (OpenVAS/ZAP).
+- `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns. `FilterOption` supports `searchable: true` with `SelectOption[]` (`{value, label}`) for autocomplete combobox instead of plain `<select>`.
+- Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted. Source filter (OpenVAS/ZAP). Host filter is a searchable combobox showing `IP (hostname)` — type to filter by IP or hostname.
 - Scan list: scan type badges (OpenVAS green, ZAP blue) with type filter.
 - Ticket detail: web finding details section (URL, parameter, evidence, confidence badges, CWE links) — only shown for ZAP findings. Server-wide findings show all affected URLs from peer vulnerabilities.
 - Dashboard: open tickets by scan source pie chart (OpenVAS vs ZAP).
