@@ -151,7 +151,7 @@ func (h *SettingsHandler) UpdateEnvBatch(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 	if err := h.envSvc.UpdateMultiple(req.Values); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update config")
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to update config: %v", err))
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok", "note": "restart required for changes to take effect"})
 }
