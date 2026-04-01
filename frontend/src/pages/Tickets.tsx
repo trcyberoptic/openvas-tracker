@@ -39,10 +39,22 @@ export function Tickets() {
 
   const tickets = useMemo(() => raw.map(t => ({ ...t, priority_order: PRIO_ORDER[t.priority] || 9 })), [raw])
 
-  const hosts = useMemo(() => {
-    const set = new Set(tickets.map(t => t.affected_host).filter(Boolean) as string[])
-    return [...set].sort()
+  const hostMap = useMemo(() => {
+    const map = new Map<string, string | undefined>()
+    for (const t of tickets) {
+      if (t.affected_host && !map.has(t.affected_host)) {
+        map.set(t.affected_host, t.hostname || undefined)
+      }
+    }
+    return map
   }, [tickets])
+
+  const hosts = useMemo(() =>
+    [...hostMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([ip, name]) => ({ value: ip, label: name ? `${ip} (${name})` : ip })),
+    [hostMap]
+  )
 
   const filtered = useMemo(() => {
     let result = tickets
@@ -50,7 +62,7 @@ export function Tickets() {
     if (assignedFilter === 'unassigned') result = result.filter(t => !t.assigned_to)
     if (values.priority) result = result.filter(t => t.priority === values.priority)
     if (values.status) result = result.filter(t => t.status === values.status)
-    if (values.host) result = result.filter(t => t.affected_host === values.host)
+    if (values.host) result = result.filter(t => t.affected_host === values.host || t.hostname === values.host)
     if (values.source) result = result.filter(t => t.scan_type === values.source)
     if (values.search) {
       const q = values.search.toLowerCase()
@@ -133,7 +145,7 @@ export function Tickets() {
           { key: 'search', label: 'Search tickets...' },
           { key: 'priority', label: 'Priority', options: ['critical', 'high', 'medium', 'low'] },
           { key: 'status', label: 'Status', options: ['open', 'pending_resolution', 'fixed', 'risk_accepted', 'false_positive'] },
-          { key: 'host', label: 'Host', options: hosts },
+          { key: 'host', label: 'Host', options: hosts, searchable: true },
           { key: 'source', label: 'Source', options: ['openvas', 'zap'] },
         ]}
         values={values} onChange={setValues}
