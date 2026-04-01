@@ -8,20 +8,19 @@ import (
 )
 
 func SecurityHeaders() echo.MiddlewareFunc {
-	// Build CSP once at startup
-	scriptSrc := "'self'"
-	connectSrc := "'self' ws: wss:"
+	// Build CSP once at startup; if OT_BUGREPORT_URL is set, allow its origin
+	extra := ""
 	if raw := os.Getenv("OT_BUGREPORT_URL"); raw != "" {
 		if u, err := url.Parse(raw); err == nil {
-			origin := u.Scheme + "://" + u.Host
-			scriptSrc += " " + origin
-			connectSrc += " " + origin
+			extra = " " + u.Scheme + "://" + u.Host
 		}
 	}
-	csp := "default-src 'self'; script-src " + scriptSrc +
-		"; style-src 'self' 'unsafe-inline'" +
-		"; connect-src " + connectSrc +
-		"; img-src 'self' data:; font-src 'self' " + scriptSrc +
+	csp := "default-src 'self'" +
+		"; script-src 'self'" + extra +
+		"; style-src 'self' 'unsafe-inline'" + extra +
+		"; connect-src 'self' ws: wss:" + extra +
+		"; img-src 'self' data:" +
+		"; font-src 'self'" + extra +
 		"; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
