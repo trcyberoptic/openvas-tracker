@@ -27,7 +27,7 @@ func TestParseOpenVASXML(t *testing.T) {
   </results>
 </report>`
 
-	results, err := ParseOpenVASXML(strings.NewReader(xml))
+	results, _, err := ParseOpenVASXML(strings.NewReader(xml))
 	if err != nil {
 		t.Fatalf("ParseOpenVASXML error: %v", err)
 	}

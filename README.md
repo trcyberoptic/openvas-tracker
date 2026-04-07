@@ -10,7 +10,7 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 
 ## Features
 
-- **OpenVAS Import**: Webhook endpoint receives scan results automatically when scans complete
+- **OpenVAS Import**: Webhook endpoint receives scan results automatically when scans complete, with original scan timestamps preserved from GMP reports
 - **OWASP ZAP Import**: Webhook endpoint for ZAP Traditional JSON Reports — URL-granular ticketing for web application findings
 - **Multi-Scanner Architecture**: Pluggable parser interface supports multiple scanner types with scan-type-scoped auto-resolve
 - **Automatic Ticketing**: New findings create tickets, missing findings auto-resolve, recurring findings reopen

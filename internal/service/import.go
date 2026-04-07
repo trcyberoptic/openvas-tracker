@@ -78,13 +78,24 @@ func (s *ImportService) BackfillHostnames(ctx context.Context) (int, error) {
 }
 
 // Import processes parsed scanner findings: creates scan, vulns, tickets in a single transaction.
-func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, scanType string) (*ImportResult, error) {
+// If meta is non-nil, the scan timestamps are taken from the report instead of using time.Now().
+func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, scanType string, meta *scanner.ScanMeta) (*ImportResult, error) {
 	if err := s.resolveSystemUser(ctx); err != nil {
 		return nil, fmt.Errorf("resolve system user: %w", err)
 	}
 
 	now := time.Now()
 	scanID := uuid.New().String()
+
+	// Use report timestamps when available, fall back to current time
+	startedAt := now
+	completedAt := now
+	if meta != nil && meta.StartedAt != nil {
+		startedAt = *meta.StartedAt
+	}
+	if meta != nil && meta.CompletedAt != nil {
+		completedAt = *meta.CompletedAt
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -95,7 +106,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 
 	scan, err := tq.CreateScan(ctx, queries.CreateScanParams{
 		ID:       scanID,
-		Name:     fmt.Sprintf("%s Import %s", strings.ToUpper(scanType), now.Format("2006-01-02 15:04:05")),
+		Name:     fmt.Sprintf("%s Import %s", strings.ToUpper(scanType), startedAt.Format("2006-01-02 15:04:05")),
 		ScanType: queries.ScanType(scanType),
 		Status:   queries.ScanStatusCompleted,
 		UserID:   s.systemUserID,
@@ -105,7 +116,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 	}
 
 	if _, err := tq.UpdateScanStatus(ctx, queries.UpdateScanStatusParams{
-		ID: scan.ID, Status: queries.ScanStatusCompleted, StartedAt: &now, CompletedAt: &now,
+		ID: scan.ID, Status: queries.ScanStatusCompleted, StartedAt: &startedAt, CompletedAt: &completedAt,
 	}); err != nil {
 		log.Printf("import: failed to update scan status: %v", err)
 	}

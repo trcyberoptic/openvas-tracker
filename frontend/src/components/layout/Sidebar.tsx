@@ -49,6 +49,7 @@ export function Sidebar() {
           GitHub
         </a>
         <span className="text-slate-600">v{__APP_VERSION__}</span>
+        <span id="bugreport-slot" className="flex items-center" />
       </div>
     </aside>
   )

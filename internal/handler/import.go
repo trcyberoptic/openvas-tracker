@@ -22,7 +22,7 @@ func NewImportHandler(importSvc *service.ImportService) *ImportHandler {
 }
 
 func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
-	results, err := scanner.ParseOpenVASXML(c.Request().Body)
+	results, meta, err := scanner.ParseOpenVASXML(c.Request().Body)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse OpenVAS XML")
 	}
@@ -30,7 +30,7 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "empty report — no results found")
 	}
 
-	res, err := h.importSvc.Import(c.Request().Context(), results, "openvas")
+	res, err := h.importSvc.Import(c.Request().Context(), results, "openvas", meta)
 	if err != nil {
 		log.Printf("import error: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "import failed")
@@ -69,7 +69,7 @@ func (h *ImportHandler) HandleZAP(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "empty report — no results found")
 	}
 
-	res, err := h.importSvc.Import(c.Request().Context(), results, "zap")
+	res, err := h.importSvc.Import(c.Request().Context(), results, "zap", nil)
 	if err != nil {
 		log.Printf("import error: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "import failed")

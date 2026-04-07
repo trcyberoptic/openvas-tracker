@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Standard report format: <report><results><result>
@@ -18,7 +19,9 @@ type ovasReport struct {
 }
 
 type ovasInnerReport struct {
-	Results ovasResults `xml:"results"`
+	Results   ovasResults `xml:"results"`
+	ScanStart string      `xml:"scan_start"`
+	ScanEnd   string      `xml:"scan_end"`
 }
 
 // GMP envelope: <get_reports_response><report><report><results><result>
@@ -32,7 +35,9 @@ type gmpOuterReport struct {
 }
 
 type gmpInnerReport struct {
-	Results ovasResults `xml:"results"`
+	Results   ovasResults `xml:"results"`
+	ScanStart string      `xml:"scan_start"`
+	ScanEnd   string      `xml:"scan_end"`
 }
 
 type ovasResults struct {
@@ -82,19 +87,22 @@ type ovasSeverity struct {
 	Score float64 `xml:"score"`
 }
 
-func ParseOpenVASXML(r io.Reader) ([]Finding, error) {
+func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read XML: %w", err)
+		return nil, nil, fmt.Errorf("failed to read XML: %w", err)
 	}
 
 	var rawResults []ovasResult
+	var scanStart, scanEnd string
 
 	// Try GMP envelope format first: <get_reports_response>
 	if strings.Contains(string(data[:min(500, len(data))]), "get_reports_response") {
 		var env gmpEnvelope
 		if err := xml.Unmarshal(data, &env); err == nil && len(env.Report.Inner.Results.Results) > 0 {
 			rawResults = env.Report.Inner.Results.Results
+			scanStart = env.Report.Inner.ScanStart
+			scanEnd = env.Report.Inner.ScanEnd
 		}
 	}
 
@@ -102,14 +110,20 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, error) {
 	if len(rawResults) == 0 {
 		var report ovasReport
 		if err := xml.Unmarshal(data, &report); err != nil {
-			return nil, fmt.Errorf("failed to parse OpenVAS XML: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse OpenVAS XML: %w", err)
 		}
 		rawResults = report.Results.Results
 		// Check nested <report><report><results>
 		if len(rawResults) == 0 && report.Inner != nil {
 			rawResults = report.Inner.Results.Results
+			if scanStart == "" {
+				scanStart = report.Inner.ScanStart
+				scanEnd = report.Inner.ScanEnd
+			}
 		}
 	}
+
+	meta := parseScanMeta(scanStart, scanEnd)
 
 	var results []Finding
 	for _, res := range rawResults {
@@ -167,7 +181,27 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, error) {
 			OID:         res.NVT.OID,
 		})
 	}
-	return results, nil
+	return results, meta, nil
+}
+
+func parseScanMeta(start, end string) *ScanMeta {
+	if start == "" && end == "" {
+		return nil
+	}
+	meta := &ScanMeta{}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02T15:04:05-07:00"} {
+		if t, err := time.Parse(layout, strings.TrimSpace(start)); err == nil {
+			meta.StartedAt = &t
+			break
+		}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02T15:04:05-07:00"} {
+		if t, err := time.Parse(layout, strings.TrimSpace(end)); err == nil {
+			meta.CompletedAt = &t
+			break
+		}
+	}
+	return meta
 }
 
 func severityFromCVSS(cvss float64) string {

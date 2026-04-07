@@ -24,12 +24,15 @@ export function Shell() {
       return
     }
 
+    const container = document.getElementById('bugreport-slot')
+    if (!container) return
+
     const script = document.createElement('script')
     script.src = `${url}/widget/bugreport.js`
     script.setAttribute('data-app', 'openvas-tracker')
     script.setAttribute('data-api', url)
     script.setAttribute('data-user', user?.email || '')
-    document.body.appendChild(script)
+    container.appendChild(script)
 
     return () => { script.remove() }
   }, [setup?.bugreport_url, user?.email])

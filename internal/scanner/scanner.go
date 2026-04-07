@@ -1,6 +1,15 @@
 package scanner
 
-import "io"
+import (
+	"io"
+	"time"
+)
+
+// ScanMeta holds optional metadata extracted from the scanner report.
+type ScanMeta struct {
+	StartedAt   *time.Time
+	CompletedAt *time.Time
+}
 
 // Finding is a scanner-agnostic vulnerability finding.
 type Finding struct {

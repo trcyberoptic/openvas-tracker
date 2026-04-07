@@ -59,8 +59,8 @@ handler (Echo HTTP) → service (business logic) → queries (database/sql) → 
   - `envfile.go` — Read/write `.env` for Settings UI.
 - **`internal/database/queries/`** — Hand-written SQL. `db.go` defines `DBTX` interface (accepts `*sql.DB` and `*sql.Tx`).
 - **`internal/scanner/`** — Multi-scanner parser package.
-  - `scanner.go` — `Finding` struct (scanner-agnostic) + `Parser` interface + `Fingerprint()` method.
-  - `openvas.go` — `ParseOpenVASXML`: CVE from `<refs><ref type="cve">` and `<nvt><cve>`, hostname from `<host><hostname>`. Returns `[]Finding`.
+  - `scanner.go` — `Finding` struct (scanner-agnostic) + `ScanMeta` (optional scan timestamps) + `Parser` interface + `Fingerprint()` method.
+  - `openvas.go` — `ParseOpenVASXML`: CVE from `<refs><ref type="cve">` and `<nvt><cve>`, hostname from `<host><hostname>`. Returns `([]Finding, *ScanMeta, error)`. Extracts `scan_start`/`scan_end` from GMP XML for accurate scan timestamps.
   - `zap.go` — `ParseZAPJSON`: ZAP Traditional JSON Report. Each alert instance → one Finding. Uses `@host`/`@port`/`@ssl` keys. Strips HTML from desc/solution. Maps riskcode 3→high, 2→medium, 1→low, 0→info (skipped). Default CVSS: 7.0/4.0/2.0/0.0.
 - **`internal/report/`** — HTML, PDF (maroto v2), Excel (excelize), Markdown generators.
 - **`internal/middleware/`** — JWT auth, API key auth (timing-safe), rate limiting, security headers.
@@ -102,8 +102,8 @@ All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto
 - No roles — all users have equal access. Role column exists but is never checked.
 
 ### Import
-- OpenVAS/ZAP webhook → `ImportService.Import(ctx, []Finding, scanType)` → single transaction: scan + vulns + tickets.
-- `Finding` struct is scanner-agnostic. Parsers (`ParseOpenVASXML`, `ParseZAPJSON`) return `[]Finding`.
+- OpenVAS/ZAP webhook → `ImportService.Import(ctx, []Finding, scanType, *ScanMeta)` → single transaction: scan + vulns + tickets.
+- `Finding` struct is scanner-agnostic. `ParseOpenVASXML` returns `([]Finding, *ScanMeta, error)` — `ScanMeta` carries `scan_start`/`scan_end` from the GMP XML report so the scan record gets the original scan timestamps instead of the import time. `ParseZAPJSON` returns `([]Finding, error)` — ZAP reports don't include scan timestamps, so `nil` meta is passed and `time.Now()` is used.
 - **Fingerprinting** (dedup key per finding):
   - Network findings (OpenVAS): CVE or `"title:" + title`. Key: `(host, fingerprint)`.
   - Web findings (ZAP): `"cwe:" + cweid + ":url:" + urlPath + ":param:" + param` — only when parameter is present. Falls back to `"title:" + title + ":url:" + urlPath + ":param:" + param` if no CWE. CVE always takes priority if present.
