@@ -23,7 +23,7 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 - **Bulk Actions**: Select multiple tickets for batch status change or assignment
 - **Dashboard**: Open ticket counts by priority, scan source distribution pie chart (OpenVAS vs ZAP), 30-day trend chart, "My Tickets" and "Unassigned" quick filters
 - **CVE & CWE References**: NVD, MITRE, and Google links on tickets with CVE; CWE links for ZAP findings; title-based search for tickets without
-- **Also Affected**: See which other hosts have the same vulnerability
+- **Also Affected**: See which other hosts have the same vulnerability — click any affected host to filter tickets by that host
 - **DNS Hostname Resolution**: Automatic PTR lookup, normalized (UPPERCASE.domain.lowercase), shown everywhere
 - **LDAP / Active Directory**: Optional AD authentication with group-based access control
 - **Admin + LDAP Auth**: Built-in admin user plus optional LDAP for team access, login by username

@@ -205,7 +205,7 @@ export function TicketDetail() {
       {ticket.affected_host && (
         <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 mb-6">
           <h3 className="text-sm font-medium text-slate-400 mb-2">Affected Host</h3>
-          <Link to="/hosts" className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
+          <Link to={`/tickets?host=${encodeURIComponent(ticket.affected_host)}&status=`} className="text-blue-400 hover:underline text-sm font-mono">{ticket.affected_host}</Link>
           {ticket.hostname && <span className="text-slate-500 text-sm ml-2">({ticket.hostname})</span>}
           {alsoAffected.length > 0 && (
             <div className="mt-3 border-t border-slate-800 pt-3">
