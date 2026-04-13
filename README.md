@@ -24,7 +24,7 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 - **Dashboard**: Open ticket counts by priority, scan source distribution pie chart (OpenVAS vs ZAP), 30-day trend chart, "My Tickets" and "Unassigned" quick filters
 - **CVE & CWE References**: NVD, MITRE, and Google links on tickets with CVE; CWE links for ZAP findings; title-based search for tickets without
 - **Also Affected**: See which other hosts have the same vulnerability — click any affected host to filter tickets by that host
-- **DNS Hostname Resolution**: Automatic PTR lookup, normalized (UPPERCASE.domain.lowercase), shown everywhere
+- **DNS Hostname Resolution**: Automatic PTR lookup with 48h cache and 3s per-lookup timeout, normalized (UPPERCASE.domain.lowercase), runs async after import so a misbehaving DNS can never stall an import
 - **LDAP / Active Directory**: Optional AD authentication with group-based access control
 - **Admin + LDAP Auth**: Built-in admin user plus optional LDAP for team access, login by username
 - **Settings UI**: Edit all configuration (.env file) from the browser, test LDAP connection
@@ -115,6 +115,8 @@ All config via `.env` file. Editable from the Settings page in the UI.
 | `OT_JWT_SECRET` | (none — **required**) | JWT signing key (min 32 chars) |
 | `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars) |
 | `OT_ADMIN_PASSWORD` | (empty) | Admin user password |
+| `OT_GMP_USER` | `admin` | Greenbone user used by the fetch script when `GET /api/import/openvas` is triggered |
+| `OT_GMP_PASSWORD` | (empty) | Greenbone password for the fetch script |
 | `OT_AUTORESOLVE_THRESHOLD` | `3` | Consecutive scans without finding before auto-resolve |
 | `OT_LDAP_URL` | (empty) | LDAP server URL |
 | `OT_LDAP_BASE_DN` | (empty) | LDAP search base DN |
@@ -133,9 +135,11 @@ No self-registration. LDAP users auto-created in DB on first login and also when
 
 ## OpenVAS Setup
 
-1. Set `OT_IMPORT_APIKEY` in `.env`
+1. Set `OT_IMPORT_APIKEY`, `OT_GMP_USER`, and `OT_GMP_PASSWORD` in `.env`
 2. In GSA: **Configuration → Alerts → New Alert** → HTTP Get → `http://<host>:8080/api/import/openvas?api_key=<key>`
 3. Attach alert to scan task
+
+When the alert fires, the tracker runs `sudo /usr/local/bin/openvas-tracker-fetch-latest`, which speaks GMP directly to the local Greenbone Unix socket, downloads the newest report and POSTs it back to itself. The script and its sudoers rule are installed by `deploy/install.sh`. The script needs read access to the gvmd socket — by default it expects the Greenbone CE Docker volume path; override with `OT_GMP_SOCKET` if your install puts it elsewhere.
 
 ## ZAP Setup
 
