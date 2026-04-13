@@ -140,7 +140,7 @@ Docker Compose or Debian Trixie systemd service. Use the `/deploy` skill for aut
 
 **Production:** Debian server accessible via SSH. Service runs as `openvas-tracker` user, config in `/etc/openvas-tracker/env`.
 
-**GVM:** Greenbone CE Docker stack on production server. GMP socket at `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`. Import triggered by GVM "HTTP Get" alert → fetch script → GMP socket → POST to self.
+**GVM:** Greenbone CE Docker stack on production server. GMP socket at `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`. Import triggered by GVM "HTTP Get" alert → `GET /api/import/openvas` → handler runs `sudo /usr/local/bin/openvas-tracker-fetch-latest` → script speaks GMP protocol directly to the socket (python3 stdlib only, no `gvm-tools` dependency), picks the task with the newest `last_report`, downloads the full XML report, POSTs it back to `/api/import/openvas`. Script source in `deploy/openvas-tracker-fetch-latest`, reads `OT_GMP_USER`/`OT_GMP_PASSWORD`/`OT_IMPORT_APIKEY` from `/etc/openvas-tracker/env`. Sudo is needed because `/var/lib/docker` is only traversable by root — sudoers rule in `deploy/openvas-tracker-sudoers`.
 
 ## Gotchas
 

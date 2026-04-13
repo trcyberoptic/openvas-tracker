@@ -158,7 +158,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 			CveID:          cvePtr(r.CVEID),
 			CweID:          strPtr(r.CWEID),
 			AffectedHost:   strPtr(r.Host),
-			Hostname:       strPtr(resolveHostname(r.Host, r.Hostname)),
+			Hostname:       strPtr(normalizeHostname(r.Hostname)),
 			URL:            strPtr(r.URL),
 			Parameter:      strPtr(r.Parameter),
 			AffectedPort:   port,
@@ -420,21 +420,67 @@ func logActivity(ctx context.Context, q *queries.Queries, ticketID, action strin
 	})
 }
 
-// resolveHostname returns the hostname from XML, or falls back to PTR lookup.
-// Normalizes: hostname part uppercase, domain part lowercase.
+// PTR cache shared across the import service. Positive results are kept for
+// 48h to avoid hammering DNS with the same lookups every scan; negative
+// results are kept for 1h so a temporarily broken zone doesn't pin lookups
+// for two days. Lookups themselves are bounded by ptrLookupTimeout because
+// a misconfigured resolver can otherwise stall a goroutine for ~18 seconds
+// per IP (Go's pure resolver default).
+const (
+	ptrCachePositiveTTL = 48 * time.Hour
+	ptrCacheNegativeTTL = 1 * time.Hour
+	ptrLookupTimeout    = 3 * time.Second
+)
+
+type ptrCacheEntry struct {
+	hostname string
+	expires  time.Time
+}
+
+var (
+	ptrCacheMu sync.RWMutex
+	ptrCache   = map[string]ptrCacheEntry{}
+)
+
+// resolveHostname returns the hostname from XML, or falls back to a cached
+// PTR lookup. Normalizes: hostname part uppercase, domain part lowercase.
+//
+// IMPORTANT: only call this from async paths (e.g. BackfillHostnames). The
+// import transaction itself must NOT do PTR lookups inline — broken DNS
+// would stall the whole import. Use normalizeHostname(r.Hostname) there.
 func resolveHostname(ip, xmlHostname string) string {
-	raw := xmlHostname
-	if raw == "" {
-		if ip == "" {
-			return ""
-		}
-		names, err := net.LookupAddr(ip)
-		if err != nil || len(names) == 0 {
-			return ""
-		}
-		raw = strings.TrimSuffix(names[0], ".")
+	if xmlHostname != "" {
+		return normalizeHostname(xmlHostname)
 	}
-	return normalizeHostname(raw)
+	if ip == "" {
+		return ""
+	}
+
+	ptrCacheMu.RLock()
+	entry, ok := ptrCache[ip]
+	ptrCacheMu.RUnlock()
+	if ok && time.Now().Before(entry.expires) {
+		return entry.hostname
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ptrLookupTimeout)
+	defer cancel()
+	names, err := net.DefaultResolver.LookupAddr(ctx, ip)
+
+	hostname := ""
+	if err == nil && len(names) > 0 {
+		hostname = normalizeHostname(strings.TrimSuffix(names[0], "."))
+	}
+
+	ttl := ptrCacheNegativeTTL
+	if hostname != "" {
+		ttl = ptrCachePositiveTTL
+	}
+	ptrCacheMu.Lock()
+	ptrCache[ip] = ptrCacheEntry{hostname: hostname, expires: time.Now().Add(ttl)}
+	ptrCacheMu.Unlock()
+
+	return hostname
 }
 
 // normalizeHostname: hostname part UPPERCASE, domain part lowercase.

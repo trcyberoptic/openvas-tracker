@@ -1,0 +1,5 @@
+# /etc/sudoers.d/openvas-tracker
+# Allows the openvas-tracker service user to run the GMP fetch script as root.
+# Required because /var/lib/docker is only traversable by root, and the
+# Greenbone gvmd.sock lives under there.
+openvas-tracker ALL=(root) NOPASSWD: /usr/local/bin/openvas-tracker-fetch-latest

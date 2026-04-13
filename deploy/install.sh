@@ -19,6 +19,13 @@ if [ ! -f /etc/openvas-tracker/env ]; then
     echo "==> Created /etc/openvas-tracker/env — EDIT THIS FILE with your secrets"
 fi
 
+echo "==> Installing GMP fetch script"
+install -o root -g root -m 0755 deploy/openvas-tracker-fetch-latest /usr/local/bin/openvas-tracker-fetch-latest
+
+echo "==> Installing sudoers rule for fetch script"
+install -o root -g root -m 0440 deploy/openvas-tracker-sudoers /etc/sudoers.d/openvas-tracker
+visudo -cf /etc/sudoers.d/openvas-tracker >/dev/null
+
 echo "==> Installing systemd unit"
 install -o root -g root -m 0644 deploy/openvas-tracker.service /etc/systemd/system/openvas-tracker.service
 systemctl daemon-reload
