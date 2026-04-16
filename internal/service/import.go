@@ -210,28 +210,16 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 		return false, false
 
 	case queries.TicketStatusRiskAccepted:
-		// Check if an active auto-accept rule still matches — if so, keep accepted
-		fp := r.Fingerprint()
-		if _, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
-			if err := q.TouchTicket(ctx, queries.TouchTicketParams{
-				ID: existing.ID, VulnerabilityID: vulnID,
-			}); err != nil {
-				log.Printf("import: failed to touch ticket %s: %v", existing.ID, err)
-			}
-			note := fmt.Sprintf("Finding still present in scan, kept risk-accepted by rule. CVE: %s, Host: %s", r.CVEID, r.Host)
-			logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
-			return false, false
-		}
-		// No active rule — reopen
-		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
+		// Risk-accepted tickets are never reopened by scans — whether set manually
+		// or by auto-accept rule. Expiry-based reopening is handled separately.
+		if err := q.TouchTicket(ctx, queries.TouchTicketParams{
 			ID: existing.ID, VulnerabilityID: vulnID,
 		}); err != nil {
-			return false, false
+			log.Printf("import: failed to touch ticket %s: %v", existing.ID, err)
 		}
-		newStatus := "open"
-		note := fmt.Sprintf("Finding reappeared in scan — reopened (no active rule). CVE: %s, Host: %s", r.CVEID, r.Host)
-		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
-		return false, true
+		note := fmt.Sprintf("Finding still present in scan, kept risk-accepted. CVE: %s, Host: %s", r.CVEID, r.Host)
+		logActivity(ctx, q, existing.ID, "still_present", nil, nil, "Automatic", &note)
+		return false, false
 
 	case queries.TicketStatusFixed:
 		if err := q.ReopenTicket(ctx, queries.ReopenTicketParams{
