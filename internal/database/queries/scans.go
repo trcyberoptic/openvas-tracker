@@ -184,6 +184,8 @@ func (q *Queries) DiffScans(ctx context.Context, oldScanID, newScanID string) ([
 }
 
 func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID string) ([]ScanDiffEntry, error) {
+	// Diff status mapping: 'false_positive' intentionally collapses into 'risk_accepted'
+	// — both represent tickets closed without remediation (per user-approved design).
 	const query = `
 		SELECT 'new' as status, n.id, n.title, n.affected_host, n.hostname, n.severity, n.cvss_score, n.cve_id
 		FROM vulnerabilities n
