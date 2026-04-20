@@ -199,24 +199,26 @@ func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID stri
 		UNION ALL
 		SELECT
 			COALESCE(
-				CASE t.status
-					WHEN 'fixed'              THEN 'fixed'
-					WHEN 'risk_accepted'      THEN 'risk_accepted'
-					WHEN 'false_positive'     THEN 'risk_accepted'
-					WHEN 'open'               THEN 'pending_fix'
-					WHEN 'pending_resolution' THEN 'pending_fix'
-				END,
+				(SELECT CASE t.status
+						WHEN 'fixed'              THEN 'fixed'
+						WHEN 'risk_accepted'      THEN 'risk_accepted'
+						WHEN 'false_positive'     THEN 'risk_accepted'
+						WHEN 'open'               THEN 'pending_fix'
+						WHEN 'pending_resolution' THEN 'pending_fix'
+					END
+				 FROM tickets t
+				 JOIN vulnerabilities tv ON tv.id = t.vulnerability_id
+				 WHERE tv.affected_host = o.affected_host
+				 AND (
+					 (tv.cve_id IS NOT NULL AND tv.cve_id != '' AND tv.cve_id = o.cve_id)
+					 OR ((tv.cve_id IS NULL OR tv.cve_id = '') AND (o.cve_id IS NULL OR o.cve_id = '') AND tv.title = o.title)
+				 )
+				 ORDER BY t.created_at DESC LIMIT 1
+				),
 				'fixed'
 			) as status,
 			o.id, o.title, o.affected_host, o.hostname, o.severity, o.cvss_score, o.cve_id
 		FROM vulnerabilities o
-		LEFT JOIN vulnerabilities tv
-			ON tv.affected_host = o.affected_host
-			AND (
-				(tv.cve_id IS NOT NULL AND tv.cve_id != '' AND tv.cve_id = o.cve_id)
-				OR ((tv.cve_id IS NULL OR tv.cve_id = '') AND (o.cve_id IS NULL OR o.cve_id = '') AND tv.title = o.title)
-			)
-		LEFT JOIN tickets t ON t.vulnerability_id = tv.id
 		WHERE o.scan_id = ?
 		AND NOT EXISTS (
 			SELECT 1 FROM vulnerabilities n WHERE n.scan_id = ?
