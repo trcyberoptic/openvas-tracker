@@ -4,8 +4,17 @@ import { api } from '@/api/client'
 
 const BADGE: Record<string, string> = {
   new: 'bg-red-900 text-red-300',
+  pending_fix: 'bg-amber-900 text-amber-300',
   fixed: 'bg-green-900 text-green-300',
+  risk_accepted: 'bg-sky-900 text-sky-300',
   unchanged: 'bg-slate-700 text-slate-300',
+}
+const LABEL: Record<string, string> = {
+  new: 'new',
+  pending_fix: 'pending fix',
+  fixed: 'fixed',
+  risk_accepted: 'risk accepted',
+  unchanged: 'unchanged',
 }
 const SEV_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
@@ -78,10 +87,12 @@ export function ScanDiff() {
   }, [diff, filter])
 
   const counts = useMemo(() => {
-    if (!diff) return { new: 0, fixed: 0, unchanged: 0 }
+    if (!diff) return { new: 0, pending_fix: 0, fixed: 0, risk_accepted: 0, unchanged: 0 }
     return {
       new: diff.filter(d => d.status === 'new').length,
+      pending_fix: diff.filter(d => d.status === 'pending_fix').length,
       fixed: diff.filter(d => d.status === 'fixed').length,
+      risk_accepted: diff.filter(d => d.status === 'risk_accepted').length,
       unchanged: diff.filter(d => d.status === 'unchanged').length,
     }
   }, [diff])
@@ -133,8 +144,14 @@ export function ScanDiff() {
             <button onClick={() => setFilter('new')} className={`px-3 py-1.5 rounded text-sm ${filter === 'new' ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
               New ({counts.new})
             </button>
+            <button onClick={() => setFilter('pending_fix')} className={`px-3 py-1.5 rounded text-sm ${filter === 'pending_fix' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+              Pending Fix ({counts.pending_fix})
+            </button>
             <button onClick={() => setFilter('fixed')} className={`px-3 py-1.5 rounded text-sm ${filter === 'fixed' ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
               Fixed ({counts.fixed})
+            </button>
+            <button onClick={() => setFilter('risk_accepted')} className={`px-3 py-1.5 rounded text-sm ${filter === 'risk_accepted' ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+              Risk Accepted ({counts.risk_accepted})
             </button>
             <button onClick={() => setFilter('unchanged')} className={`px-3 py-1.5 rounded text-sm ${filter === 'unchanged' ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
               Unchanged ({counts.unchanged})
@@ -154,7 +171,7 @@ export function ScanDiff() {
               <tbody>
                 {filtered.map(d => (
                   <tr key={d.vuln_id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                    <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${BADGE[d.status]}`}>{d.status}</span></td>
+                    <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${BADGE[d.status] ?? BADGE.unchanged}`}>{LABEL[d.status] ?? d.status}</span></td>
                     <td className="p-3">{d.title}</td>
                     <td className="p-3 text-slate-400">
                       <span className="font-mono">{d.affected_host}</span>
