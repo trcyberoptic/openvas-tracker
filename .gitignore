@@ -38,3 +38,6 @@ coverage.out
 
 # Worktrees
 .worktrees/
+
+# Superpowers specs + plans (local-only, not for repo history)
+docs/superpowers/
