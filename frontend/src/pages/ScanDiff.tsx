@@ -161,7 +161,7 @@ export function ScanDiff() {
           <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-slate-800">
-                <th className="text-left p-3 text-slate-400 w-24">Status</th>
+                <th className="text-left p-3 text-slate-400 w-36">Status</th>
                 <th className="text-left p-3 text-slate-400">Title</th>
                 <th className="text-left p-3 text-slate-400">Host</th>
                 <th className="text-left p-3 text-slate-400 w-20">Severity</th>
@@ -171,7 +171,7 @@ export function ScanDiff() {
               <tbody>
                 {filtered.map(d => (
                   <tr key={d.vuln_id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                    <td className="p-3"><span className={`px-2 py-1 rounded text-xs ${BADGE[d.status] ?? BADGE.unchanged}`}>{LABEL[d.status] ?? d.status}</span></td>
+                    <td className="p-3"><span className={`px-2 py-1 rounded text-xs whitespace-nowrap ${BADGE[d.status] ?? BADGE.unchanged}`}>{LABEL[d.status] ?? d.status}</span></td>
                     <td className="p-3">{d.title}</td>
                     <td className="p-3 text-slate-400">
                       <span className="font-mono">{d.affected_host}</span>
