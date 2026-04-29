@@ -368,12 +368,15 @@ func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
-	g.PATCH("/:id/status", h.UpdateStatus)
-	g.PATCH("/:id/assign", h.Assign)
 	g.POST("/:id/comments", h.AddComment)
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
 	g.GET("/:id/also-affected", h.AlsoAffected)
-	g.POST("/:id/risk-rule", h.CreateRiskRule)
-	g.POST("/bulk", h.BulkUpdate)
+
+	// Routes that require analyst or admin role
+	roleMw := middleware.RequireRole(string(queries.UserRoleAdmin), string(queries.UserRoleAnalyst))
+	g.PATCH("/:id/status", h.UpdateStatus, roleMw)
+	g.PATCH("/:id/assign", h.Assign, roleMw)
+	g.POST("/:id/risk-rule", h.CreateRiskRule, roleMw)
+	g.POST("/bulk", h.BulkUpdate, roleMw)
 }

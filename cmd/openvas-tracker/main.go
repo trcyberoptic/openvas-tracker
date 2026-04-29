@@ -141,9 +141,9 @@ func main() {
 	handler.NewTeamHandler(teamSvc).RegisterRoutes(p.Group("/teams"))
 	handler.NewNotificationHandler(notifSvc).RegisterRoutes(p.Group("/notifications"))
 	handler.NewAssetHandler(assetSvc).RegisterRoutes(p.Group("/assets"))
-	handler.NewAuditHandler(auditSvc).RegisterRoutes(p.Group("/audit"))
+	handler.NewAuditHandler(auditSvc).RegisterRoutes(p.Group("/audit", mw.RequireRole("admin")))
 	handler.NewSearchHandler(searchSvc).RegisterRoutes(p.Group("/search"))
-	handler.NewSettingsHandler(cfg, q, envSvc, ldapSvc).RegisterRoutes(p.Group("/settings"))
+	handler.NewSettingsHandler(cfg, q, envSvc, ldapSvc).RegisterRoutes(p.Group("/settings", mw.RequireRole("admin")))
 
 	// WebSocket
 	wsH := handler.NewWSHandler(hub, cfg.JWT.Secret)

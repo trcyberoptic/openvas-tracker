@@ -1,6 +1,6 @@
 module github.com/cyberoptic/openvas-tracker
 
-go 1.26.1
+go 1.24
 
 require (
 	github.com/go-ldap/ldap/v3 v3.4.13
