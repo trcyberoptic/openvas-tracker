@@ -365,15 +365,16 @@ func (h *TicketHandler) CreateRiskRule(c echo.Context) error {
 }
 
 func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
-	g.POST("", h.Create)
+	editor := middleware.RequireRole("admin", "analyst")
+	g.POST("", h.Create, editor)
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
-	g.PATCH("/:id/status", h.UpdateStatus)
-	g.PATCH("/:id/assign", h.Assign)
-	g.POST("/:id/comments", h.AddComment)
+	g.PATCH("/:id/status", h.UpdateStatus, editor)
+	g.PATCH("/:id/assign", h.Assign, editor)
+	g.POST("/:id/comments", h.AddComment, editor)
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
 	g.GET("/:id/also-affected", h.AlsoAffected)
-	g.POST("/:id/risk-rule", h.CreateRiskRule)
-	g.POST("/bulk", h.BulkUpdate)
+	g.POST("/:id/risk-rule", h.CreateRiskRule, editor)
+	g.POST("/bulk", h.BulkUpdate, editor)
 }
