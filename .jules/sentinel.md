@@ -1,0 +1,4 @@
+## 2025-06-25 - Missing Role Check on Settings Endpoint
+**Vulnerability:** The `/settings` endpoint group, which handles highly sensitive operations like reading/updating the environment configuration (including LDAP keys and DB credentials) and managing risk rules, lacked any Role-Based Access Control (RBAC). Any authenticated user (even "viewers") could access it.
+**Learning:** Even though the underlying route handler correctly requires authentication via the global JWT middleware applied to the `/api` group, the nested route groups (like `/settings`) did not uniformly enforce authorization (roles).
+**Prevention:** Always verify that every top-level protected route group nested under `/api` includes a `mw.RequireRole()` middleware check if it performs administrative or mutating actions. Do not assume authentication implies authorization.
