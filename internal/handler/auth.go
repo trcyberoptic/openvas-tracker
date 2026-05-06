@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"time"
 
@@ -51,7 +52,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	}
 
 	// Try admin login first
-	if req.Username == "admin" && h.cfg.Admin.Password != "" && req.Password == h.cfg.Admin.Password {
+	if req.Username == "admin" && h.cfg.Admin.Password != "" && subtle.ConstantTimeCompare([]byte(req.Password), []byte(h.cfg.Admin.Password)) == 1 {
 		return h.loginAsAdmin(c)
 	}
 
