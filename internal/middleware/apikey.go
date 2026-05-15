@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
 
@@ -20,7 +21,9 @@ func APIKeyAuth(key string) echo.MiddlewareFunc {
 			if provided == "" {
 				return echo.NewHTTPError(http.StatusUnauthorized, "missing API key")
 			}
-			if subtle.ConstantTimeCompare([]byte(provided), []byte(key)) != 1 {
+			providedHash := sha256.Sum256([]byte(provided))
+			keyHash := sha256.Sum256([]byte(key))
+			if subtle.ConstantTimeCompare(providedHash[:], keyHash[:]) != 1 {
 				return echo.NewHTTPError(http.StatusUnauthorized, "invalid API key")
 			}
 			return next(c)

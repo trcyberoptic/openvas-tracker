@@ -1,4 +1,4 @@
-## 2025-05-06 - Prevent Timing Attacks in Password Comparison
-**Vulnerability:** The application used a simple string comparison (`==`) for checking the admin password. This could allow an attacker to perform a timing attack to guess the password byte-by-byte.
-**Learning:** Hardcoded direct string comparisons for sensitive data like passwords or tokens create timing side-channels.
-**Prevention:** Always use constant-time comparison functions like `crypto/subtle.ConstantTimeCompare` when comparing sensitive strings or byte slices to prevent timing attacks.
+## 2024-05-01 - Constant Time Compare Timing Leak
+**Vulnerability:** Length-based timing leak in `subtle.ConstantTimeCompare` when comparing direct string inputs.
+**Learning:** `ConstantTimeCompare` leaks the length of the inputs if they are not the same length, since it returns 0 early if lengths differ. When comparing user-provided data directly to a secret (like an API key or password), an attacker could deduce the length of the secret.
+**Prevention:** Always hash both inputs (e.g., with `crypto/sha256.Sum256`) before passing them to `subtle.ConstantTimeCompare` to guarantee they are of equal length.
