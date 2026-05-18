@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 
 const BADGE: Record<string, string> = {
   new: 'bg-red-900 text-red-300',
+  rediscovered: 'bg-orange-900 text-orange-300',
   pending_fix: 'bg-amber-900 text-amber-300',
   fixed: 'bg-green-900 text-green-300',
   risk_accepted: 'bg-sky-900 text-sky-300',
@@ -12,6 +13,7 @@ const BADGE: Record<string, string> = {
 }
 const LABEL: Record<string, string> = {
   new: 'new',
+  rediscovered: 'rediscovered',
   pending_fix: 'pending fix',
   fixed: 'fixed',
   risk_accepted: 'risk accepted',
@@ -89,9 +91,10 @@ export function ScanDiff() {
   }, [diff, filter])
 
   const counts = useMemo(() => {
-    if (!diff) return { new: 0, pending_fix: 0, fixed: 0, risk_accepted: 0, host_unscanned: 0, unchanged: 0 }
+    if (!diff) return { new: 0, rediscovered: 0, pending_fix: 0, fixed: 0, risk_accepted: 0, host_unscanned: 0, unchanged: 0 }
     return {
       new: diff.filter(d => d.status === 'new').length,
+      rediscovered: diff.filter(d => d.status === 'rediscovered').length,
       pending_fix: diff.filter(d => d.status === 'pending_fix').length,
       fixed: diff.filter(d => d.status === 'fixed').length,
       risk_accepted: diff.filter(d => d.status === 'risk_accepted').length,
@@ -146,6 +149,12 @@ export function ScanDiff() {
             </button>
             <button onClick={() => setFilter('new')} className={`px-3 py-1.5 rounded text-sm ${filter === 'new' ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
               New ({counts.new})
+            </button>
+            <button
+              onClick={() => setFilter('rediscovered')}
+              title="Finding came back after its ticket was previously auto-resolved as fixed"
+              className={`px-3 py-1.5 rounded text-sm ${filter === 'rediscovered' ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+              Rediscovered ({counts.rediscovered})
             </button>
             <button onClick={() => setFilter('pending_fix')} className={`px-3 py-1.5 rounded text-sm ${filter === 'pending_fix' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
               Pending Fix ({counts.pending_fix})

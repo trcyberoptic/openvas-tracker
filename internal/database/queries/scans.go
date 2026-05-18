@@ -131,7 +131,7 @@ func (q *Queries) DeleteScan(ctx context.Context, arg DeleteScanParams) error {
 }
 
 type ScanDiffEntry struct {
-	Status       string  `json:"status"` // "new", "fixed", "pending_fix", "risk_accepted", "host_unscanned", "unchanged"
+	Status       string  `json:"status"` // "new", "rediscovered", "fixed", "pending_fix", "risk_accepted", "host_unscanned", "unchanged"
 	VulnID       string  `json:"vuln_id"`
 	Title        string  `json:"title"`
 	AffectedHost *string `json:"affected_host"`
@@ -194,12 +194,38 @@ func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID stri
 	// it). Legacy fallback: if the relevant scan has zero scan_hosts rows at all
 	// (pre-migration-018), assume the host was scanned so historic diffs behave as
 	// before.
+	//
+	// 'rediscovered' / status-mapped 'new': when a finding present in the new scan
+	// has a ticket that pre-dates the new scan's import, the finding isn't really
+	// new — the import just touched/reopened an existing ticket. Reclassify by the
+	// pre-existing ticket's status: open/pending_resolution → 'unchanged' (flap
+	// noise), risk_accepted/false_positive → 'risk_accepted', fixed → 'rediscovered'
+	// (noteworthy: a previously auto-resolved finding came back).
 	const query = `
 		SELECT
 			CASE
 				WHEN EXISTS (SELECT 1 FROM scan_hosts sh WHERE sh.scan_id = ? AND sh.host = n.affected_host)
 				  OR NOT EXISTS (SELECT 1 FROM scan_hosts sh WHERE sh.scan_id = ?)
-				THEN 'new'
+				THEN COALESCE(
+					(SELECT CASE t.status
+							WHEN 'open'               THEN 'unchanged'
+							WHEN 'pending_resolution' THEN 'unchanged'
+							WHEN 'risk_accepted'      THEN 'risk_accepted'
+							WHEN 'false_positive'     THEN 'risk_accepted'
+							WHEN 'fixed'              THEN 'rediscovered'
+						END
+					 FROM tickets t
+					 JOIN vulnerabilities tv ON tv.id = t.vulnerability_id
+					 WHERE tv.affected_host = n.affected_host
+					 AND (
+						 (tv.cve_id IS NOT NULL AND tv.cve_id != '' AND tv.cve_id = n.cve_id)
+						 OR ((tv.cve_id IS NULL OR tv.cve_id = '') AND (n.cve_id IS NULL OR n.cve_id = '') AND tv.title = n.title)
+					 )
+					 AND t.created_at < (SELECT created_at FROM scans WHERE id = ?)
+					 ORDER BY t.created_at DESC LIMIT 1
+					),
+					'new'
+				)
 				ELSE 'host_unscanned'
 			END as status,
 			n.id, n.title, n.affected_host, n.hostname, n.severity, n.cvss_score, n.cve_id
@@ -262,14 +288,15 @@ func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID stri
 				OR ((o.cve_id IS NULL OR o.cve_id = '') AND (n.cve_id IS NULL OR n.cve_id = '') AND o.title = n.title)
 			)
 		)
-		ORDER BY FIELD(status, 'new', 'pending_fix', 'fixed', 'risk_accepted', 'host_unscanned', 'unchanged'), cvss_score DESC`
+		ORDER BY FIELD(status, 'new', 'rediscovered', 'pending_fix', 'fixed', 'risk_accepted', 'host_unscanned', 'unchanged'), cvss_score DESC`
 
 	rows, err := q.db.QueryContext(ctx, query,
-		oldScanID, oldScanID, // CASE host_unscanned check for 'new' block
-		newScanID, oldScanID, // new-block FROM and NOT EXISTS
-		newScanID, newScanID, // CASE host_unscanned check for 'fixed' block
-		oldScanID, newScanID, // fixed-block FROM and NOT EXISTS
-		newScanID, oldScanID, // unchanged-block FROM and EXISTS
+		oldScanID, oldScanID, // 'new' block: host_unscanned check (host-in-old, any-in-old)
+		newScanID,            // 'new' block: pre-existing ticket cutoff = new scan's created_at
+		newScanID, oldScanID, // 'new' block: FROM and NOT EXISTS
+		newScanID, newScanID, // 'fixed' block: host_unscanned check (host-in-new, any-in-new)
+		oldScanID, newScanID, // 'fixed' block: FROM and NOT EXISTS
+		newScanID, oldScanID, // 'unchanged' block: FROM and EXISTS
 	)
 	if err != nil {
 		return nil, err
