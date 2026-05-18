@@ -7,6 +7,7 @@ const BADGE: Record<string, string> = {
   pending_fix: 'bg-amber-900 text-amber-300',
   fixed: 'bg-green-900 text-green-300',
   risk_accepted: 'bg-sky-900 text-sky-300',
+  host_unscanned: 'bg-purple-900 text-purple-300',
   unchanged: 'bg-slate-700 text-slate-300',
 }
 const LABEL: Record<string, string> = {
@@ -14,6 +15,7 @@ const LABEL: Record<string, string> = {
   pending_fix: 'pending fix',
   fixed: 'fixed',
   risk_accepted: 'risk accepted',
+  host_unscanned: 'host not scanned',
   unchanged: 'unchanged',
 }
 const SEV_COLORS: Record<string, string> = {
@@ -87,12 +89,13 @@ export function ScanDiff() {
   }, [diff, filter])
 
   const counts = useMemo(() => {
-    if (!diff) return { new: 0, pending_fix: 0, fixed: 0, risk_accepted: 0, unchanged: 0 }
+    if (!diff) return { new: 0, pending_fix: 0, fixed: 0, risk_accepted: 0, host_unscanned: 0, unchanged: 0 }
     return {
       new: diff.filter(d => d.status === 'new').length,
       pending_fix: diff.filter(d => d.status === 'pending_fix').length,
       fixed: diff.filter(d => d.status === 'fixed').length,
       risk_accepted: diff.filter(d => d.status === 'risk_accepted').length,
+      host_unscanned: diff.filter(d => d.status === 'host_unscanned').length,
       unchanged: diff.filter(d => d.status === 'unchanged').length,
     }
   }, [diff])
@@ -152,6 +155,12 @@ export function ScanDiff() {
             </button>
             <button onClick={() => setFilter('risk_accepted')} className={`px-3 py-1.5 rounded text-sm ${filter === 'risk_accepted' ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
               Risk Accepted ({counts.risk_accepted})
+            </button>
+            <button
+              onClick={() => setFilter('host_unscanned')}
+              title="Finding could not be diffed because one of the scans skipped this host"
+              className={`px-3 py-1.5 rounded text-sm ${filter === 'host_unscanned' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+              Host Not Scanned ({counts.host_unscanned})
             </button>
             <button onClick={() => setFilter('unchanged')} className={`px-3 py-1.5 rounded text-sm ${filter === 'unchanged' ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
               Unchanged ({counts.unchanged})

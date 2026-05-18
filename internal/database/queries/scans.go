@@ -131,7 +131,7 @@ func (q *Queries) DeleteScan(ctx context.Context, arg DeleteScanParams) error {
 }
 
 type ScanDiffEntry struct {
-	Status       string  `json:"status"` // "new", "fixed", "pending_fix", "risk_accepted", "unchanged"
+	Status       string  `json:"status"` // "new", "fixed", "pending_fix", "risk_accepted", "host_unscanned", "unchanged"
 	VulnID       string  `json:"vuln_id"`
 	Title        string  `json:"title"`
 	AffectedHost *string `json:"affected_host"`
@@ -186,8 +186,23 @@ func (q *Queries) DiffScans(ctx context.Context, oldScanID, newScanID string) ([
 func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID string) ([]ScanDiffEntry, error) {
 	// Diff status mapping: 'false_positive' intentionally collapses into 'risk_accepted'
 	// — both represent tickets closed without remediation (per user-approved design).
+	//
+	// 'host_unscanned' fires when one side of the diff didn't actually scan the host
+	// (verified via scan_hosts, populated by ImportService.Import). Without this,
+	// findings on an intermittently-reachable host get mis-classified as 'new' (when
+	// the previous scan skipped the host) or 'fixed' (when the current scan skipped
+	// it). Legacy fallback: if the relevant scan has zero scan_hosts rows at all
+	// (pre-migration-018), assume the host was scanned so historic diffs behave as
+	// before.
 	const query = `
-		SELECT 'new' as status, n.id, n.title, n.affected_host, n.hostname, n.severity, n.cvss_score, n.cve_id
+		SELECT
+			CASE
+				WHEN EXISTS (SELECT 1 FROM scan_hosts sh WHERE sh.scan_id = ? AND sh.host = n.affected_host)
+				  OR NOT EXISTS (SELECT 1 FROM scan_hosts sh WHERE sh.scan_id = ?)
+				THEN 'new'
+				ELSE 'host_unscanned'
+			END as status,
+			n.id, n.title, n.affected_host, n.hostname, n.severity, n.cvss_score, n.cve_id
 		FROM vulnerabilities n
 		WHERE n.scan_id = ?
 		AND NOT EXISTS (
@@ -200,25 +215,30 @@ func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID stri
 		)
 		UNION ALL
 		SELECT
-			COALESCE(
-				(SELECT CASE t.status
-						WHEN 'fixed'              THEN 'fixed'
-						WHEN 'risk_accepted'      THEN 'risk_accepted'
-						WHEN 'false_positive'     THEN 'risk_accepted'
-						WHEN 'open'               THEN 'pending_fix'
-						WHEN 'pending_resolution' THEN 'pending_fix'
-					END
-				 FROM tickets t
-				 JOIN vulnerabilities tv ON tv.id = t.vulnerability_id
-				 WHERE tv.affected_host = o.affected_host
-				 AND (
-					 (tv.cve_id IS NOT NULL AND tv.cve_id != '' AND tv.cve_id = o.cve_id)
-					 OR ((tv.cve_id IS NULL OR tv.cve_id = '') AND (o.cve_id IS NULL OR o.cve_id = '') AND tv.title = o.title)
-				 )
-				 ORDER BY t.created_at DESC LIMIT 1
-				),
-				'fixed'
-			) as status,
+			CASE
+				WHEN EXISTS (SELECT 1 FROM scan_hosts sh WHERE sh.scan_id = ? AND sh.host = o.affected_host)
+				  OR NOT EXISTS (SELECT 1 FROM scan_hosts sh WHERE sh.scan_id = ?)
+				THEN COALESCE(
+					(SELECT CASE t.status
+							WHEN 'fixed'              THEN 'fixed'
+							WHEN 'risk_accepted'      THEN 'risk_accepted'
+							WHEN 'false_positive'     THEN 'risk_accepted'
+							WHEN 'open'               THEN 'pending_fix'
+							WHEN 'pending_resolution' THEN 'pending_fix'
+						END
+					 FROM tickets t
+					 JOIN vulnerabilities tv ON tv.id = t.vulnerability_id
+					 WHERE tv.affected_host = o.affected_host
+					 AND (
+						 (tv.cve_id IS NOT NULL AND tv.cve_id != '' AND tv.cve_id = o.cve_id)
+						 OR ((tv.cve_id IS NULL OR tv.cve_id = '') AND (o.cve_id IS NULL OR o.cve_id = '') AND tv.title = o.title)
+					 )
+					 ORDER BY t.created_at DESC LIMIT 1
+					),
+					'fixed'
+				)
+				ELSE 'host_unscanned'
+			END as status,
 			o.id, o.title, o.affected_host, o.hostname, o.severity, o.cvss_score, o.cve_id
 		FROM vulnerabilities o
 		WHERE o.scan_id = ?
@@ -242,9 +262,15 @@ func (q *Queries) diffScansCompat(ctx context.Context, oldScanID, newScanID stri
 				OR ((o.cve_id IS NULL OR o.cve_id = '') AND (n.cve_id IS NULL OR n.cve_id = '') AND o.title = n.title)
 			)
 		)
-		ORDER BY FIELD(status, 'new', 'pending_fix', 'fixed', 'risk_accepted', 'unchanged'), cvss_score DESC`
+		ORDER BY FIELD(status, 'new', 'pending_fix', 'fixed', 'risk_accepted', 'host_unscanned', 'unchanged'), cvss_score DESC`
 
-	rows, err := q.db.QueryContext(ctx, query, newScanID, oldScanID, oldScanID, newScanID, newScanID, oldScanID)
+	rows, err := q.db.QueryContext(ctx, query,
+		oldScanID, oldScanID, // CASE host_unscanned check for 'new' block
+		newScanID, oldScanID, // new-block FROM and NOT EXISTS
+		newScanID, newScanID, // CASE host_unscanned check for 'fixed' block
+		oldScanID, newScanID, // fixed-block FROM and NOT EXISTS
+		newScanID, oldScanID, // unchanged-block FROM and EXISTS
+	)
 	if err != nil {
 		return nil, err
 	}

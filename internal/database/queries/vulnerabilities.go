@@ -264,8 +264,10 @@ type TrendPoint struct {
 }
 
 func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
-	// For each of the last 30 days, count how many tickets were open on that day.
-	// A ticket was open on day D if: created_at <= D AND (resolved_at IS NULL OR resolved_at > D)
+	// For each of the last 30 days, count how many tickets were open at end-of-day D.
+	// Open at end-of-day D = created_at <= end of D AND (resolved_at IS NULL OR resolved_at > end of D).
+	// Both boundaries use `dates.d + INTERVAL 1 DAY` (midnight of D+1) for consistency —
+	// without that, tickets resolved during day D were double-counted as still open on D.
 	const query = `
 		WITH RECURSIVE dates AS (
 			SELECT CURDATE() - INTERVAL 29 DAY AS d
@@ -280,7 +282,7 @@ func (q *Queries) VulnTrend(ctx context.Context) ([]TrendPoint, error) {
 			SUM(CASE WHEN t.status = 'pending_resolution' THEN 1 ELSE 0 END) as pending_resolution
 		FROM dates
 		LEFT JOIN tickets t ON t.created_at <= dates.d + INTERVAL 1 DAY
-			AND (t.resolved_at IS NULL OR t.resolved_at > dates.d)
+			AND (t.resolved_at IS NULL OR t.resolved_at > dates.d + INTERVAL 1 DAY)
 			AND t.status != 'false_positive'
 		GROUP BY dates.d
 		ORDER BY dates.d ASC`
