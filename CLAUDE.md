@@ -153,6 +153,9 @@ Docker Compose or Debian Trixie systemd service. Use the `/deploy` skill for aut
 - **GMP XML** — CVEs in `<refs><ref type="cve">`, not `<nvt><cve>`. Hostnames in `<host><hostname>` child element, IP is chardata.
 - **Ticket title ≠ vuln title** — tickets formatted `[SEV] Title — Host`. Risk rules and dedup use raw vuln title.
 - **MariaDB** — no FULL OUTER JOIN (use UNION ALL + NOT EXISTS), no `generate_series` (use `WITH RECURSIVE dates`).
+- **Scan diff statuses** — `DiffScans` always runs `diffScansCompat` (the FULL OUTER JOIN path is dead — MariaDB has none). 7 statuses: `new`, `rediscovered`, `pending_fix`, `fixed`, `risk_accepted`, `host_unscanned`, `unchanged`. A finding in the new scan but not the old is downgraded from `new` to `host_unscanned` when the old scan never covered that host (`scan_hosts` check), or to `unchanged`/`risk_accepted`/`rediscovered` when a ticket created before the new scan already exists (mapped by ticket status). Legacy fallback: scans with zero `scan_hosts` rows skip the coverage check.
+- **VulnTrend boundary** — counts tickets open at *end of day D*; both `created_at` and `resolved_at` comparisons must use `dates.d + INTERVAL 1 DAY`. A bare `dates.d` on `resolved_at` counts same-day resolutions as still-open (off-by-one).
+- **tickets has no `affected_host`/`cve_id`** — both live on `vulnerabilities`; join `tickets t JOIN vulnerabilities v ON v.id = t.vulnerability_id`. Tolerate NULL `vulnerability_id` (orphans from the `ON DELETE SET NULL` FK).
 - **SSH $ escaping** — passwords with `$` get shell-expanded. Use Python `chr(36)` or single-quoted heredoc.
 - **Hostname normalization** — `normalizeHostname()`: UPPERCASE host, lowercase domain. Applied to imports + PTR.
 - **ticketCols / qualifiedTicketCols / scanTicket** — these three must stay in sync when adding columns to `tickets` table. All are in `internal/database/queries/tickets.go`. Ticket queries JOIN vulnerabilities AND scans (for `scan_type` field).

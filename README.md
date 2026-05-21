@@ -19,7 +19,7 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 - **Ticket Lifecycle**: open → pending_resolution → fixed / risk_accepted / false_positive, with full activity audit trail
 - **Risk Acceptance with Expiry**: Risk-accepted tickets auto-reopen after expiry date
 - **Auto-Accept Rules**: Define rules (by CVE or title, per host or globally) to automatically accept known risks on future imports — configurable from any ticket
-- **Scan Comparison**: Side-by-side diff of two scans — new, fixed, unchanged findings
+- **Scan Comparison**: Side-by-side diff of two scans, classifying each finding as new, rediscovered, pending-fix, fixed, risk-accepted, host-not-scanned, or unchanged. Coverage-aware (a host absent from one scan is flagged `host_unscanned` instead of falsely new/fixed) and flap-aware (a finding whose ticket predates the scan is not reported as new)
 - **Bulk Actions**: Select multiple tickets for batch status change or assignment
 - **Dashboard**: Open ticket counts by priority, scan source distribution pie chart (OpenVAS vs ZAP), 30-day trend chart, "My Tickets" and "Unassigned" quick filters
 - **CVE & CWE References**: NVD, MITRE, and Google links on tickets with CVE; CWE links for ZAP findings; title-based search for tickets without
