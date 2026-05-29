@@ -144,6 +144,9 @@ func (h *TicketHandler) Assign(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 
 	old, err := h.tickets.Get(c.Request().Context(), id)
 	if err != nil {
@@ -244,6 +247,9 @@ func (h *TicketHandler) BulkUpdate(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	if req.Status == nil && req.AssignedTo == nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "must provide status or assigned_to")
 	}
@@ -296,6 +302,9 @@ func (h *TicketHandler) CreateRiskRule(c echo.Context) error {
 	var req createRiskRuleRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
 	ticket, err := h.tickets.Get(c.Request().Context(), id)
