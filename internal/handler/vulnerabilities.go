@@ -51,6 +51,9 @@ func (h *VulnHandler) UpdateStatus(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	vuln, err := h.vulns.UpdateStatus(c.Request().Context(), id, req.Status)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update status")

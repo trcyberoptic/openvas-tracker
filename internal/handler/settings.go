@@ -134,6 +134,9 @@ func (h *SettingsHandler) UpdateEnvConfig(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	if err := h.envSvc.Update(req.Key, req.Value); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update config")
 	}
@@ -149,6 +152,9 @@ func (h *SettingsHandler) UpdateEnvBatch(c echo.Context) error {
 	var req updateEnvBatchRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	if err := h.envSvc.UpdateMultiple(req.Values); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to update config: %v", err))

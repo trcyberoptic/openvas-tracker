@@ -28,6 +28,9 @@ func (h *TeamHandler) Create(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	userID := middleware.GetUserID(c)
 	team, err := h.teams.Create(c.Request().Context(), req.Name, req.Description, userID)
 	if err != nil {
@@ -74,6 +77,9 @@ func (h *TeamHandler) AddMember(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	if err := h.teams.AddMember(c.Request().Context(), id, req.UserID, req.Role); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to add member")
 	}
@@ -89,6 +95,9 @@ func (h *TeamHandler) Invite(c echo.Context) error {
 	var req inviteRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := c.Validate(req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	userID := middleware.GetUserID(c)
 	inv, err := h.teams.Invite(c.Request().Context(), id, req.Email, userID)
