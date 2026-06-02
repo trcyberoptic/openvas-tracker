@@ -12,3 +12,8 @@
 **Vulnerability:** The application used `c.Bind(&req)` to bind incoming JSON requests to structs but failed to subsequently call `c.Validate(&req)`. Because `c.Bind()` alone does not enforce `validate:"required"` tags, attackers could submit incomplete or malformed payloads without being rejected by validation rules, potentially leading to logic errors or unauthorized behaviors.
 **Learning:** In the Echo framework, binding and validation are separate steps. `c.Bind()` does not automatically invoke validation logic based on struct tags.
 **Prevention:** Always pair `c.Bind(&req)` with an explicit `c.Validate(&req)` (or `c.Validate(req)`) call to ensure that payload constraints and required fields are correctly enforced.
+
+## 2025-10-24 - Missing Authorization Middleware on Sensitive Endpoints
+**Vulnerability:** Found sensitive API endpoints (like those for modifying `.env` configs, testing LDAP, assigning tickets, and updating ticket statuses) were accessible to any authenticated user. While a user had to be logged in to access them, there were no additional RBAC checks to verify their role.
+**Learning:** Even though endpoints might be in an authenticated group (like `/api`), you still need to ensure endpoint-specific permissions for operations restricted by roles (e.g. `admin` or `analyst`).
+**Prevention:** In Echo, for sensitive state-changing endpoints, use `g.Group("", middleware.RequireRole(...))` or attach the middleware directly to those routes to enforce correct Role-Based Access Control and prevent privilege escalation.
