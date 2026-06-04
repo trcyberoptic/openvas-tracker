@@ -377,12 +377,16 @@ func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
-	g.PATCH("/:id/status", h.UpdateStatus)
-	g.PATCH("/:id/assign", h.Assign)
+
+	// Restricted ticket actions
+	restricted := g.Group("", middleware.RequireRole("admin", "analyst"))
+	restricted.PATCH("/:id/status", h.UpdateStatus)
+	restricted.PATCH("/:id/assign", h.Assign)
+	restricted.POST("/bulk", h.BulkUpdate)
+
 	g.POST("/:id/comments", h.AddComment)
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
 	g.GET("/:id/also-affected", h.AlsoAffected)
 	g.POST("/:id/risk-rule", h.CreateRiskRule)
-	g.POST("/bulk", h.BulkUpdate)
 }
