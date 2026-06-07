@@ -12,3 +12,8 @@
 **Vulnerability:** The application used `c.Bind(&req)` to bind incoming JSON requests to structs but failed to subsequently call `c.Validate(&req)`. Because `c.Bind()` alone does not enforce `validate:"required"` tags, attackers could submit incomplete or malformed payloads without being rejected by validation rules, potentially leading to logic errors or unauthorized behaviors.
 **Learning:** In the Echo framework, binding and validation are separate steps. `c.Bind()` does not automatically invoke validation logic based on struct tags.
 **Prevention:** Always pair `c.Bind(&req)` with an explicit `c.Validate(&req)` (or `c.Validate(req)`) call to ensure that payload constraints and required fields are correctly enforced.
+
+## 2025-06-07 - Ensure Authorization and Role Based Access Controls for Sensitive Operations
+**Vulnerability:** The application was missing Role Based Access Control (RBAC) validations on several sensitive routes in `settings.go` and `tickets.go`. This essentially allowed standard "viewer" level users (or any authenticated user) to modify system environment configurations (`.env`), delete global risk-rules, or perform admin-level assignments of security tickets.
+**Learning:** Even if routes are hidden in the frontend UI based on role, the backend must actively enforce those same role constraints via middleware to prevent API-level manipulation (authorization bypass).
+**Prevention:** In the LabStack Echo framework, use sub-groups like `g.Group("", middleware.RequireRole(...))` to explicitly require the necessary roles on routes that perform state-changing operations or expose sensitive system details.
