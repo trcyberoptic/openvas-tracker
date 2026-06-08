@@ -41,3 +41,10 @@ coverage.out
 
 # Superpowers specs + plans (local-only, not for repo history)
 docs/superpowers/
+
+# Python bytecode (from running deploy scripts locally)
+__pycache__/
+*.pyc
+
+# Claude Code local runtime state
+.claude/scheduled_tasks.lock
