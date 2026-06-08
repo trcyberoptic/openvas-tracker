@@ -185,7 +185,7 @@ function FeedStatusCard() {
               const fr = feedFreshness(f.version_date)
               return (
                 <tr key={f.feed_type} className="border-b border-slate-800/50">
-                  <td className="py-2 font-medium">{f.feed_type}</td>
+                  <td className="py-2 font-medium" title={f.feed_name}>{f.feed_type}</td>
                   <td className="text-slate-300">{f.version}</td>
                   <td className="text-slate-300">{f.version_date ? new Date(f.version_date).toLocaleString() : '—'}</td>
                   <td className="text-slate-400">{relativeAge(f.last_seen)}</td>

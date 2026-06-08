@@ -41,14 +41,14 @@ function FeedsWidget() {
   return (
     <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 mb-8">
       <h2 className="text-lg font-semibold mb-4">Greenbone Feeds</h2>
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {feeds.map(f => {
           const fr = feedFreshness(f.version_date)
           return (
             <div key={f.feed_type} className="flex items-center gap-2">
               <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: fr.color }} />
               <div>
-                <div className="text-sm font-medium">{f.feed_type}</div>
+                <div className="text-sm font-medium" title={f.feed_name}>{f.feed_type}</div>
                 <div className="text-xs text-slate-400">
                   {f.version_date ? new Date(f.version_date).toLocaleDateString() : f.version}
                 </div>
