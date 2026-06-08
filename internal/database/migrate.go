@@ -129,12 +129,25 @@ func extractCreateTable(sqlText string) string {
 // splitStatements splits SQL text on semicolons, trimming whitespace and
 // skipping empty results. It handles the simple case where statements
 // are separated by ";\n" which covers all our migration files.
+//
+// Full-line SQL comments are stripped per chunk before evaluation: our
+// migration files lead with "-- description" comment lines, and rejecting a
+// whole chunk just because it starts with "--" would silently drop the
+// CREATE TABLE that follows (the migration would then be recorded as applied
+// while never creating its table).
 func splitStatements(sql string) []string {
 	parts := strings.Split(sql, ";")
 	var out []string
 	for _, p := range parts {
-		s := strings.TrimSpace(p)
-		if s != "" && !strings.HasPrefix(s, "--") {
+		var lines []string
+		for _, line := range strings.Split(p, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "--") {
+				continue // drop full-line comments, keep the SQL around them
+			}
+			lines = append(lines, line)
+		}
+		s := strings.TrimSpace(strings.Join(lines, "\n"))
+		if s != "" {
 			out = append(out, s)
 		}
 	}
