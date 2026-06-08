@@ -144,6 +144,7 @@ func main() {
 	handler.NewAuditHandler(auditSvc).RegisterRoutes(p.Group("/audit"))
 	handler.NewSearchHandler(searchSvc).RegisterRoutes(p.Group("/search"))
 	handler.NewSettingsHandler(cfg, q, envSvc, ldapSvc).RegisterRoutes(p.Group("/settings"))
+	handler.NewFeedHandler(q).RegisterRoutes(p.Group("/feeds"))
 
 	// WebSocket
 	wsH := handler.NewWSHandler(hub, cfg.JWT.Secret)
