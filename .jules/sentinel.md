@@ -12,3 +12,8 @@
 **Vulnerability:** The application used `c.Bind(&req)` to bind incoming JSON requests to structs but failed to subsequently call `c.Validate(&req)`. Because `c.Bind()` alone does not enforce `validate:"required"` tags, attackers could submit incomplete or malformed payloads without being rejected by validation rules, potentially leading to logic errors or unauthorized behaviors.
 **Learning:** In the Echo framework, binding and validation are separate steps. `c.Bind()` does not automatically invoke validation logic based on struct tags.
 **Prevention:** Always pair `c.Bind(&req)` with an explicit `c.Validate(&req)` (or `c.Validate(req)`) call to ensure that payload constraints and required fields are correctly enforced.
+
+## 2025-06-15 - Missing Role-Based Access Control (RBAC) on Sensitive Handlers
+**Vulnerability:** Several sensitive endpoints, such as altering `.env` configurations, running LDAP tests, deleting risk rules, and modifying ticket statuses/assignments, were exposed to any authenticated user. An authenticated user with the 'viewer' role could alter the system configuration or manipulate ticket statuses, leading to unauthorized state modifications or privilege escalation.
+**Learning:** By default, if routes are only grouped under an authentication middleware (like `middleware.JWTAuth`), they are accessible to anyone with a valid token, regardless of their role.
+**Prevention:** Use `g.Group("", middleware.RequireRole("admin"))` or appropriate roles to create subgroups within authenticated routes. This ensures that only users with the correct roles can access specific handlers.
