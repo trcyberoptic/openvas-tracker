@@ -11,7 +11,7 @@ import (
 // FeedVersion is one Greenbone feed and its current version, parsed from a
 // GMP <get_feeds/> response. Version is a YYYYMMDDHHMM timestamp string.
 type FeedVersion struct {
-	Type    string // NVT | SCAP | CERT | GVMD_DATA
+	Type    string // e.g. NVT, SCAP, CERT, GVMD_DATA (passed through verbatim from gvmd)
 	Name    string
 	Version string
 }
