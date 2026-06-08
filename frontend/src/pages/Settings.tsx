@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/api/client'
+import { getFeeds, feedFreshness, relativeAge } from '@/lib/feeds'
 import { Copy, Check, RefreshCw } from 'lucide-react'
 
 function CopyButton({ text }: { text: string }) {
@@ -165,6 +166,40 @@ function EnvConfig() {
   )
 }
 
+function FeedStatusCard() {
+  const { data: feeds = [] } = useQuery({ queryKey: ['feeds'], queryFn: getFeeds })
+  return (
+    <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 mb-6">
+      <h2 className="text-lg font-semibold mb-4">Greenbone Feeds</h2>
+      {feeds.length === 0 ? (
+        <p className="text-slate-500 text-sm">Noch keine Feed-Daten — beim nächsten Scan-Import werden sie erfasst.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-400 border-b border-slate-800">
+              <th className="py-2">Feed</th><th>Version</th><th>Versionsdatum</th><th>Zuletzt gesehen</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {feeds.map(f => {
+              const fr = feedFreshness(f.version_date)
+              return (
+                <tr key={f.feed_type} className="border-b border-slate-800/50">
+                  <td className="py-2 font-medium">{f.feed_type}</td>
+                  <td className="text-slate-300">{f.version}</td>
+                  <td className="text-slate-300">{f.version_date ? new Date(f.version_date).toLocaleString() : '—'}</td>
+                  <td className="text-slate-400">{relativeAge(f.last_seen)}</td>
+                  <td><span className="px-2 py-0.5 rounded text-xs" style={{ background: fr.color + '33', color: fr.color }}>{fr.label}</span></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 export function Settings() {
   const { user } = useAuth()
 
@@ -182,6 +217,7 @@ export function Settings() {
       </div>
 
       <SetupGuide />
+      <FeedStatusCard />
       <EnvConfig />
     </div>
   )

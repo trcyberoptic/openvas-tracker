@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
+import { getFeeds, feedFreshness, relativeAge } from '@/lib/feeds'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts'
 
 const COLORS: Record<string, string> = {
@@ -31,6 +32,34 @@ interface TrendPoint {
   medium: number
   low: number
   pending_resolution: number
+}
+
+function FeedsWidget() {
+  const { data: feeds = [] } = useQuery({ queryKey: ['feeds'], queryFn: getFeeds })
+  if (feeds.length === 0) return null
+  const oldestSeen = feeds.reduce((min, f) => (f.last_seen < min ? f.last_seen : min), feeds[0].last_seen)
+  return (
+    <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 mb-8">
+      <h2 className="text-lg font-semibold mb-4">Greenbone Feeds</h2>
+      <div className="grid grid-cols-4 gap-4">
+        {feeds.map(f => {
+          const fr = feedFreshness(f.version_date)
+          return (
+            <div key={f.feed_type} className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: fr.color }} />
+              <div>
+                <div className="text-sm font-medium">{f.feed_type}</div>
+                <div className="text-xs text-slate-400">
+                  {f.version_date ? new Date(f.version_date).toLocaleDateString() : f.version}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="text-xs text-slate-500 mt-4">Importe zuletzt: {relativeAge(oldestSeen)}</div>
+    </div>
+  )
 }
 
 export function Dashboard() {
@@ -92,6 +121,8 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      <FeedsWidget />
 
       {/* Trend Chart */}
       <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 mb-8">
