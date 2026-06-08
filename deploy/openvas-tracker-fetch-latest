@@ -32,14 +32,30 @@ def load_env(path):
     return env
 
 
-def gmp_call(sock, xml_bytes, end_tag):
+def gmp_call(sock, xml_bytes, resp_tag):
+    # Reads one GMP response element named resp_tag (e.g. "authenticate_response").
+    # Completes on the closing tag </resp_tag>, on a self-closing root <resp_tag .../>,
+    # or on EOF. The self-closing case matters: gvmd answers errors such as a failed
+    # authentication with <authenticate_response status="400" .../> and then keeps the
+    # socket OPEN — waiting only for a "</resp_tag>" that never arrives would block until
+    # the socket timeout (observed: a wrong OT_GMP_PASSWORD hung the import for 10 min).
     sock.sendall(xml_bytes)
     buf = bytearray()
-    end = end_tag.encode()
-    while end not in buf:
+    open_tag = ("<" + resp_tag).encode()
+    close_tag = ("</" + resp_tag + ">").encode()
+    while True:
+        if close_tag in buf:
+            break
+        start = buf.find(open_tag)
+        if start != -1:
+            gt = buf.find(b">", start)
+            if gt != -1 and buf[gt - 1:gt] == b"/":
+                break  # self-closing root element -> response already complete
         chunk = sock.recv(1 << 16)
         if not chunk:
-            raise RuntimeError(f"GMP socket closed before {end_tag}")
+            if buf:
+                break  # gvmd closed the socket; return whatever we got
+            raise RuntimeError(f"GMP socket closed before <{resp_tag}> response")
         buf.extend(chunk)
     return bytes(buf)
 
@@ -97,14 +113,19 @@ def main():
             f"<password>{xml_escape(password)}</password>"
             f"</credentials></authenticate>"
         ).encode()
-        resp = gmp_call(sock, auth, "</authenticate_response>")
+        resp = gmp_call(sock, auth, "authenticate_response")
         if b'status="200"' not in resp:
-            sys.exit("GMP authenticate failed: " + resp.decode(errors="replace"))
+            sys.exit(
+                "GMP authenticate failed (check OT_GMP_USER/OT_GMP_PASSWORD in "
+                + ENV_FILE
+                + "): "
+                + resp.decode(errors="replace")
+            )
 
         tasks_resp = gmp_call(
             sock,
             b'<get_tasks filter="rows=-1" usage_type="scan"/>',
-            "</get_tasks_response>",
+            "get_tasks_response",
         )
         report_id, ts = pick_latest_report(tasks_resp)
         if not report_id:
@@ -119,7 +140,7 @@ def main():
             f'<get_reports report_id="{report_id}" details="1" '
             f'ignore_pagination="1"/>'
         ).encode()
-        full = gmp_call(sock, full_cmd, "</get_reports_response>")
+        full = gmp_call(sock, full_cmd, "get_reports_response")
         if b'status="200"' not in full[:200]:
             sys.exit("GMP get_reports failed: " + full[:500].decode(errors="replace"))
     finally:
