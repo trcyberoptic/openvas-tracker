@@ -156,7 +156,7 @@ func main() {
 		}
 		importSvc := service.NewImportService(db)
 		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("50M"))
-		handler.NewImportHandler(importSvc).RegisterRoutes(importG)
+		handler.NewImportHandler(importSvc, q).RegisterRoutes(importG)
 	}
 
 	// Embedded frontend (catch-all, must be last)

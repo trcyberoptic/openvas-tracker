@@ -9,16 +9,18 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
 	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type ImportHandler struct {
 	importSvc *service.ImportService
+	q         *queries.Queries
 }
 
-func NewImportHandler(importSvc *service.ImportService) *ImportHandler {
-	return &ImportHandler{importSvc: importSvc}
+func NewImportHandler(importSvc *service.ImportService, q *queries.Queries) *ImportHandler {
+	return &ImportHandler{importSvc: importSvc, q: q}
 }
 
 func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
@@ -86,8 +88,28 @@ func (h *ImportHandler) HandleZAP(c echo.Context) error {
 	return c.JSON(http.StatusCreated, res)
 }
 
+// HandleFeeds ingests a GMP <get_feeds/> response and upserts the feed versions.
+func (h *ImportHandler) HandleFeeds(c echo.Context) error {
+	feeds, err := scanner.ParseFeeds(c.Request().Body)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse feeds XML")
+	}
+	updated := 0
+	for _, f := range feeds {
+		if err := h.q.UpsertFeedStatus(c.Request().Context(), queries.UpsertFeedStatusParams{
+			FeedType: f.Type, FeedName: f.Name, Version: f.Version,
+		}); err != nil {
+			log.Printf("feed upsert error (%s): %v", f.Type, err)
+			continue
+		}
+		updated++
+	}
+	return c.JSON(http.StatusOK, map[string]int{"feeds_updated": updated})
+}
+
 func (h *ImportHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/openvas", h.HandleOpenVAS)
 	g.GET("/openvas", h.TriggerFetch)
 	g.POST("/zap", h.HandleZAP)
+	g.POST("/feeds", h.HandleFeeds)
 }

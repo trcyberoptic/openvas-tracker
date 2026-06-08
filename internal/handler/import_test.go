@@ -23,3 +23,18 @@ func TestHandleOpenVAS_BadXML(t *testing.T) {
 		t.Errorf("expected 400, got %v", err)
 	}
 }
+
+func TestHandleFeeds_BadXML(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/import/feeds", strings.NewReader("not xml"))
+	req.Header.Set("Content-Type", "application/xml")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	h := &ImportHandler{}
+	err := h.HandleFeeds(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %v", err)
+	}
+}
