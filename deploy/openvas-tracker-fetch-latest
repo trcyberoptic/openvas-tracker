@@ -99,6 +99,8 @@ def main():
     if not api_key:
         sys.exit("missing OT_IMPORT_APIKEY in " + ENV_FILE)
 
+    feeds_xml = b""
+
     sock = socket.socket(socket.AF_UNIX)
     sock.settimeout(600)
     try:
@@ -143,6 +145,12 @@ def main():
         full = gmp_call(sock, full_cmd, "get_reports_response")
         if b'status="200"' not in full[:200]:
             sys.exit("GMP get_reports failed: " + full[:500].decode(errors="replace"))
+
+        # Feed versions (best-effort — must never fail the scan import).
+        try:
+            feeds_xml = gmp_call(sock, b"<get_feeds/>", "get_feeds_response")
+        except Exception as e:
+            print("warning: get_feeds failed: %s" % e, file=sys.stderr)
     finally:
         sock.close()
 
@@ -162,6 +170,22 @@ def main():
     if r.status >= 300:
         sys.exit(f"tracker import POST {r.status}: {body}")
     print(f"imported report {report_id} ({ts}): {r.status} {body}")
+
+    if feeds_xml:
+        try:
+            fconn = http.client.HTTPConnection(TRACKER_HOST, TRACKER_PORT, timeout=60)
+            fconn.request(
+                "POST",
+                "/api/import/feeds",
+                body=feeds_xml,
+                headers={"Content-Type": "application/xml", "X-API-Key": api_key},
+            )
+            fr = fconn.getresponse()
+            fbody = fr.read().decode(errors="replace")
+            fconn.close()
+            print(f"feeds updated: {fr.status} {fbody}")
+        except Exception as e:
+            print("warning: feeds post failed: %s" % e, file=sys.stderr)
 
 
 if __name__ == "__main__":
