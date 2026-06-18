@@ -12,3 +12,8 @@
 **Vulnerability:** The application used `c.Bind(&req)` to bind incoming JSON requests to structs but failed to subsequently call `c.Validate(&req)`. Because `c.Bind()` alone does not enforce `validate:"required"` tags, attackers could submit incomplete or malformed payloads without being rejected by validation rules, potentially leading to logic errors or unauthorized behaviors.
 **Learning:** In the Echo framework, binding and validation are separate steps. `c.Bind()` does not automatically invoke validation logic based on struct tags.
 **Prevention:** Always pair `c.Bind(&req)` with an explicit `c.Validate(&req)` (or `c.Validate(req)`) call to ensure that payload constraints and required fields are correctly enforced.
+
+## 2025-06-25 - Prevent Privilege Escalation in Helper Functions
+**Vulnerability:** The application used a helper function `ensureUser` that hardcoded the `queries.UserRoleAdmin` role for all created users. This caused all newly created LDAP users to be granted admin privileges upon their first login.
+**Learning:** Hardcoding privileged roles in shared user creation logic can lead to severe privilege escalation if the function is reused in different contexts (e.g., standard user sign-in via LDAP vs. dedicated admin setup).
+**Prevention:** Parameterize user creation functions to accept the intended role explicitly. Never hardcode elevated privileges in general-purpose utility functions.
