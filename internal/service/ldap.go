@@ -129,7 +129,7 @@ func (s *LDAPService) TestConnection(cfg config.LDAPConfig) error {
 
 func (s *LDAPService) connect(cfg config.LDAPConfig) (*ldap.Conn, error) {
 	if strings.HasPrefix(cfg.URL, "ldaps://") {
-		return ldap.DialURL(cfg.URL, ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
+		return ldap.DialURL(cfg.URL, ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}))
 	}
 	return ldap.DialURL(cfg.URL)
 }

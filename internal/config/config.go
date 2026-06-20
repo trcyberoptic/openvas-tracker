@@ -41,12 +41,13 @@ type AdminConfig struct {
 }
 
 type LDAPConfig struct {
-	URL          string
-	BaseDN       string
-	BindDN       string
-	BindPassword string
-	GroupDN      string
-	UserFilter   string // e.g. (sAMAccountName=%s)
+	URL                string
+	BaseDN             string
+	BindDN             string
+	BindPassword       string
+	GroupDN            string
+	UserFilter         string // e.g. (sAMAccountName=%s)
+	InsecureSkipVerify bool
 }
 
 func (l LDAPConfig) Enabled() bool {
@@ -77,12 +78,13 @@ func Load() (*Config, error) {
 			Password: env("OT_ADMIN_PASSWORD", ""),
 		},
 		LDAP: LDAPConfig{
-			URL:          env("OT_LDAP_URL", ""),
-			BaseDN:       env("OT_LDAP_BASE_DN", ""),
-			BindDN:       env("OT_LDAP_BIND_DN", ""),
-			BindPassword: env("OT_LDAP_BIND_PASSWORD", ""),
-			GroupDN:      env("OT_LDAP_GROUP_DN", ""),
-			UserFilter:   env("OT_LDAP_USER_FILTER", "(sAMAccountName=%s)"),
+			URL:                env("OT_LDAP_URL", ""),
+			BaseDN:             env("OT_LDAP_BASE_DN", ""),
+			BindDN:             env("OT_LDAP_BIND_DN", ""),
+			BindPassword:       env("OT_LDAP_BIND_PASSWORD", ""),
+			GroupDN:            env("OT_LDAP_GROUP_DN", ""),
+			UserFilter:         env("OT_LDAP_USER_FILTER", "(sAMAccountName=%s)"),
+			InsecureSkipVerify: envBool("OT_LDAP_INSECURE_SKIP_VERIFY", false),
 		},
 	}, nil
 }
@@ -90,6 +92,15 @@ func Load() (*Config, error) {
 func env(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
 	}
 	return fallback
 }
