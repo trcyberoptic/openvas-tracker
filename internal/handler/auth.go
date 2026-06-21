@@ -92,7 +92,7 @@ func (h *AuthHandler) loginAsAdmin(c echo.Context) error {
 	user, err := h.users.GetByUsername(ctx, "admin")
 	if err != nil {
 		hash, _ := auth.HashPassword(h.cfg.Admin.Password)
-		user, err = h.ensureUser(ctx, "admin", "admin@local", hash)
+		user, err = h.ensureUser(ctx, "admin", "admin@local", hash, queries.UserRoleAdmin)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create admin user")
 		}
@@ -115,23 +115,23 @@ func (h *AuthHandler) loginAsLDAP(c echo.Context, ldapUser *service.LDAPUser) er
 		if email == "" {
 			email = ldapUser.Username + "@ldap"
 		}
-		user, err = h.ensureUser(ctx, ldapUser.Username, email, hash)
+		user, err = h.ensureUser(ctx, ldapUser.Username, email, hash, queries.UserRoleViewer)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create LDAP user")
 		}
 	}
 
-	token, _ := auth.GenerateToken(user.ID, "user", h.jwtSecret, h.jwtExpiry)
+	token, _ := auth.GenerateToken(user.ID, string(user.Role), h.jwtSecret, h.jwtExpiry)
 	return c.JSON(http.StatusOK, authResponse{
 		Token: token,
-		User:  userDTO{ID: user.ID, Email: user.Email, Username: user.Username, Role: "user"},
+		User:  userDTO{ID: user.ID, Email: user.Email, Username: user.Username, Role: string(user.Role)},
 	})
 }
 
-func (h *AuthHandler) ensureUser(ctx context.Context, username, email, passwordHash string) (queries.User, error) {
+func (h *AuthHandler) ensureUser(ctx context.Context, username, email, passwordHash string, role queries.UserRole) (queries.User, error) {
 	user, err := h.q.CreateUser(ctx, queries.CreateUserParams{
 		ID: uuid.New().String(), Email: email, Username: username,
-		Password: passwordHash, Role: queries.UserRoleAdmin,
+		Password: passwordHash, Role: role,
 	})
 	if err != nil {
 		// Duplicate — fetch existing
