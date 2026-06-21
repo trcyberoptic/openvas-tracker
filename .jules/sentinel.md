@@ -12,3 +12,7 @@
 **Vulnerability:** The application used `c.Bind(&req)` to bind incoming JSON requests to structs but failed to subsequently call `c.Validate(&req)`. Because `c.Bind()` alone does not enforce `validate:"required"` tags, attackers could submit incomplete or malformed payloads without being rejected by validation rules, potentially leading to logic errors or unauthorized behaviors.
 **Learning:** In the Echo framework, binding and validation are separate steps. `c.Bind()` does not automatically invoke validation logic based on struct tags.
 **Prevention:** Always pair `c.Bind(&req)` with an explicit `c.Validate(&req)` (or `c.Validate(req)`) call to ensure that payload constraints and required fields are correctly enforced.
+## 2024-05-31 - [LDAPS Hardcoded InsecureSkipVerify]
+**Vulnerability:** The `internal/service/ldap.go` file hardcodes `InsecureSkipVerify: true` for LDAPS connections. This disables TLS certificate verification, leaving connections susceptible to Man-In-The-Middle (MITM) attacks.
+**Learning:** This is a classic example of security debt where developer convenience or a lack of proper certificate authority setup in a testing environment gets carried over into production code. The lack of an option to disable this flag or provide a custom CA certificate is a critical security gap.
+**Prevention:** Avoid hardcoding `InsecureSkipVerify: true` in production code. Provide an option via configuration to toggle this behavior or, ideally, support loading custom CA certificates for proper validation.
