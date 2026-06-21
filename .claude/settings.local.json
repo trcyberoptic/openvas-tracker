@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(docker info:*)",
-      "Bash(curl -s http://localhost:8080/api/health)"
+      "Bash(curl -s http://localhost:8080/api/health)",
+      "Bash(gh run:*)"
     ]
   },
   "hooks": {
