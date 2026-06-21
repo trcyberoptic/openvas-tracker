@@ -377,15 +377,12 @@ func (h *TicketHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
+	g.PATCH("/:id/status", h.UpdateStatus)
+	g.PATCH("/:id/assign", h.Assign)
 	g.POST("/:id/comments", h.AddComment)
 	g.GET("/:id/comments", h.ListComments)
 	g.GET("/:id/activity", h.ListActivity)
 	g.GET("/:id/also-affected", h.AlsoAffected)
-
-	// Admin and analyst only routes
-	privGroup := g.Group("", middleware.RequireRole("admin", "analyst"))
-	privGroup.PATCH("/:id/status", h.UpdateStatus)
-	privGroup.PATCH("/:id/assign", h.Assign)
-	privGroup.POST("/:id/risk-rule", h.CreateRiskRule)
-	privGroup.POST("/bulk", h.BulkUpdate)
+	g.POST("/:id/risk-rule", h.CreateRiskRule)
+	g.POST("/bulk", h.BulkUpdate)
 }
