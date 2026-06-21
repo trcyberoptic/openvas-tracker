@@ -11,15 +11,14 @@ import (
 
 	"github.com/cyberoptic/openvas-tracker/internal/config"
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
 type SettingsHandler struct {
-	cfg     *config.Config
-	q       *queries.Queries
-	envSvc  *service.EnvFileService
-	ldapSvc *service.LDAPService
+	cfg        *config.Config
+	q          *queries.Queries
+	envSvc     *service.EnvFileService
+	ldapSvc    *service.LDAPService
 }
 
 func NewSettingsHandler(cfg *config.Config, q *queries.Queries, envSvc *service.EnvFileService, ldapSvc *service.LDAPService) *SettingsHandler {
@@ -253,13 +252,10 @@ func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/setup", h.GetSetup)
 	g.GET("/users", h.ListUsers)
 	g.GET("/env", h.GetEnvConfig)
+	g.PUT("/env", h.UpdateEnvConfig)
+	g.PUT("/env/batch", h.UpdateEnvBatch)
+	g.POST("/ldap/test", h.TestLDAP)
 	g.GET("/risk-rules", h.ListRiskRules)
-
-	// Protected routes
-	protected := g.Group("", middleware.RequireRole("admin"))
-	protected.PUT("/env", h.UpdateEnvConfig)
-	protected.PUT("/env/batch", h.UpdateEnvBatch)
-	protected.POST("/ldap/test", h.TestLDAP)
-	protected.DELETE("/risk-rules/:id", h.DeleteRiskRule)
-	protected.POST("/risk-rules/apply", h.ApplyRiskRules)
+	g.DELETE("/risk-rules/:id", h.DeleteRiskRule)
+	g.POST("/risk-rules/apply", h.ApplyRiskRules)
 }
