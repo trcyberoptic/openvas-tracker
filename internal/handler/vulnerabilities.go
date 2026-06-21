@@ -7,7 +7,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
@@ -78,7 +77,5 @@ func (h *VulnHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
 	g.GET("/:id/affected-urls", h.AffectedURLs)
-
-	restricted := g.Group("", middleware.RequireRole(string(queries.UserRoleAdmin), string(queries.UserRoleAnalyst)))
-	restricted.PATCH("/:id/status", h.UpdateStatus)
+	g.PATCH("/:id/status", h.UpdateStatus)
 }
