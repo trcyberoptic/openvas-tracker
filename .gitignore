@@ -46,5 +46,5 @@ docs/superpowers/
 __pycache__/
 *.pyc
 
-# Claude Code local runtime state
-.claude/scheduled_tasks.lock
+# Claude Code local config (skills, agents, settings — local-only)
+.claude/
