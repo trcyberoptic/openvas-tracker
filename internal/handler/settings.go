@@ -11,7 +11,6 @@ import (
 
 	"github.com/cyberoptic/openvas-tracker/internal/config"
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
-	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
@@ -252,13 +251,11 @@ func strPtr(s string) *string { return &s }
 func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/setup", h.GetSetup)
 	g.GET("/users", h.ListUsers)
-
-	adminGroup := g.Group("", middleware.RequireRole("admin"))
-	adminGroup.GET("/env", h.GetEnvConfig)
-	adminGroup.PUT("/env", h.UpdateEnvConfig)
-	adminGroup.PUT("/env/batch", h.UpdateEnvBatch)
-	adminGroup.POST("/ldap/test", h.TestLDAP)
-	adminGroup.GET("/risk-rules", h.ListRiskRules)
-	adminGroup.DELETE("/risk-rules/:id", h.DeleteRiskRule)
-	adminGroup.POST("/risk-rules/apply", h.ApplyRiskRules)
+	g.GET("/env", h.GetEnvConfig)
+	g.PUT("/env", h.UpdateEnvConfig)
+	g.PUT("/env/batch", h.UpdateEnvBatch)
+	g.POST("/ldap/test", h.TestLDAP)
+	g.GET("/risk-rules", h.ListRiskRules)
+	g.DELETE("/risk-rules/:id", h.DeleteRiskRule)
+	g.POST("/risk-rules/apply", h.ApplyRiskRules)
 }
