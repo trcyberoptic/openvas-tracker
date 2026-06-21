@@ -47,6 +47,7 @@ type LDAPConfig struct {
 	BindPassword string
 	GroupDN      string
 	UserFilter   string // e.g. (sAMAccountName=%s)
+	SkipVerify   bool
 }
 
 func (l LDAPConfig) Enabled() bool {
@@ -83,6 +84,7 @@ func Load() (*Config, error) {
 			BindPassword: env("OT_LDAP_BIND_PASSWORD", ""),
 			GroupDN:      env("OT_LDAP_GROUP_DN", ""),
 			UserFilter:   env("OT_LDAP_USER_FILTER", "(sAMAccountName=%s)"),
+			SkipVerify:   env("OT_LDAP_SKIP_VERIFY", "false") == "true",
 		},
 	}, nil
 }
