@@ -3,7 +3,7 @@ import { LayoutDashboard, Scan, GitCompare, Ticket, User, ShieldCheck, Settings,
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/tickets?assigned=me', icon: User, label: 'My Tickets' },
+  { to: '/tickets?assigned=me&status=open', icon: User, label: 'My Tickets' },
   { to: '/tickets', icon: Ticket, label: 'All Tickets' },
   { to: '/scans', icon: Scan, label: 'Scans' },
   { to: '/scans/diff', icon: GitCompare, label: 'Scan Diff' },

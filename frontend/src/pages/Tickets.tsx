@@ -26,18 +26,24 @@ interface UserRef { id: string; username: string; email: string }
 
 export function Tickets() {
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const { user } = useAuth()
   const qc = useQueryClient()
   const { data: raw = [] } = useQuery({ queryKey: ['tickets'], queryFn: () => api.get<Ticket[]>('/tickets') })
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
-  const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'host', 'source'], { status: 'open' })
+  const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'assigned', 'host', 'source'], { status: 'open' })
   const { sort, toggle } = useSortable()
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  const assignedFilter = searchParams.get('assigned') // "me" | "unassigned" | null
-
   const tickets = useMemo(() => raw.map(t => ({ ...t, priority_order: PRIO_ORDER[t.priority] || 9 })), [raw])
+
+  const assigneeOptions = useMemo(() => [
+    { value: 'me', label: 'Me' },
+    { value: 'unassigned', label: 'Unassigned' },
+    ...users
+      .filter(u => u.username !== 'openvas-import' && u.id !== user?.id)
+      .map(u => ({ value: u.id, label: u.username })),
+  ], [users, user])
 
   const hostMap = useMemo(() => {
     const map = new Map<string, string | undefined>()
@@ -58,8 +64,9 @@ export function Tickets() {
 
   const filtered = useMemo(() => {
     let result = tickets
-    if (assignedFilter === 'me' && user) result = result.filter(t => t.assigned_to === user.id)
-    if (assignedFilter === 'unassigned') result = result.filter(t => !t.assigned_to)
+    if (values.assigned === 'me') { if (user) result = result.filter(t => t.assigned_to === user.id) }
+    else if (values.assigned === 'unassigned') result = result.filter(t => !t.assigned_to)
+    else if (values.assigned) result = result.filter(t => t.assigned_to === values.assigned)
     if (values.priority) result = result.filter(t => t.priority === values.priority)
     if (values.status) result = result.filter(t => t.status === values.status)
     if (values.host) result = result.filter(t => t.affected_host === values.host || t.hostname === values.host)
@@ -79,7 +86,7 @@ export function Tickets() {
       })
     }
     return result
-  }, [tickets, values, assignedFilter, user])
+  }, [tickets, values, user])
 
   const effectiveSort = sort.key ? sort : { key: 'cvss_score', dir: 'desc' as const }
   const sorted = useSorted(filtered, effectiveSort)
@@ -114,12 +121,6 @@ export function Tickets() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Tickets</h1>
-          {assignedFilter && (
-            <span className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-900/50 text-blue-300 text-xs">
-              {assignedFilter === 'me' ? 'My tickets' : 'Unassigned'}
-              <button onClick={() => { const p = new URLSearchParams(searchParams); p.delete('assigned'); setSearchParams(p, { replace: true }); }} className="hover:text-white">&times;</button>
-            </span>
-          )}
         </div>
         {selected.size > 0 && (
           <div className="flex items-center gap-2">
@@ -145,6 +146,7 @@ export function Tickets() {
           { key: 'search', label: 'Search tickets...' },
           { key: 'priority', label: 'Priority', options: ['critical', 'high', 'medium', 'low'] },
           { key: 'status', label: 'Status', options: ['open', 'pending_resolution', 'fixed', 'risk_accepted', 'false_positive'] },
+          { key: 'assigned', label: 'Assigned', options: assigneeOptions, searchable: true },
           { key: 'host', label: 'Host', options: hosts, searchable: true },
           { key: 'source', label: 'Source', options: ['openvas', 'zap'] },
         ]}
