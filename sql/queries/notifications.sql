@@ -10,10 +10,10 @@ SELECT * FROM notifications WHERE id = ?;
 SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?;
 
 -- name: CountUnread :one
-SELECT count(*) FROM notifications WHERE user_id = ? AND read = 0;
+SELECT count(*) FROM notifications WHERE user_id = ? AND `read` = 0;
 
 -- name: MarkRead :exec
-UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?;
+UPDATE notifications SET `read` = 1 WHERE id = ? AND user_id = ?;
 
 -- name: MarkAllRead :exec
-UPDATE notifications SET read = 1 WHERE user_id = ?;
+UPDATE notifications SET `read` = 1 WHERE user_id = ?;

@@ -46,14 +46,14 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 	if err != nil {
 		return Notification{}, err
 	}
-	row := q.db.QueryRowContext(ctx, `SELECT id, user_id, type, title, message, data, read, created_at FROM notifications WHERE id = ?`, arg.ID)
+	row := q.db.QueryRowContext(ctx, "SELECT id, user_id, type, title, message, data, `read`, created_at FROM notifications WHERE id = ?", arg.ID)
 	var i Notification
 	err = row.Scan(&i.ID, &i.UserID, &i.Type, &i.Title, &i.Message, &i.Data, &i.Read, &i.CreatedAt)
 	return i, err
 }
 
 func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error) {
-	const listNotifications = `SELECT id, user_id, type, title, message, data, read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	const listNotifications = "SELECT id, user_id, type, title, message, data, `read`, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
 	rows, err := q.db.QueryContext(ctx, listNotifications, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsPa
 }
 
 func (q *Queries) CountUnread(ctx context.Context, userID string) (int64, error) {
-	const countUnread = `SELECT count(*) FROM notifications WHERE user_id = ? AND read = 0`
+	const countUnread = "SELECT count(*) FROM notifications WHERE user_id = ? AND `read` = 0"
 	row := q.db.QueryRowContext(ctx, countUnread, userID)
 	var count int64
 	err := row.Scan(&count)
@@ -79,13 +79,13 @@ func (q *Queries) CountUnread(ctx context.Context, userID string) (int64, error)
 }
 
 func (q *Queries) MarkRead(ctx context.Context, arg MarkReadParams) error {
-	const markRead = `UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?`
+	const markRead = "UPDATE notifications SET `read` = 1 WHERE id = ? AND user_id = ?"
 	_, err := q.db.ExecContext(ctx, markRead, arg.ID, arg.UserID)
 	return err
 }
 
 func (q *Queries) MarkAllRead(ctx context.Context, userID string) error {
-	const markAllRead = `UPDATE notifications SET read = 1 WHERE user_id = ?`
+	const markAllRead = "UPDATE notifications SET `read` = 1 WHERE user_id = ?"
 	_, err := q.db.ExecContext(ctx, markAllRead, userID)
 	return err
 }
