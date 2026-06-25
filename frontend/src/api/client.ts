@@ -13,7 +13,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
     headers: { ...headers, ...options?.headers },
   })
-  if (res.status === 401) {
+  // Only an authenticated (non-login) request getting 401 means the session expired.
+  // A 401 from /auth/* is a failed login — let the real error ("invalid credentials") surface
+  // instead of wiping state and showing a misleading "Session expired".
+  if (res.status === 401 && !path.startsWith('/auth/')) {
     localStorage.removeItem('token')
     window.location.href = '/login'
     throw new Error('Session expired')
