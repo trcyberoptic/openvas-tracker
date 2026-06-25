@@ -29,7 +29,10 @@ export function Tickets() {
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
   const qc = useQueryClient()
-  const { data: raw = [] } = useQuery({ queryKey: ['tickets'], queryFn: () => api.get<Ticket[]>('/tickets') })
+  // ponytail: filters/sorts/search run client-side over the full set, so load all tickets in one shot
+  // instead of the default 500-row page (backend caps at 5000; ~700 today). If tickets ever exceed
+  // 5000, switch to real server-side pagination + filtering.
+  const { data: raw = [] } = useQuery({ queryKey: ['tickets'], queryFn: () => api.get<Ticket[]>('/tickets?limit=5000') })
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => api.get<UserRef[]>('/settings/users') })
   const { values, setValues } = useTableFilter(['search', 'priority', 'status', 'assigned', 'host', 'source'], { status: 'open' })
   const { sort, toggle } = useSortable()
