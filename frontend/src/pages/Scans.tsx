@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
-import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
+import { TableFilter, SortHeader } from '@/components/TableFilter'
+import { useTableFilter, useSortable, useSorted } from '@/hooks/useTable'
 
 interface Scan { id: string; name: string; scan_type: string; status: string; created_at: string }
 

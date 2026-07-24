@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 
@@ -36,28 +36,26 @@ interface DiffEntry {
 
 export function ScanDiff() {
   const { data: scans = [] } = useQuery({ queryKey: ['scans'], queryFn: () => api.get<Scan[]>('/scans') })
-  const [oldId, setOldId] = useState('')
-  const [newId, setNewId] = useState('')
+  // null = follow the automatic default, '' = user explicitly cleared the select
+  const [oldSel, setOldSel] = useState<string | null>(null)
+  const [newSel, setNewSel] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>('')
 
   const sortedScans = useMemo(() =>
     [...scans].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [scans])
 
-  // Default to the two most recent scans of the same type
-  useEffect(() => {
-    if (sortedScans.length >= 2 && !oldId && !newId) {
-      const newest = sortedScans[0]
-      const prevSameType = sortedScans.find(s => s.id !== newest.id && s.scan_type === newest.scan_type)
-      if (prevSameType) {
-        setNewId(newest.id)
-        setOldId(prevSameType.id)
-      }
-    }
-  }, [sortedScans, oldId, newId])
+  // Default to the most recent scan that has an older scan of the same type to compare against
+  const defaultNewId = useMemo(() => {
+    const newest = sortedScans[0]
+    if (!newest) return ''
+    const hasOlderSameType = sortedScans.some(s => s.id !== newest.id && s.scan_type === newest.scan_type)
+    return hasOlderSameType ? newest.id : ''
+  }, [sortedScans])
 
-  // Determine selected scans and their types
+  const newId = newSel ?? defaultNewId
   const newScan = scans.find(s => s.id === newId)
+
   // Filter old scan options: same type as selected new scan, and older
   const oldScanOptions = useMemo(() => {
     if (!newScan) return sortedScans
@@ -67,16 +65,8 @@ export function ScanDiff() {
     )
   }, [sortedScans, newScan])
 
-  // When new scan changes, auto-select the next older scan of same type
-  useEffect(() => {
-    if (!newScan) return
-    const nextOlder = sortedScans.find(s =>
-      s.id !== newScan.id &&
-      s.scan_type === newScan.scan_type &&
-      new Date(s.created_at).getTime() < new Date(newScan.created_at).getTime()
-    )
-    setOldId(nextOlder?.id || '')
-  }, [newId])
+  // Options are newest-first, so the head is the next older scan of the same type
+  const oldId = oldSel ?? (newScan ? oldScanOptions[0]?.id ?? '' : '')
 
   const { data: diff, isFetching } = useQuery({
     queryKey: ['scan-diff', oldId, newId],
@@ -110,7 +100,7 @@ export function ScanDiff() {
       <div className="flex gap-4 mb-6">
         <div className="flex-1">
           <label className="text-xs text-slate-500 mb-1 block">Current Scan</label>
-          <select value={newId} onChange={e => setNewId(e.target.value)}
+          <select value={newId} onChange={e => { setNewSel(e.target.value); setOldSel(null) }}
             className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500">
             <option value="">Select...</option>
             {sortedScans.map(s => (
@@ -127,7 +117,7 @@ export function ScanDiff() {
         </div>
         <div className="flex-1">
           <label className="text-xs text-slate-500 mb-1 block">Previous Scan</label>
-          <select value={oldId} onChange={e => setOldId(e.target.value)}
+          <select value={oldId} onChange={e => setOldSel(e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500">
             <option value="">Select...</option>
             {oldScanOptions.map(s => (

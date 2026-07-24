@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import { useAuth } from '@/hooks/useAuth'
-import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
+import { TableFilter, SortHeader } from '@/components/TableFilter'
+import { useTableFilter, useSortable, useSorted } from '@/hooks/useTable'
 
 const PRIORITY_COLORS: Record<string, string> = { critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600' }
 const STATUS_COLORS: Record<string, string> = { open: 'bg-red-900 text-red-300', fixed: 'bg-green-900 text-green-300', risk_accepted: 'bg-yellow-900 text-yellow-300', false_positive: 'bg-slate-700 text-slate-300', pending_resolution: 'bg-amber-900 text-amber-300' }
@@ -89,7 +90,7 @@ export function Tickets() {
       })
     }
     return result
-  }, [tickets, values, user])
+  }, [tickets, values, user, users])
 
   const effectiveSort = sort.key ? sort : { key: 'cvss_score', dir: 'desc' as const }
   const sorted = useSorted(filtered, effectiveSort)
@@ -104,7 +105,8 @@ export function Tickets() {
     e.stopPropagation()
     setSelected(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }

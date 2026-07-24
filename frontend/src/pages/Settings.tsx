@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/api/client'
@@ -73,15 +73,17 @@ const ENV_FIELDS = [
 function EnvConfig() {
   const qc = useQueryClient()
   const { data: envData } = useQuery({ queryKey: ['env-config'], queryFn: () => api.get<Record<string, string>>('/settings/env') })
-  const [values, setValues] = useState<Record<string, string>>({})
-  const [dirty, setDirty] = useState<Set<string>>(new Set())
+  // Only the edited fields are held in state; everything else reads straight
+  // from the server copy, so a refetch can't clobber pending edits.
+  const [edits, setEdits] = useState<Record<string, string>>({})
   const [showFields, setShowFields] = useState<Set<string>>(new Set())
 
-  useEffect(() => { if (envData) setValues(envData) }, [envData])
+  const values = useMemo(() => ({ ...envData, ...edits }), [envData, edits])
+  const dirtyKeys = Object.keys(edits)
 
   const saveMut = useMutation({
     mutationFn: (pairs: Record<string, string>) => api.put('/settings/env/batch', { values: pairs }),
-    onSuccess: () => { setDirty(new Set()); qc.invalidateQueries({ queryKey: ['env-config'] }) },
+    onSuccess: () => { setEdits({}); qc.invalidateQueries({ queryKey: ['env-config'] }) },
   })
 
   const testLdapMut = useMutation({
@@ -89,28 +91,28 @@ function EnvConfig() {
   })
 
   const onChange = (key: string, val: string) => {
-    setValues(prev => ({ ...prev, [key]: val }))
-    setDirty(prev => new Set(prev).add(key))
+    setEdits(prev => ({ ...prev, [key]: val }))
   }
 
-  const save = () => {
-    const changed: Record<string, string> = {}
-    dirty.forEach(k => { changed[k] = values[k] || '' })
-    saveMut.mutate(changed)
-  }
+  const save = () => saveMut.mutate(edits)
 
   const toggleShow = (key: string) => {
-    setShowFields(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+    setShowFields(prev => {
+      const n = new Set(prev)
+      if (n.has(key)) n.delete(key)
+      else n.add(key)
+      return n
+    })
   }
 
   return (
     <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Configuration (.env)</h2>
-        {dirty.size > 0 && (
+        {dirtyKeys.length > 0 && (
           <button onClick={save} disabled={saveMut.isPending}
             className="px-4 py-1.5 rounded text-sm bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50">
-            {saveMut.isPending ? 'Saving...' : `Save ${dirty.size} change${dirty.size > 1 ? 's' : ''}`}
+            {saveMut.isPending ? 'Saving...' : `Save ${dirtyKeys.length} change${dirtyKeys.length > 1 ? 's' : ''}`}
           </button>
         )}
       </div>
@@ -121,7 +123,7 @@ function EnvConfig() {
         {ENV_FIELDS.map(f => {
           const isPassword = f.type === 'password'
           const shown = showFields.has(f.key)
-          const isDirty = dirty.has(f.key)
+          const isDirty = f.key in edits
           return (
             <div key={f.key}>
               <label className="text-xs text-slate-500 mb-1 block">{f.label} <code className="text-slate-600">{f.key}</code></label>

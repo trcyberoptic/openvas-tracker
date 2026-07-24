@@ -1,32 +1,43 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { useAuth } from './useAuth'
 
 export function useWebSocket(onMessage: (msg: { type: string; payload: unknown }) => void) {
   const { token } = useAuth()
-  const wsRef = useRef<WebSocket | null>(null)
-  const cancelledRef = useRef(false)
   const onMessageRef = useRef(onMessage)
-  onMessageRef.current = onMessage
-
-  const connect = useCallback(() => {
-    if (!token || cancelledRef.current) return
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`)
-    ws.onmessage = (e) => {
-      try { onMessageRef.current(JSON.parse(e.data)) } catch {}
-    }
-    ws.onclose = () => {
-      if (!cancelledRef.current) setTimeout(connect, 3000)
-    }
-    wsRef.current = ws
-  }, [token])
 
   useEffect(() => {
-    cancelledRef.current = false
-    connect()
-    return () => {
-      cancelledRef.current = true
-      wsRef.current?.close()
+    onMessageRef.current = onMessage
+  }, [onMessage])
+
+  useEffect(() => {
+    if (!token) return
+    // Scoped to this effect run so a token change tears the old socket down
+    // completely — including a reconnect already queued by its onclose.
+    let cancelled = false
+    let ws: WebSocket | null = null
+    let retry: ReturnType<typeof setTimeout> | undefined
+
+    function connect() {
+      if (cancelled) return
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`)
+      ws.onmessage = (e) => {
+        try {
+          onMessageRef.current(JSON.parse(e.data))
+        } catch {
+          // ignore malformed frames
+        }
+      }
+      ws.onclose = () => {
+        if (!cancelled) retry = setTimeout(connect, 3000)
+      }
     }
-  }, [connect])
+    connect()
+
+    return () => {
+      cancelled = true
+      clearTimeout(retry)
+      ws?.close()
+    }
+  }, [token])
 }

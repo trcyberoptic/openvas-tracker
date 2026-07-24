@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { TableFilter, useTableFilter, SortHeader, useSortable, useSorted } from '@/components/TableFilter'
+import { TableFilter, SortHeader } from '@/components/TableFilter'
+import { useTableFilter, useSortable, useSorted } from '@/hooks/useTable'
 
 const BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-600', high: 'bg-orange-600', medium: 'bg-yellow-600', low: 'bg-blue-600', info: 'bg-gray-600',
