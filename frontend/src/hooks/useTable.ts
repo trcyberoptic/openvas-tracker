@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 
 // Split out of components/TableFilter.tsx so that file only exports components
 // (react-refresh/only-export-components — mixed exports break Vite fast refresh).

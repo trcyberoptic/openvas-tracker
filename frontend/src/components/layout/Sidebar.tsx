@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router'
 import { LayoutDashboard, Scan, GitCompare, Ticket, User, ShieldCheck, Settings, Github } from 'lucide-react'
 
 const links = [
