@@ -11,19 +11,22 @@ OpenVAS-Tracker is a vulnerability management dashboard built in Go with an embe
 ```bash
 # Backend only
 go build ./cmd/openvas-tracker        # compile
+make run                              # go run backend only (no frontend rebuild)
 go test ./... -v -count=1             # all tests
+make test-cover                       # coverage profile + HTML report
 go test ./internal/scanner/ -v        # single package
 go test ./internal/auth/ -v -run Token  # single test by name
 
 # Frontend only
-cd frontend && npm ci && npm run build  # production build
+cd frontend && npm ci && npm run build  # production build (tsc -b && vite build)
 cd frontend && npm run dev              # dev server with HMR
+cd frontend && npm run lint             # eslint (enforced — keep clean)
 
 # Combined
-make dev          # backend + frontend dev servers (frontend proxies API to :8080)
-make build        # production build (builds frontend, copies to cmd/openvas-tracker/static/, compiles Go binary)
+make dev          # backend + frontend dev servers (vite proxies /api AND /ws to :8080)
+make build        # production build (frontend → cmd/openvas-tracker/static/, binary → bin/openvas-tracker)
 make build-linux  # cross-compile for Linux amd64
-make test         # go test ./...
+make test         # go test ./... -v -count=1
 make clean        # remove build artifacts
 
 # Docker
@@ -32,8 +35,10 @@ docker compose down -v        # stop and remove volumes
 docker compose build app      # rebuild app image
 
 # Database
-make migrate-up    # apply migrations (needs DATABASE_URL env)
+make migrate-up    # apply migrations (needs DATABASE_URL env + golang-migrate CLI installed)
 make migrate-down  # rollback one migration
+# NOTE: migrations also auto-apply on app startup (AutoMigrate) — manual migrate is rarely needed
+# make sqlc regenerates internal/database/queries/ — DO NOT run it, see Database section
 ```
 
 ## Architecture
@@ -46,126 +51,142 @@ handler (Echo HTTP) → service (business logic) → queries (database/sql) → 
                                                 → report (html/pdf/excel/md)
 ```
 
-- **`internal/handler/`** — Echo route handlers. Each has a `RegisterRoutes(*echo.Group)` method.
-  - `auth.go` — Login (no registration). Admin + LDAP + DB fallback. By username.
-  - `import.go` — Thin adapter → `ImportService`. `POST /openvas` (XML), `POST /zap` (JSON), `GET /openvas` triggers fetch script.
-  - `tickets.go` — CRUD, status, comments, activity, bulk ops, risk rule creation. Validated via `c.Validate()`. Detail page shows prominent CVSS score box.
-  - `scans.go` — List/Get + diff endpoint.
-  - `settings.go` — Setup guide, user list, .env read/write, LDAP test, risk rules.
-  - `pagination.go` — `paginate(c)` → `(limit, offset int32)`. Default 500, max 5000.
-- **`internal/service/`** — Business logic.
-  - `import.go` — Transaction-wrapped import: scan+vulns+tickets, risk rule matching, auto-resolve, PTR hostname backfill.
-  - `ldap.go` — AD auth, group membership check, member listing.
-  - `envfile.go` — Read/write `.env` for Settings UI.
-- **`internal/database/queries/`** — Hand-written SQL. `db.go` defines `DBTX` interface (accepts `*sql.DB` and `*sql.Tx`).
-- **`internal/scanner/`** — Multi-scanner parser package.
-  - `scanner.go` — `Finding` struct (scanner-agnostic) + `ScanMeta` (optional scan timestamps) + `Parser` interface + `Fingerprint()` method.
-  - `openvas.go` — `ParseOpenVASXML`: CVE from `<refs><ref type="cve">` and `<nvt><cve>`, hostname from `<host><hostname>`. Returns `([]Finding, *ScanMeta, error)`. Extracts `scan_start`/`scan_end` from GMP XML for accurate scan timestamps.
-  - `zap.go` — `ParseZAPJSON`: ZAP Traditional JSON Report. Each alert instance → one Finding. Uses `@host`/`@port`/`@ssl` keys. Strips HTML from desc/solution. Maps riskcode 3→high, 2→medium, 1→low, 0→info (skipped). Default CVSS: 7.0/4.0/2.0/0.0.
-- **`internal/report/`** — HTML, PDF (maroto v2), Excel (excelize), Markdown generators.
-- **`internal/middleware/`** — JWT auth, API key auth (timing-safe), rate limiting, security headers.
+Some handlers (hosts, feeds, scans, targets) skip the service layer and take `*queries.Queries` directly.
 
-**Frontend:** React 19 + Vite + Tailwind, embedded via `//go:embed all:static` in `cmd/openvas-tracker/frontend.go`.
+- **`internal/handler/`** — Echo route handlers. Each has a `RegisterRoutes(*echo.Group)` method (except `ws.go`, registered directly in main.go).
+  - Core: `auth.go` (login: admin + LDAP + DB fallback, by username), `import.go` (thin adapter → `ImportService`: `POST /openvas` XML, `POST /zap` JSON, `POST /feeds` GMP get_feeds XML → feed_status upsert, `GET /openvas` triggers fetch script), `tickets.go` (CRUD, status, comments, activity, bulk ops, risk rule creation; CVSS score box on detail), `scans.go` (List/Get/diff + `GET /:id/vulnerabilities`), `settings.go` (setup guide incl. `bugreport_url`, user list, .env read/write + `PUT /env/batch`, LDAP test, risk rules), `pagination.go` (`paginate(c)` → default 500, max 5000).
+  - Additional (all registered in main.go): `assets.go`, `audit.go`, `dashboard.go` (+ `/trend`), `feeds.go` (`GET /api/feeds` feed versions), `hosts.go` (`GET /api/hosts`, `/:host/vulnerabilities`, `/:host/tickets`), `notifications.go`, `reports.go`, `search.go`, `targets.go`, `teams.go`, `vulnerabilities.go` (+ `/:id/affected-urls`), `ws.go` (`GET /ws`).
+  - `/api/health` is inline in main.go (DB ping, 503 when degraded). The whole `/api/import` group is registered **only when `OT_IMPORT_APIKEY` is set** — otherwise those routes 404.
+- **`internal/service/`** — Business logic: `import.go` (transaction-wrapped import), `ldap.go` (AD auth, group check, member listing), `envfile.go` (.env read/write for Settings UI), plus `asset.go`, `audit.go`, `notification.go`, `prediction.go` (0-100 asset risk score: CVSS 60% / exploit 25% / age 15%), `report.go`, `search.go`, `target.go`, `team.go`, `ticket.go`, `user.go` (`Register` is dead code — no route calls it), `vulnerability.go`.
+- **`internal/database/queries/`** — Files carry `// Code generated by sqlc` headers but are **hand-maintained** (string-concat helpers like `qualifiedTicketCols` are not sqlc output). `sqlc.yaml` + `make sqlc` still exist — running sqlc would clobber the hand edits. `db.go` defines `DBTX` interface (accepts `*sql.DB` and `*sql.Tx`).
+- **`internal/scanner/`** — Multi-scanner parser package.
+  - `scanner.go` — `Finding` struct (scanner-agnostic) + `ScanMeta` (optional scan timestamps) + `Parser` interface + `Fingerprint()` method (no production callers anymore — ticket dedup AND rule matching both use CVE/title forms, see Import).
+  - `openvas.go` — `ParseOpenVASXML`: CVE from `<refs><ref type="cve">` and `<nvt><cve>`, hostname from `<host><hostname>`. Returns `([]Finding, *ScanMeta, error)`. Never sets CWEID/URL/Parameter — cwe:/url: fingerprints are ZAP-only in practice.
+  - `zap.go` — `ParseZAPJSON`: ZAP Traditional JSON Report. Each alert instance → one Finding. Uses `@host`/`@port`/`@ssl` keys. Strips HTML from desc/solution. Maps riskcode 3→high, 2→medium, 1→low, 0→info (skipped). Default CVSS: 7.0/4.0/2.0/0.0.
+  - `feeds.go` — `ParseFeeds` parses GMP `<get_feeds_response>` into `FeedVersion` structs; `ParseFeedVersionTime` converts YYYYMMDDHHMM versions to time.
+- **`internal/report/`** — HTML, PDF (maroto v2), Excel (excelize), Markdown generators.
+- **`internal/middleware/`** — JWT auth, API key auth (timing-safe), rate limiting, security headers (CSP includes `OT_BUGREPORT_URL` origin). `audit.go` (AuditLog) and `rbac.go` (RequireRole) exist with tests but are **wired to zero routes** — dead code; the main.go comment "status/assign require admin or analyst role" is stale.
+- **`internal/auth/`** — JWT generate/parse + bcrypt helpers. **`internal/config/`** — env config loader. **`internal/websocket/`** — per-user hub for `GET /ws`; `Hub.Broadcast`/`SendToUser` have zero callers and the frontend `useWebSocket` hook is imported nowhere — dormant plumbing, nothing is ever pushed.
+
+**Frontend:** React 19 + TypeScript + Vite + Tailwind, embedded via `//go:embed all:static` in `cmd/openvas-tracker/frontend.go`.
 
 ## Configuration
 
-All via `.env` file (`godotenv` + `os.Getenv`). Editable via Settings page. Auto-detects `/etc/openvas-tracker/env` on production, override with `OT_ENV_FILE`.
+Config comes from process env + `godotenv.Load()` which reads **only `./.env` in CWD and never overrides already-set vars**. In production, systemd injects `/etc/openvas-tracker/env` via `EnvironmentFile=` — so Settings-UI edits require a service restart (the API says so). `OT_ENV_FILE` / the `/etc/openvas-tracker/env` auto-detect only select which file the Settings UI edits and the fetch script reads — they do NOT change what the app loads.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `OT_SERVER_PORT` | 8080 | HTTP listen port |
+| `OT_SERVER_HOST` / `OT_SERVER_PORT` | 0.0.0.0 / 8080 | HTTP listen address |
 | `OT_DATABASE_DSN` | `...@tcp(localhost:3306)/openvas-tracker?parseTime=true` | MariaDB DSN |
+| `OT_DATABASE_MAXCONNS` / `OT_DATABASE_MINCONNS` | 25 / 5 | Pool: MaxOpenConns / MaxIdleConns |
 | `OT_JWT_SECRET` | (none — **required**, min 32 chars) | JWT signing key |
-| `OT_IMPORT_APIKEY` | (empty) | Import webhook API key (min 32 chars) |
-| `OT_ADMIN_PASSWORD` | (empty) | Admin user password (username: `admin`) |
-| `OT_AUTORESOLVE_THRESHOLD` | `3` | Consecutive scans without finding before auto-resolve |
+| `OT_JWT_EXPIREHOURS` | 24 | Token lifetime (API + /ws) |
+| `OT_IMPORT_APIKEY` | (empty) | Import webhook API key. Min 32 chars when set; **when empty, all `/api/import` routes are unregistered (404)** |
+| `OT_ADMIN_PASSWORD` | (empty) | Admin user password (username: `admin`, timing-safe compare) |
+| `OT_AUTORESOLVE_THRESHOLD` | `3` | Consecutive misses before auto-resolve (restart required despite code comment claiming live reload) |
 | `OT_LDAP_URL` | (empty) | e.g. `ldaps://dc01.example.com:636` |
-| `OT_LDAP_BASE_DN` | (empty) | LDAP base DN |
-| `OT_LDAP_BIND_DN` | (empty) | LDAP service account DN |
-| `OT_LDAP_BIND_PASSWORD` | (empty) | LDAP service account password |
-| `OT_LDAP_GROUP_DN` | (empty) | Required group DN for access |
+| `OT_LDAP_BASE_DN` / `OT_LDAP_BIND_DN` / `OT_LDAP_BIND_PASSWORD` / `OT_LDAP_GROUP_DN` | (empty) | LDAP binding + required group |
 | `OT_LDAP_USER_FILTER` | `(sAMAccountName=%s)` | LDAP user search filter |
+| `OT_LDAP_INSECURE_SKIP_VERIFY` | `false` | Skip TLS cert verification for `ldaps://` (needed with internal CAs — a bad cert otherwise surfaces as "invalid credentials") |
+| `OT_BUGREPORT_URL` | (empty) | Bug-report widget origin: added to CSP at startup, served as `bugreport_url` by setup endpoint, injected as external script into the sidebar slot |
+
+Fetch-script-only vars (read from its process env or `/etc/openvas-tracker/env`, NOT the app): `OT_GMP_USER` (default admin), `OT_GMP_PASSWORD`, `OT_GMP_SOCKET`, `OT_TRACKER_HOST`/`OT_TRACKER_PORT`, `OT_ENV_FILE`. Caveat: the sudo webhook path strips process env (`env_reset`, no `env_keep` in sudoers) — `OT_GMP_SOCKET`/`OT_TRACKER_*` overrides only work when running the script manually.
 
 ## Database
 
 - **MariaDB** with `database/sql` + `go-sql-driver/mysql`
-- 20 migrations in `sql/migrations/` (001-020). `sql/docker-init.sql` sources all.
-- **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically when the app starts. Bootstraps `schema_migrations` for existing databases. Bootstrap only marks CREATE TABLE migrations as applied — ALTER TABLE migrations always run.
-- UUIDs are `CHAR(36)`, generated in Go (`uuid.New().String()`)
-- Pool: `MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime(5m)`, `ConnMaxIdleTime(3m)`
+- 22 migrations in `sql/migrations/` (001-022). `sql/docker-init.sql` sources all.
+- **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically. Bootstraps `schema_migrations` for existing databases (detected via `users` table). Bootstrap only marks CREATE TABLE migrations as applied — ALTER TABLE migrations always run.
+- **AutoMigrate splits on bare semicolons** (full-line `--` comments stripped) — keep migrations to plain semicolon-separated DDL/DML: no procedures, triggers, or string literals containing `;`.
+- **Almost no real foreign keys** — the only enforced FK in the schema is `scan_hosts.scan_id → scans(id) ON DELETE CASCADE` (table-level, migration 018). Every other `REFERENCES` clause is inline/column-level, which MariaDB parses and **silently ignores**. Don't assume cascades or SET NULL from the DDL; verify the actual DB before relying on them (production may have out-of-band FKs). Use table-level `FOREIGN KEY` syntax for new constraints.
+- `pending_resolution` was missing from the `tickets.status` ENUM until migration 022 (fresh installs under strict mode silently broke flapping protection) — when adding ticket statuses, always add a MODIFY-ENUM migration.
+- UUIDs are `CHAR(36)`, generated in Go (`uuid.New().String()`). Exception: `feed_status` uses natural PK `feed_type`.
+- Migration 009 (`schedules`) is orphaned schema — no query file, service, or handler touches it.
+- Pool: `ConnMaxLifetime(5m)`, `ConnMaxIdleTime(3m)`; sizes via `OT_DATABASE_MAXCONNS`/`MINCONNS`.
 
 ## Key Patterns
 
 ### Auth
-- Login by username, three sources in order: (1) admin + `OT_ADMIN_PASSWORD`, (2) LDAP bind + group check, (3) DB user fallback. No registration. Rate limited 30/min/IP.
-- LDAP re-reads `.env` on each login for live config changes. Auto-creates DB user on first LDAP login. LDAP group members are also auto-created (with real UUIDs) when the user list is loaded, so they can be assigned to tickets before first login. Users without email are skipped.
-- No roles — all users have equal access. Role column exists but is never checked.
+- Login by username, three sources in order: (1) admin + `OT_ADMIN_PASSWORD` (timing-safe; lazily creates DB user `admin`/`admin@local` with role admin), (2) LDAP bind + group check, (3) DB user fallback (matches by **email first**, then username; requires `is_active`). No registration. Rate limited **60/min/IP** on `/api/auth`; global limiter 500/min/IP.
+- LDAP: `config.Load()` runs per login, but godotenv never overrides set vars and only reads `./.env` — in production LDAP config changes require a restart. Auto-creates DB user on first LDAP login. LDAP group members are also auto-created (real UUIDs) when the user list loads, so they can be assigned tickets before first login. Users without email are skipped.
+- **Roles exist but are not enforced.** Since commit 8f252bb: admin → role `admin`, auto-created LDAP users → `viewer` (before the fix everyone got `admin` — old DB rows may still say admin); JWTs and login responses carry the real DB role. `RequireRole` middleware (admin/analyst/viewer) exists in `internal/middleware/rbac.go` but is attached to no route; frontend stores the role and ignores it. Authorization is still equal for all users.
+- Hidden system user `openvas-import` (viewer, `openvas-import@system.local`) is auto-created on first import, owns imported scans/tickets, and is filtered out of the Settings user list (which caps at 100 local users).
 
 ### Import
 - OpenVAS/ZAP webhook → `ImportService.Import(ctx, []Finding, scanType, *ScanMeta)` → single transaction: scan + vulns + tickets.
-- `Finding` struct is scanner-agnostic. `ParseOpenVASXML` returns `([]Finding, *ScanMeta, error)` — `ScanMeta` carries `scan_start`/`scan_end` from the GMP XML report so the scan record gets the original scan timestamps instead of the import time. `ParseZAPJSON` returns `([]Finding, error)` — ZAP reports don't include scan timestamps, so `nil` meta is passed and `time.Now()` is used.
-- **Fingerprinting** (dedup key per finding):
-  - Network findings (OpenVAS): CVE or `"title:" + title`. Key: `(host, fingerprint)`.
-  - Web findings (ZAP): `"cwe:" + cweid + ":url:" + urlPath + ":param:" + param` — only when parameter is present. Falls back to `"title:" + title + ":url:" + urlPath + ":param:" + param` if no CWE. CVE always takes priority if present.
-  - **Server-wide findings** (no parameter, e.g. missing headers): `"cwe:" + cweid` or `"title:" + title` — one ticket per host, not per URL. All affected URLs shown in ticket detail via `AffectedURLsByPeer` query.
-- Per vuln: check risk accept rules → find ticket by fingerprint (host + CVE/title/CWE+URL) → create/reopen/touch → auto-resolve stale → commit.
-- **Auto-resolve scoped by scan type** — a ZAP scan only auto-resolves ZAP tickets, never OpenVAS tickets and vice versa. Uses `(host, scan_type)` scope via `scan_hosts` table (migration 018).
+- `ParseOpenVASXML` returns `ScanMeta` (`scan_start`/`scan_end` from GMP XML) so the scan record gets original scan timestamps; ZAP reports have none → `nil` meta → `time.Now()`.
+- **Ticket dedup key is `(host, CVE)` — else `(host, raw vuln title)`.** `FindTicketByFingerprint` (misleading name) matches only those two forms; CWE/URL/parameter are NOT part of ticket identity. All ZAP instances of the same alert on one host collapse into ONE ticket regardless of URL/param; affected URL+param pairs show in ticket detail via `AffectedURLsByPeer`. `TouchTicket`/`ReopenTicket` repoint `vulnerability_id` to the newest instance, so the detail page's URL/parameter fields reflect the most recent one only.
+- Risk-rule matching at import uses `ruleFingerprint()` = `VulnFingerprint(cve, title)` — the same CVE/`title:` form rules are stored with. (`Finding.Fingerprint()` with its `cwe:`/`url:` forms is no longer called anywhere — it silently never matched ZAP rules before this fix.)
+- Flow per vuln: find ticket by (host+CVE else host+title) → create/reopen/touch; risk rules are checked **only inside createTicket** (reopens bypass them) → auto-resolve stale → reopen expired risk-accepts → commit.
+- Info-severity is filtered twice: ZAP riskcode 0 in the parser, OpenVAS "Log/CVSS 0" inside Import. `scan_hosts` scope is recorded from ALL results including skipped ones — an info-only host still participates in auto-resolve scoping.
+- **Auto-resolve scoped by scan type** — a ZAP scan only auto-resolves ZAP tickets and vice versa. Uses `(host, scan_type)` scope via `scan_hosts` (migration 018).
 - PTR hostname backfill runs async after each import. Hostnames normalized: `UPPERCASE.domain.lowercase`.
 
 ### Tickets
-- Statuses: `open` → `pending_resolution` (after 1+ scan miss) → `fixed` (after N consecutive misses, configurable via `OT_AUTORESOLVE_THRESHOLD`, default 3) | `risk_accepted` | `false_positive`. False positives never reopened.
-- Flapping protection: findings not present in a scan increment `consecutive_misses` counter. After threshold consecutive misses, ticket auto-resolves to `fixed`. If finding reappears before threshold, counter resets and ticket returns to `open` with activity log. `pending_resolution` is visible in UI with amber badge.
-- Risk accepted supports optional expiry date (auto-reopens when expired).
-- All changes logged in `ticket_activity` with actor (user ID or "Automatic").
-- Bulk: `POST /api/tickets/bulk` with `ticket_ids` + `status`/`assigned_to`.
+- Statuses: `open` → `pending_resolution` (after 1+ scan miss) → `fixed` (after N consecutive misses, `OT_AUTORESOLVE_THRESHOLD`, default 3) | `risk_accepted` | `false_positive`. False positives never reopened. Threshold 1 skips `pending_resolution` entirely (first miss → fixed).
+- Flapping protection: misses increment `consecutive_misses`; reappearance resets the counter and returns the ticket to `open` with activity log. Manual status changes also reset the counter; leaving `risk_accepted` clears `risk_accepted_until`.
+- Risk-accept expiry (`risk_accepted_until < CURDATE()`) auto-reopens — but **only during imports** (inside the import transaction), not on a timer.
+- All changes logged in `ticket_activity` with actor (user ID or "Automatic"). Bulk: `POST /api/tickets/bulk` with `ticket_ids` + `status`/`assigned_to`.
 
 ### Risk Accept Rules
-- `risk_accept_rules` table: fingerprint (CVE or `title:` + vuln title) + host pattern (`*` or IP).
-- Created from ticket detail page ("this host" or "all hosts"). Applied to existing open and pending_resolution tickets on creation.
-- Checked during import — matching new tickets auto-set to `risk_accepted`.
-- "Refresh Tickets" button on Auto-Accept Rules page re-applies all rules to existing open and pending_resolution tickets (`POST /api/settings/risk-rules/apply`).
+- `risk_accept_rules`: fingerprint (CVE or `title:` + raw vuln title) + host pattern (`*` or IP) + optional expiry (propagates to the ticket's `risk_accepted_until`; expired rules are inert but not deleted).
+- Created from ticket detail ("this host" / "all hosts"); applied to existing open and pending_resolution tickets on creation. "Refresh Tickets" (`POST /api/settings/risk-rules/apply`) re-applies all rules.
+- Import-time matching uses the same CVE/`title:` fingerprint form as rule storage (`ruleFingerprint` in import.go) — keep both sides in sync when changing fingerprint formats.
+
+### Feed Status
+- Fetch script sends GMP `<get_feeds/>` best-effort after each report fetch → `POST /api/import/feeds` (API key) → `ParseFeeds` → `UpsertFeedStatus` (`feed_status`, migration 021) → `GET /api/feeds` → freshness widgets on Dashboard and Settings (German labels: aktuell/etwas alt/veraltet; fresh ≤3d, aging ≤10d).
+- `UpsertFeedStatus` relies on MariaDB evaluating `last_changed` BEFORE `version` in `ON DUPLICATE KEY UPDATE` — do not reorder the assignments.
 
 ### Frontend
-- `TableFilter` + `SortHeader` components on all list views. Search matches all visible columns. `FilterOption` supports `searchable: true` with `SelectOption[]` (`{value, label}`) for autocomplete combobox instead of plain `<select>`.
-- Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted. Source filter (OpenVAS/ZAP). Host filter is a searchable combobox showing `IP (hostname)` — type to filter by IP or hostname.
-- Scan list: scan type badges (OpenVAS green, ZAP blue) with type filter.
-- Ticket detail: web finding details section (URL, parameter, evidence, confidence badges, CWE links) — only shown for ZAP findings. Server-wide findings show all affected URLs from peer vulnerabilities. Clicking the affected host navigates to the ticket list filtered by that host.
-- Dashboard: open tickets by scan source pie chart (OpenVAS vs ZAP).
-- Sidebar: Dashboard, My Tickets, All Tickets, Scans, Scan Diff, Auto-Accept Rules, Settings. GitHub repo link at bottom.
-- Trend chart: 30-day daily snapshots of open tickets via recursive CTE.
+- `TableFilter` + `SortHeader` on all list views. Search matches all visible columns. `FilterOption` supports `searchable: true` with `SelectOption[]` for autocomplete combobox.
+- Ticket list: checkbox bulk selection, default filter `status=open`, CVSS-sorted, source filter, Assigned filter (incl. Unassigned), searchable host combobox `IP (hostname)`.
+- Ticket detail: web finding details (URL, parameter, evidence, confidence, CWE links) for ZAP findings; server-wide findings show all affected URLs from peers; affected-host click filters ticket list.
+- Dashboard: severity + scan-source pie charts, 30-day trend, Greenbone feed freshness widget.
+- Sidebar: Dashboard, My Tickets, All Tickets, Scans, Scan Diff, Auto-Accept Rules, Settings; GitHub link, app version (`__APP_VERSION__` from package.json), `#bugreport-slot` (Shell.tsx injects `OT_BUGREPORT_URL` widget — the only external JS the app loads).
+- **Hidden routes** with working pages but no sidebar entry: `/hosts` (Targets), `/vulnerabilities`, `/reports`, `/teams`.
+- Trend chart: 30-day daily snapshots via recursive CTE.
 
 ## Deployment
 
-Docker Compose or Debian Trixie systemd service. Use the `/deploy` skill for automated production deploys.
+Docker Compose or Debian Trixie systemd service. The former in-repo `/deploy` skill was removed in commit 3b5f46f (`.claude/` is gitignored now) — deploy manually: build, scp binary or `dpkg -i` the release .deb, plus `deploy/install.sh` for first-time setup.
 
-**Production:** Debian server accessible via SSH. Service runs as `openvas-tracker` user, config in `/etc/openvas-tracker/env`.
+**Production:** Debian server accessible via SSH. Service runs as `openvas-tracker` user, config in `/etc/openvas-tracker/env` (systemd `EnvironmentFile=`).
 
-**GVM:** Greenbone CE Docker stack on production server. GMP socket at `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`. Import triggered by GVM "HTTP Get" alert → `GET /api/import/openvas` → handler runs `sudo /usr/local/bin/openvas-tracker-fetch-latest` → script speaks GMP protocol directly to the socket (python3 stdlib only, no `gvm-tools` dependency), picks the task with the newest `last_report`, downloads the full XML report, POSTs it back to `/api/import/openvas`. Script source in `deploy/openvas-tracker-fetch-latest`, reads `OT_GMP_USER`/`OT_GMP_PASSWORD`/`OT_IMPORT_APIKEY` from `/etc/openvas-tracker/env`. Sudo is needed because `/var/lib/docker` is only traversable by root — sudoers rule in `deploy/openvas-tracker-sudoers`.
+**GVM:** Greenbone CE Docker stack on production server. GMP socket at `/var/lib/docker/volumes/greenbone-community-edition_gvmd_socket_vol/_data/gvmd.sock`. Import triggered by GVM "HTTP Get" alert → `GET /api/import/openvas` → handler runs `sudo /usr/local/bin/openvas-tracker-fetch-latest` → script speaks GMP directly to the socket (python3 stdlib only), picks the task with the newest `last_report`, downloads the full XML report, POSTs it back to `/api/import/openvas`, then POSTs `<get_feeds/>` output to `/api/import/feeds`. Script source in `deploy/openvas-tracker-fetch-latest`, reads `OT_GMP_USER`/`OT_GMP_PASSWORD`/`OT_IMPORT_APIKEY` from `/etc/openvas-tracker/env`. Sudo needed because `/var/lib/docker` is root-only — sudoers rule in `deploy/openvas-tracker-sudoers`.
+
+**Greenbone auto-update:** a nightly `greenbone-feed-update.service` on the prod server runs `docker compose pull + up` in `/root/greenbone-community-container` — the GVM stack silently tracks `:stable` images. A broken upstream gvmd image breaks imports (see Gotchas).
 
 ## Gotchas
 
 - **No Redis, no active scanning, no registration** — import-only dashboard.
 - **JWT secret required** — app refuses to start with default or short secret.
+- **No `OT_IMPORT_APIKEY` = no import endpoints** — the `/api/import` group is not registered at all (404, not 401); a set-but-short key aborts startup.
 - **docker-init.sql** — must add `SOURCE` line when adding migrations.
+- **docker-compose hardcodes its env** — no `env_file:`/interpolation; editing `.env` does nothing for the compose stack (login admin/admin). Compose DB name is `openvas_tracker` (underscore), bare-metal default DSN is `openvas-tracker` (hyphen) — don't mix DSNs.
 - **DBTX interface** — `queries.New()` accepts `*sql.DB` and `*sql.Tx`. Use `*sql.Tx` in transactional flows.
 - **Graceful shutdown** — handles SIGINT + SIGTERM (systemd/Docker).
 - **Body limit** — global 5M with `Skipper` for `/api/import` (50M). `BodyLimitWithConfig` required — group-level limits can't override global.
 - **GMP XML** — CVEs in `<refs><ref type="cve">`, not `<nvt><cve>`. Hostnames in `<host><hostname>` child element, IP is chardata.
 - **Ticket title ≠ vuln title** — tickets formatted `[SEV] Title — Host`. Risk rules and dedup use raw vuln title.
+- **`read` is a MariaDB reserved word** — always backtick it in notification queries (bitten in d23ce07: un-backticked = 1064, all endpoints 500).
 - **MariaDB** — no FULL OUTER JOIN (use UNION ALL + NOT EXISTS), no `generate_series` (use `WITH RECURSIVE dates`).
-- **Scan diff statuses** — `DiffScans` always runs `diffScansCompat` (the FULL OUTER JOIN path is dead — MariaDB has none). 7 statuses: `new`, `rediscovered`, `pending_fix`, `fixed`, `risk_accepted`, `host_unscanned`, `unchanged`. A finding in the new scan but not the old is downgraded from `new` to `host_unscanned` when the old scan never covered that host (`scan_hosts` check), or to `unchanged`/`risk_accepted`/`rediscovered` when a ticket created before the new scan already exists (mapped by ticket status). Legacy fallback: scans with zero `scan_hosts` rows skip the coverage check.
-- **VulnTrend boundary** — counts tickets open at *end of day D*; both `created_at` and `resolved_at` comparisons must use `dates.d + INTERVAL 1 DAY`. A bare `dates.d` on `resolved_at` counts same-day resolutions as still-open (off-by-one).
-- **tickets has no `affected_host`/`cve_id`** — both live on `vulnerabilities`; join `tickets t JOIN vulnerabilities v ON v.id = t.vulnerability_id`. Tolerate NULL `vulnerability_id` (orphans from the `ON DELETE SET NULL` FK).
+- **Scan diff statuses** — `DiffScans` always runs `diffScansCompat` (FULL OUTER JOIN path is dead). 7 statuses: `new`, `rediscovered`, `pending_fix`, `fixed`, `risk_accepted`, `host_unscanned`, `unchanged`. A finding in the new scan but not the old is downgraded from `new` to `host_unscanned` when the old scan never covered that host (`scan_hosts` check), or to `unchanged`/`risk_accepted`/`rediscovered` when a ticket created before the new scan already exists. Legacy fallback: scans with zero `scan_hosts` rows skip the coverage check.
+- **VulnTrend boundary** — counts tickets open at *end of day D*; both `created_at` and `resolved_at` comparisons must use `dates.d + INTERVAL 1 DAY`.
+- **tickets has no `affected_host`/`cve_id`** — both live on `vulnerabilities`; join via `t.vulnerability_id`. Tolerate NULL `vulnerability_id` (orphans).
 - **SSH $ escaping** — passwords with `$` get shell-expanded. Use Python `chr(36)` or single-quoted heredoc.
 - **Hostname normalization** — `normalizeHostname()`: UPPERCASE host, lowercase domain. Applied to imports + PTR.
-- **ticketCols / qualifiedTicketCols / scanTicket** — these three must stay in sync when adding columns to `tickets` table. All are in `internal/database/queries/tickets.go`. Ticket queries JOIN vulnerabilities AND scans (for `scan_type` field).
-- **ZAP JSON `@`-prefixed keys** — ZAP Traditional JSON Reports use `@host`, `@port`, `@ssl` (not `host`, `port`, `ssl`). The `zapSite` struct uses `json:"@host"` etc.
-- **vulnCols / scanVuln** — must stay in sync with vulnerabilities table. Includes `url`, `parameter`, `evidence`, `confidence` (migration 020).
-- **Backend-only features** — Teams (`/api/teams`) and Assets (`/api/assets`) have full backend handlers but no frontend UI beyond a read-only teams list.
-- **git-filter-repo** — removes `origin` remote (re-add with `git remote add origin <url>`), resets working copy (uncommitted edits lost), and breaks tracking (`git branch --set-upstream-to=origin/master master`).
-- **No DNS in import path** — `net.LookupAddr` stalls 12-18s per IP when any nameserver misbehaves; never call it inside the import transaction. Use `normalizeHostname(r.Hostname)` inline; let `BackfillHostnames` resolve missing ones async (48h positive / 1h negative cache, 3s per-lookup timeout — see `resolveHostname()` in `internal/service/import.go`).
-- **GMP get_reports** — passing `format_id="a994b278-..."` (XML format) goes through a slow/broken report-format plugin in current GVM CE; omit `format_id` and the native response already arrives in the `<get_reports_response><report><report>...` envelope the parser expects. Filter `sort-reverse=date` is silently ignored due to default user filter — find the latest scan via `get_tasks → last_report`, not `get_reports`.
-- **Two production import paths** — `GET /api/import/openvas` → `sudo openvas-tracker-fetch-latest` (primary, GVM HTTP-Get alert target) AND `openvas-tracker-import.timer` (oneshot watcher polling `/var/lib/openvas-tracker/incoming/*.xml`, legacy fallback). The watcher is harmless but redundant — don't rely on it.
-- **Debugging a hung tracker handler** — enable mariadb general log (`SET GLOBAL general_log_file='/tmp/trace.log'; SET GLOBAL general_log=ON;`) to see which queries the goroutine actually issued (or didn't); `/proc/PID/io rchar` lies for Unix sockets — use `VmRSS` growth + cumulative `ps -p PID -o time` instead. Go binaries here have no pprof endpoint.
-- **Release flow** — version source of truth is `frontend/package.json` (Go binary has no `var version` — the `-X main.version=…` ldflag in `release-deb.yml` is dead code). Bump it (and run `npm install --package-lock-only` so `package-lock.json` matches), commit, then `git tag -a vX.Y.Z && git push origin vX.Y.Z` — the tag triggers `.github/workflows/release-deb.yml` which builds the .deb and publishes the GitHub Release. Tag and `package.json` should always match; check with `git tag --list | tail` before bumping.
-- **Deleting scans cascades** — `scans→vulnerabilities` and `scans→scan_hosts` are `ON DELETE CASCADE`, but `vulnerabilities→tickets.vulnerability_id` is `ON DELETE SET NULL`. So `DELETE FROM scans WHERE id IN (...)` removes vulns and host scope rows but leaves orphan tickets with `vulnerability_id = NULL` (heals on the next scan that touches them). Verify with `SELECT COUNT(*) FROM tickets WHERE vulnerability_id IS NULL` before/after.
+- **ticketCols / qualifiedTicketCols / scanTicket** — must stay in sync when adding ticket columns (`internal/database/queries/tickets.go`). Ticket queries JOIN vulnerabilities AND scans. Same for **vulnCols / scanVuln** (incl. `url`, `parameter`, `evidence`, `confidence`).
+- **ZAP JSON `@`-prefixed keys** — `@host`, `@port`, `@ssl`; the `zapSite` struct uses `json:"@host"` etc.
+- **Backend-only / dormant features** — Teams, Assets, Search, Audit, Notifications have backend handlers but no (or hidden) frontend. Notifications additionally have NO producer — nothing ever inserts one, the table stays empty, and the WebSocket hub broadcasts nothing. Wiring real-time push needs: `Hub.Broadcast` calls in services + mounting the unused `useWebSocket` hook.
+- **Sensitive env masking** — `maskEnvValues` in `internal/handler/settings.go` masks JWT/API-key/admin/LDAP-bind/DSN/GMP-password values in `GET /api/settings/env`; add new secret vars to that map.
+- **git-filter-repo** — removes `origin` remote, resets working copy, breaks tracking.
+- **No DNS in import path** — `net.LookupAddr` stalls 12-18s per IP when a nameserver misbehaves; never call it inside the import transaction. `BackfillHostnames` resolves async (48h positive / 1h negative cache, 3s timeout — `resolveHostname()` in `internal/service/import.go`).
+- **GMP get_reports** — omit `format_id` (report-format plugin is slow/broken in GVM CE); the native response already has the expected envelope. Find the latest scan via `get_tasks → last_report`, not `get_reports` (sort filter silently ignored).
+- **gvmd answers auth errors with a self-closing response** and keeps the socket open — `gmp_call` must detect `<tag .../>` or a wrong `OT_GMP_PASSWORD` hangs the fetch until socket timeout.
+- **gvmd `:stable` image regressions break imports** — seen 2026-08: gvmd 26.35.0 crashed on every `get_reports` (unexpanded `SEVERITY_ERROR` in report SQL) → `fetch-latest error: GMP socket closed before <get_reports_response>` → import 500s while GVM kept scanning. Diagnose: run fetch script manually as root (journal truncates tracebacks) + `docker logs …gvmd-1 | grep -i 'PQexec failed'`; compare running vs registry image digest; fix = `docker compose pull && up -d` once upstream ships the fix. Note fetch-latest only imports the NEWEST report — reports that completed while broken are permanently skipped.
+- **TriggerFetch caps the fetch at 120s** (`exec.CommandContext` in `import.go`) while the script itself allows 600s GMP + 3600s POST — oversized/slow reports die at exactly 2min from the alert path; run the script manually via SSH instead.
+- **The .deb does NOT ship the fetch script or sudoers rule** — `release-deb.yml` packages only binary, env.example, systemd unit, migrations. `GET /api/import/openvas` is non-functional on a pure .deb install until `deploy/install.sh` (or manual copy) adds them.
+- **Two production import paths** — `GET /api/import/openvas` → sudo fetch script (primary) AND `openvas-tracker-import.timer` polling `/var/lib/openvas-tracker/incoming/*.xml` (legacy fallback; the unit exists only on the prod server, not in `deploy/` — don't look for it in the repo).
+- **Debugging a hung tracker handler** — enable mariadb general log to see which queries the goroutine issued; `/proc/PID/io rchar` lies for Unix sockets — use `VmRSS` growth + cumulative `ps -o time`. Go binaries here have no pprof endpoint.
+- **Release flow** — version source of truth is `frontend/package.json` (the `-X main.version` ldflag in `release-deb.yml` is dead code; the sidebar shows the version via Vite `__APP_VERSION__`). Bump it (+ `npm install --package-lock-only`), commit, `git tag -a vX.Y.Z && git push origin vX.Y.Z` → `release-deb.yml` builds the .deb and publishes the Release. Check existing tags with `git tag --list --sort=version:refname | tail` (plain `--list | tail` sorts lexically and shows v2.3.9 after v2.3.15).
+- **Deleting scans** — the only real FK cascade is `scans→scan_hosts`; on a fresh-migration DB, `DELETE FROM scans` orphans `vulnerabilities` rows and leaves `tickets.vulnerability_id` stale (see Database section — inline REFERENCES are ignored). Production behavior may differ if FKs were added out-of-band; verify with `SELECT COUNT(*) FROM tickets WHERE vulnerability_id IS NULL` before/after.

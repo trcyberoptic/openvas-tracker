@@ -11,31 +11,32 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 ## Features
 
 - **OpenVAS Import**: Webhook endpoint receives scan results automatically when scans complete, with original scan timestamps preserved from GMP reports
-- **OWASP ZAP Import**: Webhook endpoint for ZAP Traditional JSON Reports — URL-granular ticketing for web application findings
+- **OWASP ZAP Import**: Webhook endpoint for ZAP Traditional JSON Reports — one ticket per host per alert type, with every affected URL and parameter listed in the ticket detail
 - **Multi-Scanner Architecture**: Pluggable parser interface supports multiple scanner types with scan-type-scoped auto-resolve
 - **Automatic Ticketing**: New findings create tickets, missing findings auto-resolve, recurring findings reopen
 - **Flapping Protection**: Configurable threshold (default 3) of consecutive scan misses before auto-resolve — prevents noisy ticket churn from intermittent scan results, with visible `pending_resolution` intermediate status
 - **Scope-aware Auto-resolve**: Importing a scan only auto-resolves tickets for hosts that were in that scan's scope — other subnets are unaffected
 - **Ticket Lifecycle**: open → pending_resolution → fixed / risk_accepted / false_positive, with full activity audit trail
-- **Risk Acceptance with Expiry**: Risk-accepted tickets auto-reopen after expiry date
+- **Risk Acceptance with Expiry**: Risk-accepted tickets auto-reopen after expiry date (checked during imports)
 - **Auto-Accept Rules**: Define rules (by CVE or title, per host or globally) to automatically accept known risks on future imports — configurable from any ticket
 - **Scan Comparison**: Side-by-side diff of two scans, classifying each finding as new, rediscovered, pending-fix, fixed, risk-accepted, host-not-scanned, or unchanged. Coverage-aware (a host absent from one scan is flagged `host_unscanned` instead of falsely new/fixed) and flap-aware (a finding whose ticket predates the scan is not reported as new)
 - **Bulk Actions**: Select multiple tickets for batch status change or assignment
 - **Dashboard**: Open ticket counts by priority, scan source distribution pie chart (OpenVAS vs ZAP), 30-day trend chart, "My Tickets" and "Unassigned" quick filters
+- **Greenbone Feed Freshness**: The GMP fetch script reports feed versions after each import; Dashboard and Settings show whether NVT/SCAP/CERT feeds are current
 - **CVE & CWE References**: NVD, MITRE, and Google links on tickets with CVE; CWE links for ZAP findings; title-based search for tickets without
 - **Also Affected**: See which other hosts have the same vulnerability — click any affected host to filter tickets by that host
 - **DNS Hostname Resolution**: Automatic PTR lookup with 48h cache and 3s per-lookup timeout, normalized (UPPERCASE.domain.lowercase), runs async after import so a misbehaving DNS can never stall an import
 - **LDAP / Active Directory**: Optional AD authentication with group-based access control
 - **Admin + LDAP Auth**: Built-in admin user plus optional LDAP for team access, login by username
-- **Settings UI**: Edit all configuration (.env file) from the browser, test LDAP connection
-- **Filterable & Sortable Tables**: Column sorting, multi-filter (priority, status, host, scan source), full-text search across all columns, searchable host filter with hostname autocomplete, default filter on open tickets
+- **Settings UI**: Edit common configuration keys (.env file) from the browser, test LDAP connection (changes need a service restart)
+- **Filterable & Sortable Tables**: Column sorting, multi-filter (priority, status, host, scan source, assignee), full-text search across all columns, searchable host filter with hostname autocomplete, default filter on open tickets
 - **Report Generation**: HTML, PDF, Excel, Markdown — technical, executive, compliance, comparison, and trend report types
-- **Teams & Collaboration** (API only): Create teams with member roles (owner, admin, member), invite users, assign tickets to teams
+- **Teams & Collaboration** (API only): Create teams with member roles, invite users, assign tickets to teams
 - **Assets Management** (API only): Automatic asset inventory — hostname, IP, MAC, OS, open ports, services, risk score
-- **Targets Management**: Define and manage scan targets/scopes
-- **Notifications**: In-app notification system with unread counts and WebSocket real-time push
-- **Audit Logging**: Full audit trail of all user actions
-- **Global Search**: Search across tickets, vulnerabilities, and hosts
+- **Targets Management** (API only): Define and manage scan targets/scopes
+- **Notifications** (API only, dormant): Endpoints for listing and marking notifications exist, but nothing currently generates them and no UI consumes them
+- **Audit Logging** (API only): Audit trail endpoint for actions logged by the backend services
+- **Global Search** (API only): Search across tickets, vulnerabilities, and hosts
 - **Embedded React SPA**: Single binary, no separate frontend deploy
 
 ## Architecture
@@ -54,6 +55,7 @@ sequenceDiagram
     TR->>OV: GMP Socket: fetch latest report
     OV-->>TR: XML report
     TR->>DB: Create scan + vulnerabilities + tickets
+    TR->>DB: Upsert Greenbone feed versions
 
     Note over ZAP: Web app scan completes
     ZAP->>TR: POST /api/import/zap (JSON report)
@@ -62,7 +64,6 @@ sequenceDiagram
     TR->>DB: Check risk accept rules → auto-accept matches
     TR->>DB: Auto-fix/reopen tickets (scoped by scanner type)
     TR->>DB: Commit
-    TR->>UI: WebSocket push
 
     Note over UI: User logs in
     UI->>TR: POST /api/auth/login (username + password)
@@ -77,22 +78,20 @@ sequenceDiagram
 ## Quick Start with Docker
 
 ```bash
-cp .env.example .env    # edit: set OT_JWT_SECRET, OT_ADMIN_PASSWORD, OT_IMPORT_APIKEY
 docker compose up -d
 ```
 
-The UI is at http://localhost:8080. Login: username `admin`, password from `OT_ADMIN_PASSWORD`.
+The UI is at http://localhost:8080. Login: username `admin`, password `admin`.
+
+The compose file ships hardcoded local-dev credentials in `docker-compose.yml` (`environment:` block — it does **not** read `.env`). For anything beyond a local test, edit `OT_JWT_SECRET`, `OT_ADMIN_PASSWORD`, and `OT_IMPORT_APIKEY` there. Note: the Docker database is named `openvas_tracker` (underscore); the bare-metal default DSN uses `openvas-tracker` (hyphen).
 
 ## Quick Start without Docker
 
 ```bash
-# 1. Create database
+# 1. Create database (migrations auto-apply on first app start)
 mysql -e "CREATE DATABASE \`openvas-tracker\` CHARACTER SET utf8mb4;"
 
-# 2. Run migrations
-make migrate-up
-
-# 3. Configure
+# 2. Configure
 cat > .env << EOF
 OT_DATABASE_DSN=root@tcp(localhost:3306)/openvas-tracker?parseTime=true
 OT_JWT_SECRET=$(openssl rand -hex 32)
@@ -100,20 +99,23 @@ OT_IMPORT_APIKEY=$(openssl rand -hex 32)
 OT_ADMIN_PASSWORD=your-admin-password
 EOF
 
-# 4. Build and run
+# 3. Build and run
 make build && ./bin/openvas-tracker
 ```
 
 ## Configuration
 
-All config via `.env` file. Editable from the Settings page in the UI.
+All config via `.env` file (or process environment / systemd `EnvironmentFile=`). Common keys editable from the Settings page in the UI (service restart required for changes to take effect).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `OT_SERVER_HOST` | 0.0.0.0 | HTTP listen address |
 | `OT_SERVER_PORT` | 8080 | HTTP listen port |
 | `OT_DATABASE_DSN` | `...@tcp(localhost:3306)/openvas-tracker?parseTime=true` | MariaDB DSN |
+| `OT_DATABASE_MAXCONNS` / `OT_DATABASE_MINCONNS` | 25 / 5 | DB connection pool size |
 | `OT_JWT_SECRET` | (none — **required**) | JWT signing key (min 32 chars) |
-| `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars) |
+| `OT_JWT_EXPIREHOURS` | 24 | Login token lifetime |
+| `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars). If unset, all import endpoints are disabled |
 | `OT_ADMIN_PASSWORD` | (empty) | Admin user password |
 | `OT_GMP_USER` | `admin` | Greenbone user used by the fetch script when `GET /api/import/openvas` is triggered |
 | `OT_GMP_PASSWORD` | (empty) | Greenbone password for the fetch script |
@@ -124,22 +126,26 @@ All config via `.env` file. Editable from the Settings page in the UI.
 | `OT_LDAP_BIND_PASSWORD` | (empty) | LDAP service account password |
 | `OT_LDAP_GROUP_DN` | (empty) | Required AD group for access |
 | `OT_LDAP_USER_FILTER` | `(sAMAccountName=%s)` | LDAP user search filter |
+| `OT_LDAP_INSECURE_SKIP_VERIFY` | `false` | Skip TLS certificate verification for `ldaps://` (needed with internal CAs) |
+| `OT_BUGREPORT_URL` | (empty) | Optional bug-report widget URL (origin is whitelisted in the CSP at startup) |
 
 ## Authentication
 
 1. **Admin**: Username `admin` + `OT_ADMIN_PASSWORD` → always available
 2. **LDAP**: Bind against Active Directory, verify group membership → if configured
-3. **DB fallback**: Existing database users → for backwards compatibility
+3. **DB fallback**: Existing database users (matched by email first, then username; must be active) → for backwards compatibility
 
 No self-registration. LDAP users auto-created in DB on first login and also when the user list is loaded (Settings → Users), so they can be assigned to tickets before their first login.
 
+Rate limits: 60 requests/min/IP on `/api/auth`, 500/min/IP globally.
+
 ## OpenVAS Setup
 
-1. Set `OT_IMPORT_APIKEY`, `OT_GMP_USER`, and `OT_GMP_PASSWORD` in `.env`
+1. Set `OT_IMPORT_APIKEY`, `OT_GMP_USER`, and `OT_GMP_PASSWORD` in the env file the fetch script reads — `/etc/openvas-tracker/env` on a systemd install (override the path with `OT_ENV_FILE`). Without `OT_IMPORT_APIKEY` the import endpoints don't exist (404)
 2. In GSA: **Configuration → Alerts → New Alert** → HTTP Get → `http://<host>:8080/api/import/openvas?api_key=<key>`
 3. Attach alert to scan task
 
-When the alert fires, the tracker runs `sudo /usr/local/bin/openvas-tracker-fetch-latest`, which speaks GMP directly to the local Greenbone Unix socket, downloads the newest report and POSTs it back to itself. The script and its sudoers rule are installed by `deploy/install.sh`. The script needs read access to the gvmd socket — by default it expects the Greenbone CE Docker volume path; override with `OT_GMP_SOCKET` if your install puts it elsewhere.
+When the alert fires, the tracker runs `sudo /usr/local/bin/openvas-tracker-fetch-latest`, which speaks GMP directly to the local Greenbone Unix socket, downloads the newest report, POSTs it back to itself, and also reports the Greenbone feed versions. The script and its sudoers rule are installed by `deploy/install.sh` (they are **not** part of the .deb package). The script needs read access to the gvmd socket — by default it expects the Greenbone CE Docker volume path; override with `OT_GMP_SOCKET` when running the script manually (the sudo webhook path strips environment overrides).
 
 ## ZAP Setup
 
@@ -200,9 +206,8 @@ rm -f "$REPORT"
 
 ### How ZAP Findings Become Tickets
 
-- **Parameter-specific findings** (XSS, SQLi): one ticket per URL + parameter combination. Fingerprint: `cwe:<ID>:url:<path>:param:<name>`
-- **Server-wide findings** (missing headers, CSP): one ticket per host, regardless of how many URLs are affected. Fingerprint: `cwe:<ID>`. All affected URLs listed in ticket detail
-- CVE always takes priority as fingerprint if present
+- Each alert instance becomes a vulnerability record (URL, parameter, evidence, confidence)
+- Tickets are deduplicated per **host + CVE**, or per **host + alert title** when no CVE is present — one ticket per host per alert type; all affected URL + parameter pairs are listed in the ticket detail
 - Severity mapping: ZAP riskcode 3→high (CVSS 7.0), 2→medium (4.0), 1→low (2.0), 0→info (skipped)
 - Auto-resolve is scoped by scanner type — ZAP scans only affect ZAP tickets, never OpenVAS tickets
 
@@ -217,12 +222,12 @@ Consecutive misses reach threshold →  Ticket auto-fixed
 Finding reappears while pending    →  Counter reset, ticket back to open
 Import re-finds fixed vuln        →  Ticket reopened (open)
 Import re-finds false_positive     →  Skipped (never reopened)
-Risk acceptance expires            →  Ticket auto-reopened
+Risk acceptance expires            →  Ticket auto-reopened (on next import)
 ```
 
 ## Auto-Accept Rules
 
-Rules automatically set matching tickets to `risk_accepted` during import. Created from any ticket's detail page with scope "this host only" or "all hosts". Managed via the Auto-Accept Rules page.
+Rules automatically set matching tickets to `risk_accepted` during import. Created from any ticket's detail page with scope "this host only" or "all hosts". Managed via the Auto-Accept Rules page, which also has a "Refresh Tickets" button to re-apply all rules to existing open tickets.
 
 Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 
@@ -234,11 +239,17 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 | POST | /api/import/openvas | Import OpenVAS XML (API-Key) |
 | GET | /api/import/openvas | Trigger GMP fetch (API-Key) |
 | POST | /api/import/zap | Import ZAP JSON report (API-Key) |
+| POST | /api/import/feeds | Import Greenbone feed versions XML (API-Key) |
+| GET | /api/feeds | Greenbone feed version status |
+| GET | /api/hosts | Host summaries |
 | GET | /api/hosts/:host/vulnerabilities | Vulnerabilities for a host |
+| GET | /api/hosts/:host/tickets | Tickets for a host |
 | GET | /api/scans | List scans |
 | GET | /api/scans/diff?old=X&new=Y | Compare two scans |
 | GET | /api/scans/:id | Scan detail |
+| GET | /api/scans/:id/vulnerabilities | Vulnerabilities of a scan |
 | GET | /api/tickets | List all tickets |
+| POST | /api/tickets | Create ticket manually |
 | POST | /api/tickets/bulk | Bulk status/assign |
 | GET | /api/tickets/:id | Ticket detail |
 | PATCH | /api/tickets/:id/status | Change status |
@@ -252,33 +263,46 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 | GET | /api/settings/setup | Setup guide |
 | GET | /api/settings/users | User list (local + LDAP) |
 | GET/PUT | /api/settings/env | Read/write .env config |
+| PUT | /api/settings/env/batch | Batch update config |
 | POST | /api/settings/ldap/test | Test LDAP connection |
 | GET | /api/settings/risk-rules | List auto-accept rules |
 | POST | /api/settings/risk-rules/apply | Re-apply rules to existing open tickets |
 | DELETE | /api/settings/risk-rules/:id | Delete rule |
 | GET | /api/vulnerabilities | List vulnerabilities |
 | GET | /api/vulnerabilities/:id | Vulnerability detail |
+| GET | /api/vulnerabilities/:id/affected-urls | All URLs affected by a finding |
 | PATCH | /api/vulnerabilities/:id/status | Update vulnerability status |
-| POST | /api/tickets | Create ticket manually |
 | GET | /api/search?q= | Global search |
 | GET | /api/assets | List assets |
 | GET | /api/assets/:id | Asset detail |
+| DELETE | /api/assets/:id | Delete asset |
 | GET | /api/targets | List targets |
 | POST | /api/targets | Create target |
+| GET | /api/targets/:id | Target detail |
+| DELETE | /api/targets/:id | Delete target |
 | GET | /api/teams | List teams |
 | POST | /api/teams | Create team |
+| GET | /api/teams/:id | Team detail |
+| GET/POST | /api/teams/:id/members | List/add members |
+| POST | /api/teams/:id/invite | Invite user |
+| DELETE | /api/teams/:id | Delete team |
 | GET | /api/notifications | List notifications |
+| GET | /api/notifications/unread | Unread count |
+| PUT | /api/notifications/:id/read | Mark one read |
 | PUT | /api/notifications/read-all | Mark all read |
 | GET | /api/audit | Audit log |
-| POST | /api/reports | Generate report |
-| GET | /api/reports/:id | Download report |
-| PUT | /api/settings/env/batch | Batch update config |
+| POST | /api/reports | Generate report (returns the file) |
+| GET | /api/reports | List own reports |
+| GET | /api/reports/:id | Report metadata + base64 file data (JSON) |
+| GET | /ws | WebSocket connect (JWT via `?token=`; reserved for future push) |
 | GET | /api/health | Health check |
+
+Import endpoints (`/api/import/*`) only exist when `OT_IMPORT_APIKEY` is configured.
 
 ## Tech Stack
 
 - **Backend**: Go 1.26, Echo v4, MariaDB, golang-jwt, bcrypt, godotenv, go-ldap
-- **Frontend**: React 19, Vite, Tailwind CSS, TanStack Query, Recharts, Zustand
+- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, react-router, Recharts, Zustand
 - **Deploy**: Docker Compose or systemd (Debian). Database migrations auto-applied on startup
 
 ## Donate
