@@ -131,7 +131,7 @@ func main() {
 	handler.NewHostHandler(q).RegisterRoutes(p.Group("/hosts"))
 	handler.NewVulnHandler(vulnSvc, q).RegisterRoutes(p.Group("/vulnerabilities"))
 
-	// Ticket routes — status/assign require admin or analyst role
+	// Ticket routes — no role enforcement (RequireRole exists but is unwired)
 	ticketH := handler.NewTicketHandler(ticketSvc, q)
 	ticketG := p.Group("/tickets")
 	ticketH.RegisterRoutes(ticketG)

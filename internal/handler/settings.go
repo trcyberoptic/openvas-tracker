@@ -106,10 +106,15 @@ func (h *SettingsHandler) GetEnvConfig(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read config")
 	}
 
-	// Mask sensitive values
+	return c.JSON(http.StatusOK, maskEnvValues(vals))
+}
+
+// maskEnvValues masks sensitive config values (first 4 chars + asterisks).
+func maskEnvValues(vals map[string]string) map[string]string {
 	sensitive := map[string]bool{
 		"OT_JWT_SECRET": true, "OT_IMPORT_APIKEY": true,
 		"OT_ADMIN_PASSWORD": true, "OT_LDAP_BIND_PASSWORD": true, "OT_DATABASE_DSN": true,
+		"OT_GMP_PASSWORD": true,
 	}
 	masked := make(map[string]string)
 	for k, v := range vals {
@@ -119,8 +124,7 @@ func (h *SettingsHandler) GetEnvConfig(c echo.Context) error {
 			masked[k] = v
 		}
 	}
-
-	return c.JSON(http.StatusOK, masked)
+	return masked
 }
 
 type updateEnvRequest struct {

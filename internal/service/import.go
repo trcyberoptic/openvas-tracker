@@ -282,8 +282,11 @@ func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r 
 		return false
 	}
 
-	// Check if a risk accept rule matches this finding
-	fp := r.Fingerprint()
+	// Check if a risk accept rule matches this finding.
+	// Rules are stored as CVE or "title:"+title (VulnFingerprint) — matching must
+	// use the same form, NOT Finding.Fingerprint(), whose cwe:/url: forms for ZAP
+	// findings would never equal a stored rule.
+	fp := ruleFingerprint(r)
 	if rule, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
 		q.UpdateTicketStatus(ctx, queries.UpdateTicketStatusParams{ID: ticketID, Status: queries.TicketStatusRiskAccepted})
 		if rule.ExpiresAt != nil {
@@ -495,6 +498,12 @@ func VulnFingerprint(cve, title string) string {
 
 func vulnFingerprint(cve, title string) string {
 	return VulnFingerprint(cve, title)
+}
+
+// ruleFingerprint returns the finding's fingerprint in the canonical form risk
+// accept rules are stored with (CVE or "title:"+title).
+func ruleFingerprint(r scanner.Finding) string {
+	return VulnFingerprint(r.CVEID, r.Title)
 }
 
 func strPtr(s string) *string {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 )
 
 func TestMapSeverity(t *testing.T) {
@@ -58,6 +60,28 @@ func derefInt32(p *int32) string     { if p == nil { return "<nil>" }; return fm
 func derefStr(p *string) string      { if p == nil { return "<nil>" }; return *p }
 func int32PtrEq(a, b *int32) bool    { if a == nil && b == nil { return true }; if a == nil || b == nil { return false }; return *a == *b }
 func strPtrEq(a, b *string) bool     { if a == nil && b == nil { return true }; if a == nil || b == nil { return false }; return *a == *b }
+
+func TestRuleFingerprint(t *testing.T) {
+	// Rules are stored via VulnFingerprint (CVE or "title:"+title) — import-time
+	// matching must use the same form, or ZAP findings with CWE never match (bug).
+	zap := scanner.Finding{Title: "X-Frame-Options Header Missing", CWEID: "1021", URL: "/login", Parameter: "q", ScanType: "zap"}
+	if got, want := ruleFingerprint(zap), "title:X-Frame-Options Header Missing"; got != want {
+		t.Errorf("ruleFingerprint(zap) = %q, want %q", got, want)
+	}
+	if zap.Fingerprint() == ruleFingerprint(zap) {
+		t.Error("test premise broken: Finding.Fingerprint() should differ from rule form for CWE findings")
+	}
+
+	cve := scanner.Finding{Title: "OpenSSL Padding Oracle", CVEID: "CVE-2016-2107", ScanType: "openvas"}
+	if got, want := ruleFingerprint(cve), "CVE-2016-2107"; got != want {
+		t.Errorf("ruleFingerprint(cve) = %q, want %q", got, want)
+	}
+
+	network := scanner.Finding{Title: "TLS 1.0 Enabled", CVEID: "NOCVE", ScanType: "openvas"}
+	if got, want := ruleFingerprint(network), "title:TLS 1.0 Enabled"; got != want {
+		t.Errorf("ruleFingerprint(network) = %q, want %q", got, want)
+	}
+}
 
 func TestAutoResolveThreshold(t *testing.T) {
 	// Default value

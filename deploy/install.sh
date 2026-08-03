@@ -30,8 +30,7 @@ echo "==> Installing systemd unit"
 install -o root -g root -m 0644 deploy/openvas-tracker.service /etc/systemd/system/openvas-tracker.service
 systemctl daemon-reload
 
-echo "==> Running database migrations"
-su -s /bin/bash openvas-tracker -c "OT_DATABASE_URL=\$(grep OT_DATABASE_URL /etc/openvas-tracker/env | cut -d= -f2-) /usr/local/bin/openvas-tracker migrate"
+# Migrations auto-apply on service start (AutoMigrate) — no separate migrate step.
 
 echo "==> Enabling and starting service"
 systemctl enable openvas-tracker
