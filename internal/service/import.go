@@ -157,6 +157,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 			CvssScore:      f64Ptr(r.CVSSScore),
 			CveID:          cvePtr(r.CVEID),
 			CweID:          strPtr(r.CWEID),
+			OID:            strPtr(r.OID),
 			AffectedHost:   strPtr(r.Host),
 			Hostname:       strPtr(normalizeHostname(r.Hostname)),
 			URL:            strPtr(r.URL),
@@ -187,18 +188,33 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 	s.reopenExpiredRiskAccepted(ctx, tq)
 	res.TicketsAutoResolved = s.autoResolveStale(ctx, tq, scan.ID, scanType)
 
+	// A healthy import mostly touches tickets that already exist. A burst of new
+	// ones usually means finding identity moved under us — a feed that renamed
+	// VTs or dropped their refs — rather than the estate regressing overnight.
+	// ponytail: a log line, not an alert. Nothing watched the journal when this
+	// happened on 2026-08-08 either; wire it into notifications if it recurs.
+	if res.TicketsCreated >= newTicketBurstThreshold {
+		log.Printf("import: WARNING %d new tickets from %d findings (%d reopened) — check whether the feed renamed VTs or changed their refs; a silent identity change looks exactly like this",
+			res.TicketsCreated, res.VulnsImported, res.TicketsReopened)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 	return res, nil
 }
 
+// Past this many new tickets in one import, something structural changed rather
+// than the estate genuinely regressing: the 2026-08-08 feed change produced 136
+// at once, a normal daily import produces a handful.
+const newTicketBurstThreshold = 50
+
 func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r scanner.Finding, vulnID, severity string, now time.Time) (created, reopened bool) {
 	if r.Host == "" {
 		return false, false
 	}
 
-	existing, err := q.FindTicketByFingerprint(ctx, r.Host, r.CVEID, r.Title)
+	existing, err := q.FindTicketByFingerprint(ctx, r.Host, r.OID, r.CVEID, r.Title)
 	if err != nil {
 		return s.createTicket(ctx, q, r, vulnID, severity), false
 	}

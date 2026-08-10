@@ -66,6 +66,7 @@ func ParseZAPJSON(r io.Reader) ([]Finding, error) {
 					URL:         urlPath,
 					Parameter:   inst.Param,
 					Title:       alert.Alert,
+					OID:         alert.PluginID, // ZAP's equivalent of the NVT OID
 					Description: stripHTML(alert.Desc),
 					Severity:    severity,
 					CVSSScore:   cvss,

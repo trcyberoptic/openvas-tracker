@@ -6,6 +6,7 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"time"
 )
@@ -276,19 +277,38 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 	return err
 }
 
-// FindTicketByFingerprint finds an existing ticket matching a vulnerability fingerprint (host + CVE or host + title).
 const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id, s.scan_type`
 
-func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
+const findTicketBase = `SELECT ` + qualifiedTicketCols + ` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? `
+
+// FindTicketByFingerprint finds the existing ticket for a finding on a host.
+//
+// Identity is the OID (OpenVAS NVT OID / ZAP pluginid) whenever both sides have
+// one — it is the only part of a finding that survives a VT rename and a change
+// in CVE references. Titles and CVEs both move: Greenbone dropped the DISPUTED
+// CVE refs from 41 NVTs in the 2026-08-08 feed, the fingerprint flipped, and
+// every affected host silently got a second ticket.
+//
+// Title/CVE remain as a fallback for rows written before the oid column existed,
+// and only match rows that have no OID — a *different* OID means a different
+// check, so it must not merge. Each touched ticket is repointed at the new
+// vulnerability row, so the fallback stops firing after one scan cycle.
+func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, oid, cveID, title string) (*Ticket, error) {
 	if cveID == "NOCVE" {
 		cveID = ""
 	}
-	// Match on title OR CVE, never "CVE else title": a vuln's cve_id can appear
-	// or vanish between scans (Greenbone dropped the DISPUTED CVE refs from
-	// several NVTs in 2026-08), which flipped the fingerprint and created a
-	// second ticket for every affected host — resurrecting even false positives.
 	var t Ticket
-	r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? AND (v.title = ? OR (? <> '' AND v.cve_id = ?)) ORDER BY t.created_at DESC LIMIT 1`, host, title, cveID, cveID)
+	if oid != "" {
+		r := q.db.QueryRowContext(ctx, findTicketBase+`AND v.oid = ? ORDER BY t.created_at DESC LIMIT 1`, host, oid)
+		if err := scanTicket(r, &t); err == nil {
+			return &t, nil
+		} else if err != sql.ErrNoRows {
+			return nil, err
+		}
+	}
+	r := q.db.QueryRowContext(ctx,
+		findTicketBase+`AND (? = '' OR v.oid IS NULL OR v.oid = '') AND (v.title = ? OR (? <> '' AND v.cve_id = ?)) ORDER BY t.created_at DESC LIMIT 1`,
+		host, oid, title, cveID, cveID)
 	if err := scanTicket(r, &t); err != nil {
 		return nil, err
 	}
@@ -310,9 +330,11 @@ func (q *Queries) AlsoAffectedHosts(ctx context.Context, ticketID string) ([]Als
 		JOIN vulnerabilities v1 ON t1.vulnerability_id = v1.id
 		-- Symmetric on purpose: branching on v1's cve_id made the peer list
 		-- depend on which ticket you opened, so two tickets for the same vuln
-		-- showed different "also affected" hosts.
+		-- showed different "also affected" hosts. Same identity notion as
+		-- FindTicketByFingerprint (OID, then title/CVE) so the two cannot drift.
 		JOIN vulnerabilities v2 ON (
-			v2.title = v1.title
+			(v1.oid IS NOT NULL AND v1.oid != '' AND v2.oid = v1.oid)
+			OR v2.title = v1.title
 			OR (v1.cve_id IS NOT NULL AND v1.cve_id != '' AND v2.cve_id = v1.cve_id)
 		)
 		JOIN tickets t2 ON t2.vulnerability_id = v2.id

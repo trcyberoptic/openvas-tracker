@@ -42,6 +42,7 @@ type Vulnerability struct {
 	CvssScore      *float64      `json:"cvss_score"`
 	CveID          *string       `json:"cve_id"`
 	CweID          *string       `json:"cwe_id"`
+	OID            *string       `json:"oid"`
 	AffectedHost   *string       `json:"affected_host"`
 	Hostname       *string       `json:"hostname"`
 	URL            *string       `json:"url"`
@@ -72,6 +73,7 @@ type CreateVulnerabilityParams struct {
 	CvssScore    *float64      `json:"cvss_score"`
 	CveID        *string       `json:"cve_id"`
 	CweID        *string       `json:"cwe_id"`
+	OID          *string       `json:"oid"`
 	AffectedHost *string       `json:"affected_host"`
 	Hostname     *string       `json:"hostname"`
 	URL          *string       `json:"url"`
@@ -112,15 +114,15 @@ type CountVulnsBySeverityRow struct {
 	Count    int64         `json:"count"`
 }
 
-const vulnCols = `id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, affected_host, hostname, url, parameter, affected_port, protocol, service, solution, evidence, confidence, vuln_references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at`
+const vulnCols = `id, scan_id, target_id, user_id, title, description, severity, status, cvss_score, cve_id, cwe_id, oid, affected_host, hostname, url, parameter, affected_port, protocol, service, solution, evidence, confidence, vuln_references, enrichment_data, risk_score, discovered_at, resolved_at, created_at, updated_at`
 
 func scanVuln(row interface{ Scan(...any) error }, i *Vulnerability) error {
-	return row.Scan(&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description, &i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID, &i.AffectedHost, &i.Hostname, &i.URL, &i.Parameter, &i.AffectedPort, &i.Protocol, &i.Service, &i.Solution, &i.Evidence, &i.Confidence, &i.VulnReferences, &i.EnrichmentData, &i.RiskScore, &i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt)
+	return row.Scan(&i.ID, &i.ScanID, &i.TargetID, &i.UserID, &i.Title, &i.Description, &i.Severity, &i.Status, &i.CvssScore, &i.CveID, &i.CweID, &i.OID, &i.AffectedHost, &i.Hostname, &i.URL, &i.Parameter, &i.AffectedPort, &i.Protocol, &i.Service, &i.Solution, &i.Evidence, &i.Confidence, &i.VulnReferences, &i.EnrichmentData, &i.RiskScore, &i.DiscoveredAt, &i.ResolvedAt, &i.CreatedAt, &i.UpdatedAt)
 }
 
 func (q *Queries) CreateVulnerability(ctx context.Context, arg CreateVulnerabilityParams) (Vulnerability, error) {
-	const createVulnerability = `INSERT INTO vulnerabilities (id, scan_id, target_id, user_id, title, description, severity, cvss_score, cve_id, cwe_id, affected_host, hostname, url, parameter, affected_port, protocol, service, solution, evidence, confidence, vuln_references) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := q.db.ExecContext(ctx, createVulnerability, arg.ID, arg.ScanID, arg.TargetID, arg.UserID, arg.Title, arg.Description, arg.Severity, arg.CvssScore, arg.CveID, arg.CweID, arg.AffectedHost, arg.Hostname, arg.URL, arg.Parameter, arg.AffectedPort, arg.Protocol, arg.Service, arg.Solution, arg.Evidence, arg.Confidence, arg.VulnReferences)
+	const createVulnerability = `INSERT INTO vulnerabilities (id, scan_id, target_id, user_id, title, description, severity, cvss_score, cve_id, cwe_id, oid, affected_host, hostname, url, parameter, affected_port, protocol, service, solution, evidence, confidence, vuln_references) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createVulnerability, arg.ID, arg.ScanID, arg.TargetID, arg.UserID, arg.Title, arg.Description, arg.Severity, arg.CvssScore, arg.CveID, arg.CweID, arg.OID, arg.AffectedHost, arg.Hostname, arg.URL, arg.Parameter, arg.AffectedPort, arg.Protocol, arg.Service, arg.Solution, arg.Evidence, arg.Confidence, arg.VulnReferences)
 	if err != nil {
 		return Vulnerability{}, err
 	}
