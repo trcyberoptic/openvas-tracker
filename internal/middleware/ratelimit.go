@@ -9,9 +9,12 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// windowStart is the start of the current fixed window — deliberately NOT
+// refreshed per request, otherwise the window never expires under steady
+// traffic and callers stay 429'd until they go fully idle.
 type visitor struct {
-	count    int
-	lastSeen time.Time
+	count       int
+	windowStart time.Time
 }
 
 type RateLimiter struct {
@@ -36,7 +39,7 @@ func (rl *RateLimiter) cleanup() {
 		time.Sleep(rl.window)
 		rl.mu.Lock()
 		for ip, v := range rl.visitors {
-			if time.Since(v.lastSeen) > rl.window {
+			if time.Since(v.windowStart) > rl.window {
 				delete(rl.visitors, ip)
 			}
 		}
@@ -50,13 +53,12 @@ func (rl *RateLimiter) Middleware() echo.MiddlewareFunc {
 			ip := c.RealIP()
 			rl.mu.Lock()
 			v, exists := rl.visitors[ip]
-			if !exists || time.Since(v.lastSeen) > rl.window {
-				rl.visitors[ip] = &visitor{count: 1, lastSeen: time.Now()}
+			if !exists || time.Since(v.windowStart) > rl.window {
+				rl.visitors[ip] = &visitor{count: 1, windowStart: time.Now()}
 				rl.mu.Unlock()
 				return next(c)
 			}
 			v.count++
-			v.lastSeen = time.Now()
 			if v.count > rl.limit {
 				rl.mu.Unlock()
 				return echo.NewHTTPError(http.StatusTooManyRequests, "rate limit exceeded")

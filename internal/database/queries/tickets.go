@@ -280,16 +280,16 @@ func (q *Queries) DeleteTicket(ctx context.Context, id string) error {
 const qualifiedTicketCols = `t.id, t.title, t.description, t.status, t.priority, t.vulnerability_id, t.assigned_to, t.created_by, t.due_date, t.resolved_at, t.risk_accepted_until, t.consecutive_misses, t.first_seen_at, t.last_seen_at, t.created_at, t.updated_at, v.affected_host, v.hostname, v.cvss_score, v.cve_id, s.scan_type`
 
 func (q *Queries) FindTicketByFingerprint(ctx context.Context, host, cveID, title string) (*Ticket, error) {
-	var t Ticket
-	var err error
-	if cveID != "" && cveID != "NOCVE" {
-		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? AND v.cve_id = ? ORDER BY t.created_at DESC LIMIT 1`, host, cveID)
-		err = scanTicket(r, &t)
-	} else {
-		r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? AND (v.cve_id IS NULL OR v.cve_id = '') AND v.title = ? ORDER BY t.created_at DESC LIMIT 1`, host, title)
-		err = scanTicket(r, &t)
+	if cveID == "NOCVE" {
+		cveID = ""
 	}
-	if err != nil {
+	// Match on title OR CVE, never "CVE else title": a vuln's cve_id can appear
+	// or vanish between scans (Greenbone dropped the DISPUTED CVE refs from
+	// several NVTs in 2026-08), which flipped the fingerprint and created a
+	// second ticket for every affected host — resurrecting even false positives.
+	var t Ticket
+	r := q.db.QueryRowContext(ctx, `SELECT `+qualifiedTicketCols+` FROM tickets t JOIN vulnerabilities v ON t.vulnerability_id = v.id LEFT JOIN scans s ON v.scan_id = s.id WHERE v.affected_host = ? AND (v.title = ? OR (? <> '' AND v.cve_id = ?)) ORDER BY t.created_at DESC LIMIT 1`, host, title, cveID, cveID)
+	if err := scanTicket(r, &t); err != nil {
 		return nil, err
 	}
 	return &t, nil
@@ -308,9 +308,12 @@ func (q *Queries) AlsoAffectedHosts(ctx context.Context, ticketID string) ([]Als
 		SELECT v2.affected_host, v2.hostname, t2.id, t2.status
 		FROM tickets t1
 		JOIN vulnerabilities v1 ON t1.vulnerability_id = v1.id
+		-- Symmetric on purpose: branching on v1's cve_id made the peer list
+		-- depend on which ticket you opened, so two tickets for the same vuln
+		-- showed different "also affected" hosts.
 		JOIN vulnerabilities v2 ON (
-			(v1.cve_id IS NOT NULL AND v1.cve_id != '' AND v2.cve_id = v1.cve_id)
-			OR (v1.cve_id IS NULL OR v1.cve_id = '') AND v2.title = v1.title
+			v2.title = v1.title
+			OR (v1.cve_id IS NOT NULL AND v1.cve_id != '' AND v2.cve_id = v1.cve_id)
 		)
 		JOIN tickets t2 ON t2.vulnerability_id = v2.id
 		WHERE t1.id = ? AND t2.id != ? AND v2.affected_host != v1.affected_host
