@@ -16,10 +16,11 @@ import (
 type TicketHandler struct {
 	tickets *service.TicketService
 	q       *queries.Queries
+	mailer  *service.MailNotifier
 }
 
-func NewTicketHandler(tickets *service.TicketService, q *queries.Queries) *TicketHandler {
-	return &TicketHandler{tickets: tickets, q: q}
+func NewTicketHandler(tickets *service.TicketService, q *queries.Queries, mailer *service.MailNotifier) *TicketHandler {
+	return &TicketHandler{tickets: tickets, q: q, mailer: mailer}
 }
 
 type createTicketRequest struct {
@@ -61,6 +62,9 @@ func (h *TicketHandler) Create(c echo.Context) error {
 	ticket, err := h.tickets.Create(c.Request().Context(), params)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create ticket")
+	}
+	if req.AssignedTo != nil {
+		go h.mailer.NotifyAssigned(userID, *req.AssignedTo, []string{ticket.ID})
 	}
 	return c.JSON(http.StatusCreated, ticket)
 }
@@ -173,6 +177,9 @@ func (h *TicketHandler) Assign(c echo.Context) error {
 		ID: uuid.New().String(), TicketID: id, Action: "assigned",
 		OldValue: &oldVal, NewValue: &newVal, ChangedBy: userID,
 	})
+	if req.AssignedTo != nil && newVal != oldVal {
+		go h.mailer.NotifyAssigned(userID, *req.AssignedTo, []string{id})
+	}
 
 	ticket, _ := h.tickets.Get(c.Request().Context(), id)
 	return c.JSON(http.StatusOK, ticket)
@@ -259,6 +266,7 @@ func (h *TicketHandler) BulkUpdate(c echo.Context) error {
 
 	userID := middleware.GetUserID(c)
 	updated := 0
+	var newlyAssigned []string
 
 	for _, tid := range req.TicketIDs {
 		if req.Status != nil {
@@ -276,9 +284,13 @@ func (h *TicketHandler) BulkUpdate(c echo.Context) error {
 			})
 		}
 		if req.AssignedTo != nil {
-			h.q.AssignTicket(c.Request().Context(), queries.AssignTicketParams{
+			prev, prevErr := h.tickets.Get(c.Request().Context(), tid)
+			_, err := h.q.AssignTicket(c.Request().Context(), queries.AssignTicketParams{
 				ID: tid, AssignedTo: req.AssignedTo,
 			})
+			if err == nil && prevErr == nil && (prev.AssignedTo == nil || *prev.AssignedTo != *req.AssignedTo) {
+				newlyAssigned = append(newlyAssigned, tid)
+			}
 			action := "assigned"
 			h.q.LogTicketActivity(c.Request().Context(), queries.LogTicketActivityParams{
 				ID: uuid.New().String(), TicketID: tid, Action: action,
@@ -288,6 +300,9 @@ func (h *TicketHandler) BulkUpdate(c echo.Context) error {
 		updated++
 	}
 
+	if req.AssignedTo != nil {
+		go h.mailer.NotifyAssigned(userID, *req.AssignedTo, newlyAssigned)
+	}
 	return c.JSON(http.StatusOK, map[string]int{"updated": updated})
 }
 

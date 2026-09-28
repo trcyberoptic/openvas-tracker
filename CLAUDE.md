@@ -95,7 +95,7 @@ Fetch-script-only vars (read from its process env or `/etc/openvas-tracker/env`,
 ## Database
 
 - **MariaDB** with `database/sql` + `go-sql-driver/mysql`
-- 23 migrations in `sql/migrations/` (001-023). `sql/docker-init.sql` sources all.
+- 25 migrations in `sql/migrations/` (001-025). `sql/docker-init.sql` sources all.
 - **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically. Bootstraps `schema_migrations` for existing databases (detected via `users` table). Bootstrap only marks CREATE TABLE migrations as applied — ALTER TABLE migrations always run.
 - **AutoMigrate splits on bare semicolons** (full-line `--` comments stripped) — keep migrations to plain semicolon-separated DDL/DML: no procedures, triggers, or string literals containing `;`.
 - **Foreign keys ARE enforced, including the inline ones** — verified 2026-08-10 against production (MariaDB 11.8.6): 29 constraints, and the inline column-level `REFERENCES … ON DELETE …` clauses in migrations 004/005 produce real constraints with exactly the declared delete rules (`vulnerabilities.scan_id → scans` CASCADE, `tickets.vulnerability_id → vulnerabilities` SET NULL, `ticket_activity.ticket_id → tickets` CASCADE). An earlier note here claimed MariaDB silently ignores inline `REFERENCES` — that is MySQL/older-MariaDB behaviour and does not hold on 11.8. Still check `information_schema.REFERENTIAL_CONSTRAINTS` on the target DB before relying on a cascade, since older installs may predate this.
@@ -133,6 +133,13 @@ Fetch-script-only vars (read from its process env or `/etc/openvas-tracker/env`,
 - `risk_accept_rules`: fingerprint (CVE or `title:` + raw vuln title) + host pattern (`*` or IP) + optional expiry (propagates to the ticket's `risk_accepted_until`; expired rules are inert but not deleted).
 - Created from ticket detail ("this host" / "all hosts"); applied to existing open and pending_resolution tickets on creation. "Refresh Tickets" (`POST /api/settings/risk-rules/apply`) re-applies all rules.
 - Import-time matching uses the same CVE/`title:` fingerprint form as rule storage (`ruleFingerprint` in import.go) — keep both sides in sync when changing fingerprint formats.
+
+### E-Mail Notifications
+- `internal/mail` (stdlib `net/smtp`: STARTTLS when offered + `AUTH PLAIN`, 30s deadline, no port 465) ← `service.MailNotifier` (`mailnotify.go`).
+- Settings live in `app_settings` (migration 024, key/value), NOT in env: read on every send, so Settings-UI edits apply without restart. `smtp_host` empty = feature off; `notify_unassigned_to` empty = no import digest. `smtp_password` is write-only over the API (`password_set` flag; empty on PUT keeps the stored one), stored in plaintext in the DB.
+- Import digest: `ImportService` collects ticket IDs in `unassignedNotice` inside the transaction and sends one mail in a goroutine **after commit**. "New" = created and not auto-risk-accepted; "reopened" = fixed→open and expired risk-accept→open, only if unassigned. pending_resolution→open (flapping) is not a reopen.
+- Assignment mail: `NotifyAssigned` from ticket create / `PATCH /:id/assign` / `POST /bulk` (one mail per action; bulk lists only tickets whose assignee actually changed). Skipped on self-assignment, for inactive users, users without email, and users with `users.email_notifications = 0` (migration 025, toggle in Settings → Profile).
+- Fire-and-forget: a relay failure is only a `mail:` log line, no retry. Production relay: `smtp.epostplus.li:587` (credentials in the IT wiki).
 
 ### Feed Status
 - Fetch script sends GMP `<get_feeds/>` best-effort after each report fetch → `POST /api/import/feeds` (API key) → `ParseFeeds` → `UpsertFeedStatus` (`feed_status`, migration 021) → `GET /api/feeds` → freshness widgets on Dashboard and Settings (German labels: aktuell/etwas alt/veraltet; fresh ≤3d, aging ≤10d).

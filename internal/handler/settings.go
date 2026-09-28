@@ -11,6 +11,7 @@ import (
 
 	"github.com/cyberoptic/openvas-tracker/internal/config"
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
+	"github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 )
 
@@ -19,10 +20,11 @@ type SettingsHandler struct {
 	q          *queries.Queries
 	envSvc     *service.EnvFileService
 	ldapSvc    *service.LDAPService
+	mailer     *service.MailNotifier
 }
 
-func NewSettingsHandler(cfg *config.Config, q *queries.Queries, envSvc *service.EnvFileService, ldapSvc *service.LDAPService) *SettingsHandler {
-	return &SettingsHandler{cfg: cfg, q: q, envSvc: envSvc, ldapSvc: ldapSvc}
+func NewSettingsHandler(cfg *config.Config, q *queries.Queries, envSvc *service.EnvFileService, ldapSvc *service.LDAPService, mailer *service.MailNotifier) *SettingsHandler {
+	return &SettingsHandler{cfg: cfg, q: q, envSvc: envSvc, ldapSvc: ldapSvc, mailer: mailer}
 }
 
 func (h *SettingsHandler) GetSetup(c echo.Context) error {
@@ -189,6 +191,66 @@ func (h *SettingsHandler) TestLDAP(c echo.Context) error {
 	})
 }
 
+// GetMail returns the mail settings. The SMTP password never leaves the server;
+// the UI only learns whether one is stored.
+func (h *SettingsHandler) GetMail(c echo.Context) error {
+	m, err := h.mailer.Settings(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load mail settings")
+	}
+	passwordSet := m.SMTPPassword != ""
+	m.SMTPPassword = ""
+	return c.JSON(http.StatusOK, map[string]interface{}{"settings": m, "password_set": passwordSet})
+}
+
+// UpdateMail stores the mail settings; an empty smtp_password keeps the stored one.
+func (h *SettingsHandler) UpdateMail(c echo.Context) error {
+	var m service.MailSettings
+	if err := c.Bind(&m); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := h.mailer.SaveSettings(c.Request().Context(), m); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return h.GetMail(c)
+}
+
+func (h *SettingsHandler) TestMail(c echo.Context) error {
+	var req struct {
+		To string `json:"to"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := h.mailer.SendTest(c.Request().Context(), req.To); err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "error", "error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// GetMyNotifications / UpdateMyNotifications: the logged-in user's own
+// opt-out for assignment mails.
+func (h *SettingsHandler) GetMyNotifications(c echo.Context) error {
+	on, err := h.q.GetUserEmailNotifications(c.Request().Context(), middleware.GetUserID(c))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load notification setting")
+	}
+	return c.JSON(http.StatusOK, map[string]bool{"email_notifications": on})
+}
+
+func (h *SettingsHandler) UpdateMyNotifications(c echo.Context) error {
+	var req struct {
+		EmailNotifications bool `json:"email_notifications"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+	if err := h.q.SetUserEmailNotifications(c.Request().Context(), middleware.GetUserID(c), req.EmailNotifications); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save notification setting")
+	}
+	return c.JSON(http.StatusOK, map[string]bool{"email_notifications": req.EmailNotifications})
+}
+
 func (h *SettingsHandler) currentLDAPConfig() config.LDAPConfig {
 	cfg, err := config.Load()
 	if err != nil {
@@ -259,6 +321,11 @@ func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
 	g.PUT("/env", h.UpdateEnvConfig)
 	g.PUT("/env/batch", h.UpdateEnvBatch)
 	g.POST("/ldap/test", h.TestLDAP)
+	g.GET("/mail", h.GetMail)
+	g.PUT("/mail", h.UpdateMail)
+	g.POST("/mail/test", h.TestMail)
+	g.GET("/me/notifications", h.GetMyNotifications)
+	g.PUT("/me/notifications", h.UpdateMyNotifications)
 	g.GET("/risk-rules", h.ListRiskRules)
 	g.DELETE("/risk-rules/:id", h.DeleteRiskRule)
 	g.POST("/risk-rules/apply", h.ApplyRiskRules)

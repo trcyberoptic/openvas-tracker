@@ -132,7 +132,8 @@ func main() {
 	handler.NewVulnHandler(vulnSvc, q).RegisterRoutes(p.Group("/vulnerabilities"))
 
 	// Ticket routes — no role enforcement (RequireRole exists but is unwired)
-	ticketH := handler.NewTicketHandler(ticketSvc, q)
+	mailer := service.NewMailNotifier(db)
+	ticketH := handler.NewTicketHandler(ticketSvc, q, mailer)
 	ticketG := p.Group("/tickets")
 	ticketH.RegisterRoutes(ticketG)
 
@@ -143,7 +144,7 @@ func main() {
 	handler.NewAssetHandler(assetSvc).RegisterRoutes(p.Group("/assets"))
 	handler.NewAuditHandler(auditSvc).RegisterRoutes(p.Group("/audit"))
 	handler.NewSearchHandler(searchSvc).RegisterRoutes(p.Group("/search"))
-	handler.NewSettingsHandler(cfg, q, envSvc, ldapSvc).RegisterRoutes(p.Group("/settings"))
+	handler.NewSettingsHandler(cfg, q, envSvc, ldapSvc, mailer).RegisterRoutes(p.Group("/settings"))
 	handler.NewFeedHandler(q).RegisterRoutes(p.Group("/feeds"))
 
 	// WebSocket
@@ -155,7 +156,7 @@ func main() {
 		if len(cfg.Import.APIKey) < 32 {
 			log.Fatal("OT_IMPORT_APIKEY must be at least 32 characters")
 		}
-		importSvc := service.NewImportService(db)
+		importSvc := service.NewImportService(db, mailer)
 		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("50M"))
 		handler.NewImportHandler(importSvc, q).RegisterRoutes(importG)
 	}

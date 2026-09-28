@@ -24,3 +24,5 @@ SOURCE /docker-entrypoint-initdb.d/migrations/020_add_zap_fields.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/021_create_feed_status.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/022_add_pending_resolution_status.up.sql;
 SOURCE /docker-entrypoint-initdb.d/migrations/023_add_vuln_oid.up.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/024_create_app_settings.up.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/025_add_user_email_notifications.up.sql;

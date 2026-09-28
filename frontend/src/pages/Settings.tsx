@@ -168,6 +168,106 @@ function EnvConfig() {
   )
 }
 
+interface MailSettings {
+  smtp_host: string; smtp_port: number; smtp_user: string; smtp_password?: string
+  smtp_from: string; notify_unassigned_to: string; base_url: string
+}
+
+const MAIL_FIELDS: { key: keyof MailSettings; label: string; placeholder?: string }[] = [
+  { key: 'smtp_host', label: 'SMTP Host', placeholder: 'smtp.example.com (leer = Mails aus)' },
+  { key: 'smtp_port', label: 'SMTP Port', placeholder: '587 (STARTTLS)' },
+  { key: 'smtp_user', label: 'SMTP User' },
+  { key: 'smtp_from', label: 'Absender', placeholder: 'OpenVAS-Tracker <noreply@example.com>' },
+  { key: 'notify_unassigned_to', label: 'Neue unzugewiesene Tickets an', placeholder: 'security@example.com (leer = keine Sammelmail)' },
+  { key: 'base_url', label: 'Tracker-URL für Links', placeholder: 'https://openvas-tracker.example.com' },
+]
+
+function MailSettingsCard() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['mail-settings'], queryFn: () => api.get<{ settings: MailSettings; password_set: boolean }>('/settings/mail') })
+  const [edits, setEdits] = useState<Partial<MailSettings>>({})
+  const [testTo, setTestTo] = useState('')
+  const values = { ...data?.settings, ...edits } as MailSettings
+
+  const saveMut = useMutation({
+    mutationFn: () => api.put('/settings/mail', { ...values, smtp_port: Number(values.smtp_port) || 0 }),
+    onSuccess: () => { setEdits({}); qc.invalidateQueries({ queryKey: ['mail-settings'] }) },
+  })
+  const testMut = useMutation({
+    mutationFn: () => api.post<{ status: string; error?: string }>('/settings/mail/test', { to: testTo }),
+  })
+
+  if (!data) return null
+  const dirty = Object.keys(edits).length > 0
+  const input = 'flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-blue-500'
+
+  return (
+    <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">E-Mail-Benachrichtigungen</h2>
+        {dirty && (
+          <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+            className="px-4 py-1.5 rounded text-sm bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50">
+            {saveMut.isPending ? 'Saving...' : 'Save'}
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-slate-500 mb-4">Gilt sofort, ohne Neustart. Zuweisungs-Mails gehen an die E-Mail-Adresse der zugewiesenen Person.</p>
+      {saveMut.isError && <p className="text-red-400 text-xs mb-3">{(saveMut.error as Error).message}</p>}
+      {saveMut.isSuccess && !dirty && <p className="text-green-400 text-xs mb-3">Saved.</p>}
+
+      <div className="space-y-3">
+        {MAIL_FIELDS.map(f => (
+          <div key={f.key}>
+            <label className="text-xs text-slate-500 mb-1 block">{f.label}</label>
+            <input value={values[f.key] ?? ''} placeholder={f.placeholder}
+              onChange={e => setEdits(prev => ({ ...prev, [f.key]: e.target.value }))}
+              className={`w-full ${input} ${f.key in edits ? 'border-blue-500' : ''}`} />
+          </div>
+        ))}
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">SMTP Passwort {data.password_set ? '(gesetzt - leer lassen, um es zu behalten)' : '(nicht gesetzt)'}</label>
+          <input type="password" autoComplete="new-password" value={edits.smtp_password ?? ''}
+            onChange={e => setEdits(prev => ({ ...prev, smtp_password: e.target.value }))}
+            className={`w-full ${input} ${'smtp_password' in edits ? 'border-blue-500' : ''}`} />
+        </div>
+      </div>
+
+      <div className="mt-6 pt-4 border-t border-slate-800 flex items-center gap-3 flex-wrap">
+        <input value={testTo} onChange={e => setTestTo(e.target.value)} placeholder="Testadresse" className={input} />
+        <button onClick={() => testMut.mutate()} disabled={testMut.isPending || !testTo || dirty}
+          title={dirty ? 'Erst speichern' : undefined}
+          className="px-4 py-1.5 rounded text-sm bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50 inline-flex items-center gap-2">
+          <RefreshCw size={14} className={testMut.isPending ? 'animate-spin' : ''} />
+          Testmail senden
+        </button>
+        {testMut.data && (
+          <span className={`text-sm ${testMut.data.status === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+            {testMut.data.status === 'ok' ? 'Verschickt' : `Fehler: ${testMut.data.error}`}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function NotificationToggle() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['my-notifications'], queryFn: () => api.get<{ email_notifications: boolean }>('/settings/me/notifications') })
+  const mut = useMutation({
+    mutationFn: (on: boolean) => api.put('/settings/me/notifications', { email_notifications: on }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-notifications'] }),
+  })
+  if (!data) return null
+  return (
+    <label className="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" checked={data.email_notifications} disabled={mut.isPending}
+        onChange={e => mut.mutate(e.target.checked)} className="accent-blue-500" />
+      <span>E-Mail, wenn mir ein Ticket zugewiesen wird</span>
+    </label>
+  )
+}
+
 function FeedStatusCard() {
   const { data: feeds = [] } = useQuery({ queryKey: ['feeds'], queryFn: getFeeds })
   return (
@@ -215,11 +315,13 @@ export function Settings() {
         <div className="space-y-3 text-sm">
           <div><span className="text-slate-400">Username:</span> <span>{user?.username}</span></div>
           <div><span className="text-slate-400">Email:</span> <span>{user?.email}</span></div>
+          <NotificationToggle />
         </div>
       </div>
 
       <SetupGuide />
       <FeedStatusCard />
+      <MailSettingsCard />
       <EnvConfig />
     </div>
   )

@@ -34,13 +34,20 @@ type ImportResult struct {
 type ImportService struct {
 	db           *sql.DB
 	q            *queries.Queries
+	mailer       *MailNotifier
 	systemUserID string
 	mu           sync.Mutex
 	initDone     bool
 }
 
-func NewImportService(db *sql.DB) *ImportService {
-	return &ImportService{db: db, q: queries.New(db)}
+func NewImportService(db *sql.DB, mailer *MailNotifier) *ImportService {
+	return &ImportService{db: db, q: queries.New(db), mailer: mailer}
+}
+
+// unassignedNotice collects the tickets an import leaves open without an
+// assignee, for the digest mail sent after the commit.
+type unassignedNotice struct {
+	created, reopened []string
 }
 
 // autoResolveThreshold returns the configured number of consecutive scan misses
@@ -103,6 +110,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 	}
 	defer tx.Rollback()
 	tq := queries.New(tx)
+	var notice unassignedNotice
 
 	scan, err := tq.CreateScan(ctx, queries.CreateScanParams{
 		ID:       scanID,
@@ -176,7 +184,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 		}
 		res.VulnsImported++
 
-		created, reopened := s.processTicket(ctx, tq, r, vulnID, severity, now)
+		created, reopened := s.processTicket(ctx, tq, r, vulnID, severity, now, &notice)
 		if created {
 			res.TicketsCreated++
 		}
@@ -185,7 +193,7 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 		}
 	}
 
-	s.reopenExpiredRiskAccepted(ctx, tq)
+	s.reopenExpiredRiskAccepted(ctx, tq, &notice)
 	res.TicketsAutoResolved = s.autoResolveStale(ctx, tq, scan.ID, scanType)
 
 	// A healthy import mostly touches tickets that already exist. A burst of new
@@ -201,6 +209,9 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
+	if s.mailer != nil {
+		go s.mailer.NotifyImport(scanType, notice.created, notice.reopened)
+	}
 	return res, nil
 }
 
@@ -209,14 +220,14 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 // at once, a normal daily import produces a handful.
 const newTicketBurstThreshold = 50
 
-func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r scanner.Finding, vulnID, severity string, now time.Time) (created, reopened bool) {
+func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r scanner.Finding, vulnID, severity string, now time.Time, notice *unassignedNotice) (created, reopened bool) {
 	if r.Host == "" {
 		return false, false
 	}
 
 	existing, err := q.FindTicketByFingerprint(ctx, r.Host, r.OID, r.CVEID, r.Title)
 	if err != nil {
-		return s.createTicket(ctx, q, r, vulnID, severity), false
+		return s.createTicket(ctx, q, r, vulnID, severity, notice), false
 	}
 
 	oldStatus := string(existing.Status)
@@ -246,6 +257,9 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 		newStatus := "open"
 		note := fmt.Sprintf("Finding reappeared in scan — reopened. CVE: %s, Host: %s", r.CVEID, r.Host)
 		logActivity(ctx, q, existing.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		if existing.AssignedTo == nil || *existing.AssignedTo == "" {
+			notice.reopened = append(notice.reopened, existing.ID)
+		}
 		return false, true
 
 	case queries.TicketStatusPendingResolution:
@@ -280,7 +294,7 @@ func (s *ImportService) processTicket(ctx context.Context, q *queries.Queries, r
 	}
 }
 
-func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r scanner.Finding, vulnID, severity string) bool {
+func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r scanner.Finding, vulnID, severity string, notice *unassignedNotice) bool {
 	priority := mapSeverityToPriority(severity)
 	title := fmt.Sprintf("[%s] %s — %s", strings.ToUpper(severity), r.Title, r.Host)
 	var desc *string
@@ -303,7 +317,11 @@ func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r 
 	// use the same form, NOT Finding.Fingerprint(), whose cwe:/url: forms for ZAP
 	// findings would never equal a stored rule.
 	fp := ruleFingerprint(r)
-	if rule, err := q.MatchRiskAcceptRule(ctx, fp, r.Host); err == nil {
+	rule, err := q.MatchRiskAcceptRule(ctx, fp, r.Host)
+	if err != nil {
+		// No rule accepted it, so it lands open and unassigned.
+		notice.created = append(notice.created, ticketID)
+	} else {
 		q.UpdateTicketStatus(ctx, queries.UpdateTicketStatusParams{ID: ticketID, Status: queries.TicketStatusRiskAccepted})
 		if rule.ExpiresAt != nil {
 			q.SetRiskAcceptedUntil(ctx, ticketID, rule.ExpiresAt)
@@ -323,7 +341,7 @@ func (s *ImportService) createTicket(ctx context.Context, q *queries.Queries, r 
 	return true
 }
 
-func (s *ImportService) reopenExpiredRiskAccepted(ctx context.Context, q *queries.Queries) {
+func (s *ImportService) reopenExpiredRiskAccepted(ctx context.Context, q *queries.Queries, notice *unassignedNotice) {
 	reopened, err := q.ReopenExpiredRiskAccepted(ctx)
 	if err != nil {
 		log.Printf("reopen expired risk_accepted error: %v", err)
@@ -334,6 +352,9 @@ func (s *ImportService) reopenExpiredRiskAccepted(ctx context.Context, q *querie
 		newStatus := "open"
 		note := "Risk acceptance expired — ticket reopened"
 		logActivity(ctx, q, t.ID, "status_changed", &oldStatus, &newStatus, "Automatic", &note)
+		if t.AssignedTo == nil || *t.AssignedTo == "" {
+			notice.reopened = append(notice.reopened, t.ID)
+		}
 	}
 }
 

@@ -29,6 +29,7 @@ Vulnerability management dashboard that imports OpenVAS and OWASP ZAP scan resul
 - **LDAP / Active Directory**: Optional AD authentication with group-based access control
 - **Admin + LDAP Auth**: Built-in admin user plus optional LDAP for team access, login by username
 - **Settings UI**: Edit common configuration keys (.env file) from the browser, test LDAP connection (changes need a service restart)
+- **E-Mail Notifications**: After each import, one digest of new and reopened unassigned tickets to a configurable address; a mail to the assignee on every assignment (single, bulk, or on creation; not on self-assignment). SMTP relay (STARTTLS + login) is configured in Settings and applies immediately; each user can switch off assignment mails under Settings → Profile
 - **Filterable & Sortable Tables**: Column sorting, multi-filter (priority, status, host, scan source, assignee), full-text search across all columns, searchable host filter with hostname autocomplete, default filter on open tickets
 - **Report Generation**: HTML, PDF, Excel, Markdown — technical, executive, compliance, comparison, and trend report types
 - **Teams & Collaboration** (API only): Create teams with member roles, invite users, assign tickets to teams
@@ -265,6 +266,9 @@ Matching by: CVE ID (if available) or vulnerability title. Optional expiry date.
 | GET/PUT | /api/settings/env | Read/write .env config |
 | PUT | /api/settings/env/batch | Batch update config |
 | POST | /api/settings/ldap/test | Test LDAP connection |
+| GET/PUT | /api/settings/mail | SMTP relay + notification settings (password write-only) |
+| POST | /api/settings/mail/test | Send a test mail |
+| GET/PUT | /api/settings/me/notifications | Current user's opt-out for assignment mails |
 | GET | /api/settings/risk-rules | List auto-accept rules |
 | POST | /api/settings/risk-rules/apply | Re-apply rules to existing open tickets |
 | DELETE | /api/settings/risk-rules/:id | Delete rule |
