@@ -82,7 +82,7 @@ Config comes from process env + `godotenv.Load()` which reads **only `./.env` in
 | `OT_JWT_SECRET` | (none — **required**, min 32 chars) | JWT signing key |
 | `OT_JWT_EXPIREHOURS` | 24 | Token lifetime (API + /ws) |
 | `OT_IMPORT_APIKEY` | (empty) | Import webhook API key. Min 32 chars when set; **when empty, all `/api/import` routes are unregistered (404)** |
-| `OT_ADMIN_PASSWORD` | (empty) | Admin user password (username: `admin`, timing-safe compare) |
+| `OT_ADMIN_PASSWORD` | (empty) | Admin user password (username: `admin`, timing-safe compare); empty disables the admin login |
 | `OT_AUTORESOLVE_THRESHOLD` | `3` | Consecutive misses before auto-resolve (restart required despite code comment claiming live reload) |
 | `OT_LDAP_URL` | (empty) | e.g. `ldaps://dc01.example.com:636` |
 | `OT_LDAP_BASE_DN` / `OT_LDAP_BIND_DN` / `OT_LDAP_BIND_PASSWORD` / `OT_LDAP_GROUP_DN` | (empty) | LDAP binding + required group |
@@ -167,7 +167,7 @@ Docker Compose or Debian Trixie systemd service. The former in-repo `/deploy` sk
 ## Gotchas
 
 - **No Redis, no active scanning, no registration** — import-only dashboard.
-- **JWT secret required** — app refuses to start with default or short secret.
+- **Startup validation** — `config.Validate()` (called once in main.go; NOT in `Load()`, which also runs per login) refuses to start with a default/short JWT secret, a short import key, or a `CHANGEME` placeholder from `deploy/openvas-tracker.env.example` left in DSN / JWT secret / import key / admin password. Before this, the example's JWT placeholder (exactly 32 chars) passed and the service ran with a publicly known signing key. `TestValidate_RejectsShippedEnvExample` keeps the shipped example failing — keep it in sync when changing placeholders. `OT_GMP_PASSWORD` is not checked (only the fetch script reads it).
 - **No `OT_IMPORT_APIKEY` = no import endpoints** — the `/api/import` group is not registered at all (404, not 401); a set-but-short key aborts startup.
 - **docker-init.sql** — must add `SOURCE` line when adding migrations.
 - **docker-compose hardcodes its env** — no `env_file:`/interpolation; editing `.env` does nothing for the compose stack (login admin/admin). Compose DB name is `openvas_tracker` (underscore), bare-metal default DSN is `openvas-tracker` (hyphen) — don't mix DSNs.

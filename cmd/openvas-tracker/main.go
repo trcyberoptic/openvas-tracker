@@ -40,9 +40,9 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	// Enforce JWT secret
-	if cfg.JWT.Secret == "change-me-in-production" || len(cfg.JWT.Secret) < 32 {
-		log.Fatal("OT_JWT_SECRET must be set to a random string of at least 32 characters")
+	// Enforce secrets: no short values, no env.example placeholders
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("config: %v", err)
 	}
 
 	db, err := database.NewPool(database.PoolConfig{
@@ -153,9 +153,6 @@ func main() {
 
 	// OpenVAS import webhook (API-Key auth, outside JWT group)
 	if cfg.Import.APIKey != "" {
-		if len(cfg.Import.APIKey) < 32 {
-			log.Fatal("OT_IMPORT_APIKEY must be at least 32 characters")
-		}
 		importSvc := service.NewImportService(db, mailer)
 		importG := e.Group("/api/import", mw.APIKeyAuth(cfg.Import.APIKey), echomw.BodyLimit("50M"))
 		handler.NewImportHandler(importSvc, q).RegisterRoutes(importG)

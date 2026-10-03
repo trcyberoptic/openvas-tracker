@@ -1,11 +1,18 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
+
+// envPlaceholder marks the values in deploy/openvas-tracker.env.example that
+// must be replaced before the service may start.
+const envPlaceholder = "CHANGEME"
 
 type Config struct {
 	Server   ServerConfig
@@ -87,6 +94,37 @@ func Load() (*Config, error) {
 			InsecureSkipVerify: envBool("OT_LDAP_INSECURE_SKIP_VERIFY", false),
 		},
 	}, nil
+}
+
+// Validate reports settings the service must not start with. It is called once
+// at startup, not from Load, which also runs on every login.
+func (c *Config) Validate() error {
+	var errs []error
+
+	var placeholders []string
+	for _, v := range []struct{ key, value string }{
+		{"OT_DATABASE_DSN", c.Database.DSN},
+		{"OT_JWT_SECRET", c.JWT.Secret},
+		{"OT_IMPORT_APIKEY", c.Import.APIKey},
+		{"OT_ADMIN_PASSWORD", c.Admin.Password},
+	} {
+		if strings.Contains(v.value, envPlaceholder) {
+			placeholders = append(placeholders, v.key)
+		}
+	}
+	if len(placeholders) > 0 {
+		errs = append(errs, fmt.Errorf("%s placeholder from env.example still set in %s — replace it (generate secrets with: openssl rand -hex 32)",
+			envPlaceholder, strings.Join(placeholders, ", ")))
+	}
+
+	if c.JWT.Secret == "change-me-in-production" || len(c.JWT.Secret) < 32 {
+		errs = append(errs, errors.New("OT_JWT_SECRET must be set to a random string of at least 32 characters"))
+	}
+	// An empty import key is valid: it disables the /api/import routes.
+	if c.Import.APIKey != "" && len(c.Import.APIKey) < 32 {
+		errs = append(errs, errors.New("OT_IMPORT_APIKEY must be at least 32 characters"))
+	}
+	return errors.Join(errs...)
 }
 
 func env(key, fallback string) string {
