@@ -113,6 +113,7 @@ sudo sed -i \
   -e "s|^OT_DATABASE_DSN=otracker:CHANGEME@|OT_DATABASE_DSN=otracker:${DB_PASSWORD}@|" \
   -e "s|^OT_JWT_SECRET=.*|OT_JWT_SECRET=$(openssl rand -hex 32)|" \
   -e "s|^OT_IMPORT_APIKEY=.*|OT_IMPORT_APIKEY=$(openssl rand -hex 32)|" \
+  -e "/^OT_ADMIN_PASSWORD=/d" \
   /etc/openvas-tracker/env
 echo "OT_ADMIN_PASSWORD=${ADMIN_PASSWORD}" | sudo tee -a /etc/openvas-tracker/env > /dev/null
 echo "Admin login: admin / ${ADMIN_PASSWORD}"
@@ -122,7 +123,7 @@ sudo systemctl restart openvas-tracker
 systemctl status openvas-tracker --no-pager
 ```
 
-The UI is then at `http://<server>:8080`. The package starts the service right away, so until step 3 is done it fails and systemd keeps retrying (see `journalctl -u openvas-tracker`) — that is expected. All other settings (LDAP, GMP credentials, …) are listed under [Configuration](#configuration); edit `/etc/openvas-tracker/env` and restart the service. To upgrade, install a newer `.deb` the same way: the env file is kept, and pending migrations apply when the package restarts the service.
+The UI is then at `http://<server>:8080`. The package starts the service right away, so until step 3 is done it fails and systemd keeps retrying — that is expected; `journalctl -u openvas-tracker` names every setting that still holds a `CHANGEME` placeholder. All other settings (LDAP, GMP credentials, …) are listed under [Configuration](#configuration); edit `/etc/openvas-tracker/env` and restart the service. To upgrade, install a newer `.deb` the same way: the env file is kept, and pending migrations apply when the package restarts the service.
 
 The GMP fetch script for the automatic OpenVAS import (see [OpenVAS Setup](#openvas-setup)) and its sudoers rule are not part of the package. To add them (the script needs `python3`):
 
@@ -166,7 +167,7 @@ make build && ./bin/openvas-tracker
 
 ## Configuration
 
-All config via `.env` file (or process environment / systemd `EnvironmentFile=`). Common keys editable from the Settings page in the UI (service restart required for changes to take effect).
+All config via `.env` file (or process environment / systemd `EnvironmentFile=`). Common keys editable from the Settings page in the UI (service restart required for changes to take effect). The service refuses to start while `OT_DATABASE_DSN`, `OT_JWT_SECRET`, `OT_IMPORT_APIKEY` or `OT_ADMIN_PASSWORD` still contain the `CHANGEME` placeholder from `deploy/openvas-tracker.env.example`.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -177,7 +178,7 @@ All config via `.env` file (or process environment / systemd `EnvironmentFile=`)
 | `OT_JWT_SECRET` | (none — **required**) | JWT signing key (min 32 chars) |
 | `OT_JWT_EXPIREHOURS` | 24 | Login token lifetime |
 | `OT_IMPORT_APIKEY` | (empty) | API key for import webhook (min 32 chars). If unset, all import endpoints are disabled |
-| `OT_ADMIN_PASSWORD` | (empty) | Admin user password |
+| `OT_ADMIN_PASSWORD` | (empty) | Admin user password (empty disables the built-in admin login) |
 | `OT_GMP_USER` | `admin` | Greenbone user used by the fetch script when `GET /api/import/openvas` is triggered |
 | `OT_GMP_PASSWORD` | (empty) | Greenbone password for the fetch script |
 | `OT_AUTORESOLVE_THRESHOLD` | `3` | Consecutive scans without finding before auto-resolve |
