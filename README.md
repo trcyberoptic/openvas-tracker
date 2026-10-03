@@ -78,29 +78,89 @@ sequenceDiagram
 
 ## Quick Start with Docker
 
+Requires Docker with the Compose plugin.
+
 ```bash
+git clone https://github.com/trcyberoptic/openvas-tracker.git
+cd openvas-tracker
 docker compose up -d
 ```
 
-The UI is at http://localhost:8080. Login: username `admin`, password `admin`.
+The first start builds the image from source, which takes a few minutes. The UI is at http://localhost:8080. Login: username `admin`, password `admin`.
 
 The compose file ships hardcoded local-dev credentials in `docker-compose.yml` (`environment:` block — it does **not** read `.env`). For anything beyond a local test, edit `OT_JWT_SECRET`, `OT_ADMIN_PASSWORD`, and `OT_IMPORT_APIKEY` there. Note: the Docker database is named `openvas_tracker` (underscore); the bare-metal default DSN uses `openvas-tracker` (hyphen).
 
-## Quick Start without Docker
+## Install from .deb Package
+
+Every [release](https://github.com/trcyberoptic/openvas-tracker/releases) ships a `.deb` for Debian/Ubuntu (amd64). It installs the binary, a systemd unit (`openvas-tracker.service`, running as user `openvas-tracker`) and the config file `/etc/openvas-tracker/env`, and pulls in MariaDB if it is missing.
 
 ```bash
-# 1. Create database (migrations auto-apply on first app start)
-mysql -e "CREATE DATABASE \`openvas-tracker\` CHARACTER SET utf8mb4;"
+# 1. Download and install the latest release
+sudo apt install -y curl openssl
+VERSION=$(curl -fsSL https://api.github.com/repos/trcyberoptic/openvas-tracker/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+curl -fLO "https://github.com/trcyberoptic/openvas-tracker/releases/download/v${VERSION}/openvas-tracker_${VERSION}_amd64.deb"
+sudo apt install "./openvas-tracker_${VERSION}_amd64.deb"
 
-# 2. Configure
+# 2. Create the database and its user (migrations auto-apply on first start)
+DB_PASSWORD=$(openssl rand -hex 16)
+sudo mariadb -e "CREATE DATABASE \`openvas-tracker\` CHARACTER SET utf8mb4;
+  CREATE USER 'otracker'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+  GRANT ALL PRIVILEGES ON \`openvas-tracker\`.* TO 'otracker'@'localhost';"
+
+# 3. Set the DB password, fresh secrets and an admin password in /etc/openvas-tracker/env
+ADMIN_PASSWORD=$(openssl rand -hex 12)
+sudo sed -i \
+  -e "s|^OT_DATABASE_DSN=otracker:CHANGEME@|OT_DATABASE_DSN=otracker:${DB_PASSWORD}@|" \
+  -e "s|^OT_JWT_SECRET=.*|OT_JWT_SECRET=$(openssl rand -hex 32)|" \
+  -e "s|^OT_IMPORT_APIKEY=.*|OT_IMPORT_APIKEY=$(openssl rand -hex 32)|" \
+  /etc/openvas-tracker/env
+echo "OT_ADMIN_PASSWORD=${ADMIN_PASSWORD}" | sudo tee -a /etc/openvas-tracker/env > /dev/null
+echo "Admin login: admin / ${ADMIN_PASSWORD}"
+
+# 4. Restart and check
+sudo systemctl restart openvas-tracker
+systemctl status openvas-tracker --no-pager
+```
+
+The UI is then at `http://<server>:8080`. The package starts the service right away, so until step 3 is done it fails and systemd keeps retrying (see `journalctl -u openvas-tracker`) — that is expected. All other settings (LDAP, GMP credentials, …) are listed under [Configuration](#configuration); edit `/etc/openvas-tracker/env` and restart the service. To upgrade, install a newer `.deb` the same way: the env file is kept, and pending migrations apply when the package restarts the service.
+
+The GMP fetch script for the automatic OpenVAS import (see [OpenVAS Setup](#openvas-setup)) and its sudoers rule are not part of the package. To add them (the script needs `python3`):
+
+```bash
+VERSION=$(dpkg-query -W -f='${Version}' openvas-tracker)
+BASE="https://raw.githubusercontent.com/trcyberoptic/openvas-tracker/v${VERSION}/deploy"
+curl -fsSLO "$BASE/openvas-tracker-fetch-latest"
+curl -fsSLO "$BASE/openvas-tracker-sudoers"
+sudo install -o root -g root -m 0755 openvas-tracker-fetch-latest /usr/local/bin/
+sudo visudo -cf openvas-tracker-sudoers && sudo install -o root -g root -m 0440 openvas-tracker-sudoers /etc/sudoers.d/openvas-tracker
+```
+
+Then set `OT_GMP_USER` / `OT_GMP_PASSWORD` in `/etc/openvas-tracker/env` and create the GVM alert as described in [OpenVAS Setup](#openvas-setup).
+
+## Quick Start without Docker
+
+Requires Go 1.26, Node.js 22 with npm, `make` and MariaDB.
+
+```bash
+# 1. Get the source
+git clone https://github.com/trcyberoptic/openvas-tracker.git
+cd openvas-tracker
+
+# 2. Create the database and its user (migrations auto-apply on first app start)
+DB_PASSWORD=$(openssl rand -hex 16)
+sudo mariadb -e "CREATE DATABASE \`openvas-tracker\` CHARACTER SET utf8mb4;
+  CREATE USER 'otracker'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+  GRANT ALL PRIVILEGES ON \`openvas-tracker\`.* TO 'otracker'@'localhost';"
+
+# 3. Configure
 cat > .env << EOF
-OT_DATABASE_DSN=root@tcp(localhost:3306)/openvas-tracker?parseTime=true
+OT_DATABASE_DSN=otracker:${DB_PASSWORD}@tcp(localhost:3306)/openvas-tracker?parseTime=true
 OT_JWT_SECRET=$(openssl rand -hex 32)
 OT_IMPORT_APIKEY=$(openssl rand -hex 32)
 OT_ADMIN_PASSWORD=your-admin-password
 EOF
 
-# 3. Build and run
+# 4. Build and run
 make build && ./bin/openvas-tracker
 ```
 
@@ -146,7 +206,7 @@ Rate limits: 60 requests/min/IP on `/api/auth`, 500/min/IP globally.
 2. In GSA: **Configuration → Alerts → New Alert** → HTTP Get → `http://<host>:8080/api/import/openvas?api_key=<key>`
 3. Attach alert to scan task
 
-When the alert fires, the tracker runs `sudo /usr/local/bin/openvas-tracker-fetch-latest`, which speaks GMP directly to the local Greenbone Unix socket, downloads the newest report, POSTs it back to itself, and also reports the Greenbone feed versions. The script and its sudoers rule are installed by `deploy/install.sh` (they are **not** part of the .deb package). The script needs read access to the gvmd socket — by default it expects the Greenbone CE Docker volume path; override with `OT_GMP_SOCKET` when running the script manually (the sudo webhook path strips environment overrides).
+When the alert fires, the tracker runs `sudo /usr/local/bin/openvas-tracker-fetch-latest`, which speaks GMP directly to the local Greenbone Unix socket, downloads the newest report, POSTs it back to itself, and also reports the Greenbone feed versions. The script and its sudoers rule are installed by `deploy/install.sh` (they are **not** part of the .deb package — see [Install from .deb Package](#install-from-deb-package) for how to add them there). The script needs read access to the gvmd socket — by default it expects the Greenbone CE Docker volume path; override with `OT_GMP_SOCKET` when running the script manually (the sudo webhook path strips environment overrides).
 
 ## ZAP Setup
 
