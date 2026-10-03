@@ -55,17 +55,22 @@ sequenceDiagram
     Note over OV: Network scan completes
     OV->>TR: HTTP GET /api/import/openvas?api_key=...
     TR->>FS: sudo openvas-tracker-fetch-latest
-    FS->>OV: GMP socket: get newest report
-    OV-->>FS: XML report
+    FS->>OV: GMP: authenticate, get_tasks, get_reports (newest), get_feeds
+    OV-->>FS: Report XML + feed versions
     FS->>TR: POST /api/import/openvas (XML)
     Note over TR,DB: One transaction per import
-    TR->>DB: Create scan + vulnerabilities
-    TR->>DB: Create tickets (check auto-accept rules), update or reopen existing ones
+    TR->>DB: Create scan, record scanned hosts
+    loop Each finding (info skipped)
+        TR->>DB: Store vulnerability
+        TR->>DB: Create ticket (check auto-accept rules), or update / reopen it
+    end
     TR->>DB: Reopen expired risk acceptances
-    TR->>DB: Auto-fix missing findings (only scanned hosts, same scanner type)
+    TR->>DB: Missing on scanned hosts (same scanner): miss +1 → pending_resolution, fixed at threshold
     TR->>DB: Commit
-    FS->>TR: POST /api/import/feeds (feed versions)
+    TR-->>FS: 201 Created
+    FS->>TR: POST /api/import/feeds (only after a successful import)
     TR->>DB: Upsert Greenbone feed versions
+    TR-->>OV: Script output
 
     Note over ZAP: Web app scan completes
     ZAP->>TR: POST /api/import/zap (JSON report, e.g. via curl)
@@ -73,12 +78,13 @@ sequenceDiagram
 
     Note over UI: User logs in
     UI->>TR: POST /api/auth/login (username + password)
-    alt admin + OT_ADMIN_PASSWORD
-        TR->>TR: Compare with OT_ADMIN_PASSWORD
-    else LDAP configured
-        TR->>AD: Bind + group check
-    else Fallback
-        TR->>DB: Local database user
+    alt username admin, password = OT_ADMIN_PASSWORD
+        TR->>DB: Get or create user admin
+    else LDAP configured and login succeeds
+        TR->>AD: Service bind, search user, group check, user bind
+        TR->>DB: Get or create user (role viewer)
+    else otherwise
+        TR->>DB: Check local user (bcrypt)
     end
     TR-->>UI: JWT token
 ```
