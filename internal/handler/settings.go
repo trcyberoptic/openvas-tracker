@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,9 +44,55 @@ func (h *SettingsHandler) GetSetup(c echo.Context) error {
 			"curl -X POST http://<tracker-host>:%d/api/import/openvas \\\n  -H 'X-API-Key: <YOUR_API_KEY>' \\\n  -H 'Content-Type: application/xml' \\\n  --data-binary @scan-report.xml",
 			h.cfg.Server.Port,
 		),
-		"ldap_enabled":  h.cfg.LDAP.Enabled(),
-		"bugreport_url": os.Getenv("OT_BUGREPORT_URL"),
+		"ldap_enabled":   h.cfg.LDAP.Enabled(),
+		"bugreport_url":  os.Getenv("OT_BUGREPORT_URL"),
+		"latest_release": latestReleaseTag(),
 	})
+}
+
+// latestRelease caches the newest GitHub release tag for the sidebar update hint.
+var latestRelease struct {
+	sync.Mutex
+	tag     string
+	checked time.Time
+}
+
+// latestReleaseTag returns the cached tag ("" until the first check finished) and
+// refreshes it in the background at most once a day, so GetSetup never waits on GitHub.
+// ponytail: a failed check also waits 24h for the retry; good enough for an update hint.
+func latestReleaseTag() string {
+	latestRelease.Lock()
+	defer latestRelease.Unlock()
+	if time.Since(latestRelease.checked) > 24*time.Hour {
+		latestRelease.checked = time.Now()
+		go fetchLatestRelease()
+	}
+	return latestRelease.tag
+}
+
+// fetchLatestRelease asks the public GitHub API (unauthenticated, honours HTTPS_PROXY).
+func fetchLatestRelease() {
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/trcyberoptic/openvas-tracker/releases/latest")
+	if err != nil {
+		log.Printf("release check: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	var r struct {
+		TagName string `json:"tag_name"`
+	}
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("release check: GitHub answered %s", resp.Status)
+		return
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		log.Printf("release check: %v", err)
+		return
+	}
+	latestRelease.Lock()
+	latestRelease.tag = r.TagName
+	latestRelease.Unlock()
 }
 
 func (h *SettingsHandler) ListUsers(c echo.Context) error {

@@ -10,7 +10,7 @@ export function Shell() {
   const { user, logout } = useAuth()
   const { data: setup } = useQuery({
     queryKey: ['setup'],
-    queryFn: () => api.get<{ bugreport_url?: string }>('/settings/setup'),
+    queryFn: () => api.get<{ bugreport_url?: string; latest_release?: string }>('/settings/setup'),
     staleTime: Infinity,
   })
 
@@ -39,7 +39,7 @@ export function Shell() {
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-white">
-      <Sidebar />
+      <Sidebar latestRelease={setup?.latest_release} />
       <div className="flex-1 flex flex-col">
         <header className="h-14 border-b border-slate-800 flex items-center justify-between px-6">
           <div />

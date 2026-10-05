@@ -11,9 +11,12 @@ const links = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
-export function Sidebar() {
+export function Sidebar({ latestRelease }: { latestRelease?: string }) {
   const location = useLocation()
   const current = location.pathname + location.search
+  const latest = latestRelease?.replace(/^v/, '')
+  // numeric collation compares 2.3.10 > 2.3.9 segment by segment
+  const updateAvailable = !!latest && latest.localeCompare(__APP_VERSION__, undefined, { numeric: true }) > 0
 
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 h-screen sticky top-0 p-4 flex flex-col">
@@ -42,6 +45,13 @@ export function Sidebar() {
           )
         })}
       </nav>
+      {updateAvailable && (
+        <a href={`https://github.com/trcyberoptic/openvas-tracker/releases/tag/${latestRelease}`}
+          target="_blank" rel="noopener noreferrer"
+          className="px-3 py-1 text-xs text-amber-400 hover:text-amber-300">
+          Neue Version v{latest} verfügbar
+        </a>
+      )}
       <div className="flex items-center gap-3 px-3 py-2 text-sm text-slate-500">
         <a href="https://github.com/trcyberoptic/openvas-tracker" target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-2 hover:text-white rounded-lg">
