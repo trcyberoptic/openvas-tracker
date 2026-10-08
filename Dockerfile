@@ -15,9 +15,13 @@ COPY . .
 COPY --from=frontend /app/frontend/dist ./cmd/openvas-tracker/static
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /openvas-tracker ./cmd/openvas-tracker
 
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates && adduser -D -H -u 10001 app
 COPY --from=backend /openvas-tracker /usr/local/bin/openvas-tracker
 COPY sql/migrations /migrations
+# The Settings UI writes ./.env, so the working directory must belong to the app user.
+WORKDIR /app
+RUN chown app /app
+USER app
 EXPOSE 8080
 ENTRYPOINT ["openvas-tracker"]

@@ -101,6 +101,13 @@ func (n *MailNotifier) SaveSettings(ctx context.Context, m MailSettings) error {
 	if err := m.Validate(); err != nil {
 		return err
 	}
+	stored, err := n.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	if err := passwordRequiredOnHostChange(stored, m); err != nil {
+		return err
+	}
 	vals := map[string]string{
 		"smtp_host": m.SMTPHost, "smtp_port": strconv.Itoa(m.SMTPPort), "smtp_user": m.SMTPUser,
 		"smtp_from": m.SMTPFrom, "notify_unassigned_to": m.NotifyUnassignedTo, "base_url": m.BaseURL,
@@ -112,6 +119,17 @@ func (n *MailNotifier) SaveSettings(ctx context.Context, m MailSettings) error {
 		if err := n.q.SetAppSetting(ctx, k, v); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// SendTest sends a test mail synchronously and returns the relay's error verbatim.
+// passwordRequiredOnHostChange refuses to carry a stored password over to a new
+// host: otherwise whoever may edit the settings could point smtp_host at a server
+// they control and collect the relay credentials via "send test mail".
+func passwordRequiredOnHostChange(stored, in MailSettings) error {
+	if in.SMTPPassword == "" && stored.SMTPPassword != "" && !strings.EqualFold(in.SMTPHost, stored.SMTPHost) {
+		return errors.New("smtp_password must be re-entered when smtp_host changes")
 	}
 	return nil
 }

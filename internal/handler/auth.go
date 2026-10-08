@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"log"
 	"net/http"
 	"time"
 
@@ -55,13 +56,18 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	// Try admin login first
-	if req.Username == "admin" && h.cfg.Admin.Password != "" {
-		hashProvided := sha256.Sum256([]byte(req.Password))
-		hashAdmin := sha256.Sum256([]byte(h.cfg.Admin.Password))
-		if subtle.ConstantTimeCompare(hashProvided[:], hashAdmin[:]) == 1 {
-			return h.loginAsAdmin(c)
+	// "admin" belongs to OT_ADMIN_PASSWORD alone: no LDAP, no DB fallback. The
+	// fallback would otherwise honour the bcrypt hash of whatever the admin
+	// password was at first login, so rotated or removed passwords kept working.
+	if req.Username == "admin" {
+		if h.cfg.Admin.Password != "" {
+			hashProvided := sha256.Sum256([]byte(req.Password))
+			hashAdmin := sha256.Sum256([]byte(h.cfg.Admin.Password))
+			if subtle.ConstantTimeCompare(hashProvided[:], hashAdmin[:]) == 1 {
+				return h.loginAsAdmin(c)
+			}
 		}
+		return h.loginFailed(c, req.Username)
 	}
 
 	// Try LDAP if configured
@@ -83,6 +89,13 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		})
 	}
 
+	return h.loginFailed(c, req.Username)
+}
+
+// loginFailed is the single 401 path, so every failed attempt leaves a log line
+// with the attempted username and client IP: the only brute-force evidence there is.
+func (h *AuthHandler) loginFailed(c echo.Context, username string) error {
+	log.Printf("auth: login failed for %q from %s", username, c.RealIP())
 	return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
 }
 

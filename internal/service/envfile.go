@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +17,33 @@ type EnvFileService struct {
 
 func NewEnvFileService(path string) *EnvFileService {
 	return &EnvFileService{path: path}
+}
+
+// editableEnvKeys is what the Settings UI may write. The secrets that hand over
+// the service itself (JWT secret, import key, admin password, DSN) are absent on
+// purpose: they are set on the host, never through the API.
+var editableEnvKeys = map[string]bool{
+	"OT_SERVER_PORT": true, "OT_JWT_EXPIREHOURS": true, "OT_AUTORESOLVE_THRESHOLD": true, "OT_BUGREPORT_URL": true,
+	"OT_LDAP_URL": true, "OT_LDAP_BASE_DN": true, "OT_LDAP_BIND_DN": true, "OT_LDAP_BIND_PASSWORD": true,
+	"OT_LDAP_GROUP_DN": true, "OT_LDAP_USER_FILTER": true, "OT_LDAP_INSECURE_SKIP_VERIFY": true,
+	"OT_GMP_USER": true, "OT_GMP_PASSWORD": true,
+}
+
+var (
+	ErrEnvKeyNotEditable = errors.New("env key is not editable via the API")
+	ErrEnvValueInvalid   = errors.New("env value must not contain line breaks")
+)
+
+// validateEnvPair guards the file format: an unknown key or a value with a line
+// break would let the caller append arbitrary variables to the EnvironmentFile.
+func validateEnvPair(key, value string) error {
+	if !editableEnvKeys[key] {
+		return fmt.Errorf("%w: %q", ErrEnvKeyNotEditable, key)
+	}
+	if strings.ContainsAny(value, "\r\n") {
+		return fmt.Errorf("%w: %s", ErrEnvValueInvalid, key)
+	}
+	return nil
 }
 
 // Read returns all key-value pairs from the .env file.
@@ -49,6 +77,9 @@ func (s *EnvFileService) Read() (map[string]string, error) {
 
 // Update sets or updates a key in the .env file. Preserves comments and order.
 func (s *EnvFileService) Update(key, value string) error {
+	if err := validateEnvPair(key, value); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -75,6 +106,11 @@ func (s *EnvFileService) Update(key, value string) error {
 
 // UpdateMultiple sets multiple keys at once.
 func (s *EnvFileService) UpdateMultiple(pairs map[string]string) error {
+	for k, v := range pairs {
+		if err := validateEnvPair(k, v); err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

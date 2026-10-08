@@ -53,13 +53,11 @@ function SetupGuide() {
   )
 }
 
+// Service-controlling secrets (JWT secret, import key, admin password, DSN) are
+// deliberately not here: the API refuses them, they are set on the host.
 const ENV_FIELDS = [
   { key: 'OT_SERVER_PORT', label: 'Server Port', type: 'text' },
-  { key: 'OT_DATABASE_DSN', label: 'Database DSN', type: 'password' },
-  { key: 'OT_JWT_SECRET', label: 'JWT Secret', type: 'password' },
   { key: 'OT_JWT_EXPIREHOURS', label: 'JWT Expire (hours)', type: 'text' },
-  { key: 'OT_IMPORT_APIKEY', label: 'Import API Key', type: 'password' },
-  { key: 'OT_ADMIN_PASSWORD', label: 'Admin Password', type: 'password' },
   { key: 'OT_AUTORESOLVE_THRESHOLD', label: 'Auto-Resolve Threshold', type: 'text', placeholder: '3 (consecutive scans without finding before auto-resolve)' },
   { key: 'OT_BUGREPORT_URL', label: 'Bug Report Widget URL', type: 'text', placeholder: 'URL zum Bug-Report Service (leer = deaktiviert)' },
   { key: 'OT_LDAP_URL', label: 'LDAP URL', type: 'text', placeholder: 'ldaps://dc01.example.com:636' },
@@ -304,6 +302,7 @@ function FeedStatusCard() {
 
 export function Settings() {
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   return (
     <div className="max-w-3xl">
@@ -319,10 +318,10 @@ export function Settings() {
         </div>
       </div>
 
-      <SetupGuide />
+      {isAdmin && <SetupGuide />}
       <FeedStatusCard />
-      <MailSettingsCard />
-      <EnvConfig />
+      {isAdmin && <MailSettingsCard />}
+      {isAdmin && <EnvConfig />}
     </div>
   )
 }

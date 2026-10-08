@@ -28,7 +28,7 @@ func SecurityHeaders() echo.MiddlewareFunc {
 			h := c.Response().Header()
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("X-Frame-Options", "DENY")
-			h.Set("X-XSS-Protection", "1; mode=block")
+			h.Set("X-XSS-Protection", "0")
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 			h.Set("Content-Security-Policy", csp)
 			h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")

@@ -116,11 +116,12 @@ func (h *TeamHandler) Delete(c echo.Context) error {
 }
 
 func (h *TeamHandler) RegisterRoutes(g *echo.Group) {
+	admin := middleware.RequireRole("admin")
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
 	g.GET("/:id/members", h.Members)
-	g.POST("/:id/members", h.AddMember)
-	g.POST("/:id/invite", h.Invite)
-	g.DELETE("/:id", h.Delete)
+	g.POST("/:id/members", h.AddMember, admin)
+	g.POST("/:id/invite", h.Invite, admin)
+	g.DELETE("/:id", h.Delete, admin)
 }

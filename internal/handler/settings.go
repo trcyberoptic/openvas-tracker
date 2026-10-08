@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,11 +20,11 @@ import (
 )
 
 type SettingsHandler struct {
-	cfg        *config.Config
-	q          *queries.Queries
-	envSvc     *service.EnvFileService
-	ldapSvc    *service.LDAPService
-	mailer     *service.MailNotifier
+	cfg     *config.Config
+	q       *queries.Queries
+	envSvc  *service.EnvFileService
+	ldapSvc *service.LDAPService
+	mailer  *service.MailNotifier
 }
 
 func NewSettingsHandler(cfg *config.Config, q *queries.Queries, envSvc *service.EnvFileService, ldapSvc *service.LDAPService, mailer *service.MailNotifier) *SettingsHandler {
@@ -31,23 +32,26 @@ func NewSettingsHandler(cfg *config.Config, q *queries.Queries, envSvc *service.
 }
 
 func (h *SettingsHandler) GetSetup(c echo.Context) error {
-	masked := ""
-	if len(h.cfg.Import.APIKey) >= 8 {
-		masked = h.cfg.Import.APIKey[:8] + "..." + h.cfg.Import.APIKey[len(h.cfg.Import.APIKey)-4:]
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"api_key_masked": masked,
+	resp := map[string]interface{}{
 		"server_port":    h.cfg.Server.Port,
-		"webhook_url":    fmt.Sprintf("/api/import/openvas?api_key=<YOUR_API_KEY>"),
-		"curl_example": fmt.Sprintf(
-			"curl -X POST http://<tracker-host>:%d/api/import/openvas \\\n  -H 'X-API-Key: <YOUR_API_KEY>' \\\n  -H 'Content-Type: application/xml' \\\n  --data-binary @scan-report.xml",
-			h.cfg.Server.Port,
-		),
 		"ldap_enabled":   h.cfg.LDAP.Enabled(),
 		"bugreport_url":  os.Getenv("OT_BUGREPORT_URL"),
 		"latest_release": latestReleaseTag(),
-	})
+	}
+	// The import key (even masked) and the webhook recipe are admin material.
+	if middleware.GetUserRole(c) == "admin" {
+		masked := ""
+		if len(h.cfg.Import.APIKey) >= 8 {
+			masked = h.cfg.Import.APIKey[:8] + "..." + h.cfg.Import.APIKey[len(h.cfg.Import.APIKey)-4:]
+		}
+		resp["api_key_masked"] = masked
+		resp["webhook_url"] = "/api/import/openvas?api_key=<YOUR_API_KEY>"
+		resp["curl_example"] = fmt.Sprintf(
+			"curl -X POST http://<tracker-host>:%d/api/import/openvas \\\n  -H 'X-API-Key: <YOUR_API_KEY>' \\\n  -H 'Content-Type: application/xml' \\\n  --data-binary @scan-report.xml",
+			h.cfg.Server.Port,
+		)
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // latestRelease caches the newest GitHub release tag for the sidebar update hint.
@@ -193,8 +197,9 @@ func (h *SettingsHandler) UpdateEnvConfig(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	if err := h.envSvc.Update(req.Key, req.Value); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update config")
+		return envUpdateError(err)
 	}
+	log.Printf("settings: env key %s updated by user %s", req.Key, middleware.GetUserID(c))
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok", "note": "restart required for changes to take effect"})
 }
 
@@ -212,9 +217,24 @@ func (h *SettingsHandler) UpdateEnvBatch(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	if err := h.envSvc.UpdateMultiple(req.Values); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to update config: %v", err))
+		return envUpdateError(err)
 	}
+	keys := make([]string, 0, len(req.Values)) // keys only: values may be the LDAP bind password
+	for k := range req.Values {
+		keys = append(keys, k)
+	}
+	log.Printf("settings: env keys %v updated by user %s", keys, middleware.GetUserID(c))
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok", "note": "restart required for changes to take effect"})
+}
+
+// envUpdateError turns allowlist/format rejections into a 400 and keeps I/O
+// errors (which carry the file path) out of the response.
+func envUpdateError(err error) error {
+	if errors.Is(err, service.ErrEnvKeyNotEditable) || errors.Is(err, service.ErrEnvValueInvalid) {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	log.Printf("settings: env update failed: %v", err)
+	return echo.NewHTTPError(http.StatusInternalServerError, "failed to update config")
 }
 
 // TestLDAP tests the current LDAP configuration.
@@ -261,6 +281,7 @@ func (h *SettingsHandler) UpdateMail(c echo.Context) error {
 	if err := h.mailer.SaveSettings(c.Request().Context(), m); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
+	log.Printf("settings: mail settings updated by user %s (smtp_host=%q)", middleware.GetUserID(c), m.SMTPHost)
 	return h.GetMail(c)
 }
 
@@ -364,15 +385,16 @@ func (h *SettingsHandler) ApplyRiskRules(c echo.Context) error {
 func strPtr(s string) *string { return &s }
 
 func (h *SettingsHandler) RegisterRoutes(g *echo.Group) {
+	admin := middleware.RequireRole("admin")
 	g.GET("/setup", h.GetSetup)
-	g.GET("/users", h.ListUsers)
-	g.GET("/env", h.GetEnvConfig)
-	g.PUT("/env", h.UpdateEnvConfig)
-	g.PUT("/env/batch", h.UpdateEnvBatch)
-	g.POST("/ldap/test", h.TestLDAP)
-	g.GET("/mail", h.GetMail)
-	g.PUT("/mail", h.UpdateMail)
-	g.POST("/mail/test", h.TestMail)
+	g.GET("/users", h.ListUsers) // ticket assignment needs the user list for everyone
+	g.GET("/env", h.GetEnvConfig, admin)
+	g.PUT("/env", h.UpdateEnvConfig, admin)
+	g.PUT("/env/batch", h.UpdateEnvBatch, admin)
+	g.POST("/ldap/test", h.TestLDAP, admin)
+	g.GET("/mail", h.GetMail, admin)
+	g.PUT("/mail", h.UpdateMail, admin)
+	g.POST("/mail/test", h.TestMail, admin)
 	g.GET("/me/notifications", h.GetMyNotifications)
 	g.PUT("/me/notifications", h.UpdateMyNotifications)
 	g.GET("/risk-rules", h.ListRiskRules)

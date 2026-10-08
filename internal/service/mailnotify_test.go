@@ -74,3 +74,22 @@ func TestAssignedMail(t *testing.T) {
 		t.Errorf("bulk subject = %q", s)
 	}
 }
+
+func TestPasswordRequiredOnHostChange(t *testing.T) {
+	stored := MailSettings{SMTPHost: "smtp.example.com", SMTPPassword: "secret"}
+	if err := passwordRequiredOnHostChange(stored, MailSettings{SMTPHost: "relay.attacker.tld"}); err == nil {
+		t.Error("host change without password accepted — the stored password would be sent to the new host")
+	}
+	for name, in := range map[string]MailSettings{
+		"same host":           {SMTPHost: "smtp.example.com"},
+		"same host, new case": {SMTPHost: "SMTP.example.com"},
+		"new host + password": {SMTPHost: "relay.other.tld", SMTPPassword: "new"},
+	} {
+		if err := passwordRequiredOnHostChange(stored, in); err != nil {
+			t.Errorf("%s: unexpected error %v", name, err)
+		}
+	}
+	if err := passwordRequiredOnHostChange(MailSettings{}, MailSettings{SMTPHost: "smtp.example.com"}); err != nil {
+		t.Errorf("no stored password: unexpected error %v", err)
+	}
+}

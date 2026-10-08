@@ -19,11 +19,11 @@ import (
 	"github.com/cyberoptic/openvas-tracker/internal/config"
 	"github.com/cyberoptic/openvas-tracker/internal/database"
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
-	"github.com/cyberoptic/openvas-tracker/sql/migrations"
 	"github.com/cyberoptic/openvas-tracker/internal/handler"
 	mw "github.com/cyberoptic/openvas-tracker/internal/middleware"
 	"github.com/cyberoptic/openvas-tracker/internal/service"
 	"github.com/cyberoptic/openvas-tracker/internal/websocket"
+	"github.com/cyberoptic/openvas-tracker/sql/migrations"
 )
 
 type customValidator struct {
@@ -86,10 +86,20 @@ func main() {
 	// Echo
 	e := echo.New()
 	e.HideBanner = true
+	// Only a reverse proxy on this host may set X-Forwarded-For; everyone else is
+	// identified by the socket peer, so the rate limiters can't be spoofed per request.
+	e.IPExtractor = echo.ExtractIPFromXFFHeader(echo.TrustLoopback(true))
 	e.Validator = &customValidator{validator: validator.New()}
 
 	// Global middleware
-	e.Use(echomw.Logger())
+	// Echo's default format minus the query string: /ws?token= and
+	// /api/import/openvas?api_key= carry secrets that must stay out of the journal.
+	e.Use(echomw.LoggerWithConfig(echomw.LoggerConfig{
+		Format: `{"time":"${time_rfc3339_nano}","id":"${id}","remote_ip":"${remote_ip}",` +
+			`"host":"${host}","method":"${method}","path":"${path}","user_agent":"${user_agent}",` +
+			`"status":${status},"error":"${error}","latency":${latency},"latency_human":"${latency_human}"` +
+			`,"bytes_in":${bytes_in},"bytes_out":${bytes_out}}` + "\n",
+	}))
 	e.Use(echomw.Recover())
 	e.Use(mw.SecurityHeaders())
 	// Global body limit — import endpoint uses a skipper to allow larger uploads
@@ -107,7 +117,8 @@ func main() {
 		code := http.StatusOK
 
 		if err := db.PingContext(c.Request().Context()); err != nil {
-			checks["database"] = err.Error()
+			log.Printf("health: database ping: %v", err)
+			checks["database"] = "unreachable" // the driver error names host and user; /api/health is unauthenticated
 			status = "degraded"
 			code = http.StatusServiceUnavailable
 		}
@@ -131,7 +142,7 @@ func main() {
 	handler.NewHostHandler(q).RegisterRoutes(p.Group("/hosts"))
 	handler.NewVulnHandler(vulnSvc, q).RegisterRoutes(p.Group("/vulnerabilities"))
 
-	// Ticket routes — no role enforcement (RequireRole exists but is unwired)
+	// Ticket routes — open to every authenticated user (RequireRole guards only settings/teams)
 	mailer := service.NewMailNotifier(db)
 	ticketH := handler.NewTicketHandler(ticketSvc, q, mailer)
 	ticketG := p.Group("/tickets")

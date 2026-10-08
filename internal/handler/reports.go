@@ -3,6 +3,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -55,7 +56,8 @@ func (h *ReportHandler) Generate(c echo.Context) error {
 	data, err := h.reports.Generate(c.Request().Context(), rpt.ID, req.ScanIDs, req.Format, userID)
 	if err != nil {
 		h.reports.UpdateStatus(c.Request().Context(), rpt.ID, "failed", nil)
-		return echo.NewHTTPError(http.StatusInternalServerError, "report generation failed: "+err.Error())
+		log.Printf("report %s: generation failed: %v", rpt.ID, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "report generation failed")
 	}
 
 	h.reports.UpdateStatus(c.Request().Context(), rpt.ID, "completed", data)
