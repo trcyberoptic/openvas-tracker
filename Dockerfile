@@ -7,6 +7,8 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM golang:1.26-alpine AS backend
+# The image sets GOTOOLCHAIN=local; auto lets go.mod pull the exact patch release.
+ENV GOTOOLCHAIN=auto
 RUN apk add --no-cache git
 WORKDIR /app
 COPY go.mod go.sum ./
