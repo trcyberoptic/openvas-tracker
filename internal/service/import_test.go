@@ -1,9 +1,12 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 )
@@ -107,5 +110,15 @@ func TestAutoResolveThreshold(t *testing.T) {
 	os.Setenv("OT_AUTORESOLVE_THRESHOLD", "0")
 	if got := autoResolveThreshold(); got != 3 {
 		t.Errorf("expected default 3 for zero, got %d", got)
+	}
+}
+
+func TestIsDuplicateKey(t *testing.T) {
+	dup := fmt.Errorf("create scan: %w", &mysql.MySQLError{Number: 1062, Message: "Duplicate entry"})
+	if !isDuplicateKey(dup) {
+		t.Error("wrapped 1062 not detected as duplicate key")
+	}
+	if isDuplicateKey(&mysql.MySQLError{Number: 1064}) || isDuplicateKey(errors.New("1062")) || isDuplicateKey(nil) {
+		t.Error("non-1062 error detected as duplicate key")
 	}
 }

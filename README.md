@@ -55,9 +55,14 @@ sequenceDiagram
     Note over OV: Network scan completes
     OV->>TR: HTTP GET /api/import/openvas?api_key=...
     TR->>FS: sudo openvas-tracker-fetch-latest
-    FS->>OV: GMP: authenticate, get_tasks, get_reports (newest), get_feeds
-    OV-->>FS: Report XML + feed versions
-    FS->>TR: POST /api/import/openvas (XML)
+    FS->>OV: GMP: authenticate, get_tasks, get_feeds
+    loop Each task's last finished report, oldest first
+        FS->>TR: GET /api/import/openvas/check
+        TR-->>FS: import? (no if already imported or stale)
+        FS->>OV: GMP: get_reports (only if import)
+        OV-->>FS: Report XML
+        FS->>TR: POST /api/import/openvas (XML)
+    end
     Note over TR,DB: One transaction per import
     TR->>DB: Create scan, record scanned hosts
     loop Each finding (info skipped)
@@ -68,7 +73,7 @@ sequenceDiagram
     TR->>DB: Missing on scanned hosts (same scanner): miss +1 → pending_resolution, fixed at threshold
     TR->>DB: Commit
     TR-->>FS: 201 Created
-    FS->>TR: POST /api/import/feeds (only after a successful import)
+    FS->>TR: POST /api/import/feeds (skipped if an import failed)
     TR->>DB: Upsert Greenbone feed versions
     TR-->>OV: Script output
 
@@ -241,12 +246,13 @@ Rate limits: 60 requests/min/IP on `/api/auth`, 500/min/IP globally.
 2. In GSA: **Configuration → Alerts → New Alert** → HTTP Get → `http://<host>:8080/api/import/openvas?api_key=<key>`
 3. Attach alert to scan task
 
-When the alert fires, the tracker runs `sudo /usr/local/bin/openvas-tracker-fetch-latest`, which speaks GMP directly to the local Greenbone Unix socket, downloads the newest report, POSTs it back to itself, and also reports the Greenbone feed versions. The script and its sudoers rule are installed by `deploy/install.sh` (they are **not** part of the .deb package — see [Install from .deb Package](#install-from-deb-package) for how to add them there). By default the script expects the gvmd socket of a Greenbone Community Edition Docker setup on the same host.
+When the alert fires, the tracker runs `sudo /usr/local/bin/openvas-tracker-fetch-latest`, which speaks GMP directly to the local Greenbone Unix socket, imports every task's last finished report the tracker doesn't have yet (oldest first), and also reports the Greenbone feed versions. The script and its sudoers rule are installed by `deploy/install.sh` (they are **not** part of the .deb package — see [Install from .deb Package](#install-from-deb-package) for how to add them there). By default the script expects the gvmd socket of a Greenbone Community Edition Docker setup on the same host.
 
 Things to know about the automatic import:
 
 - GVM's HTTP Get alert cannot send headers, so the API key is part of the URL. The request log (under systemd: the journal) records the full URL, including the key. Treat read access to the journal like access to the key.
-- The script imports the newest report of **all** tasks, not necessarily the report of the task whose alert fired. With several tasks that run at the same time, a report can be skipped.
+- Any alert imports the missing reports of **all** tasks, so tasks may overlap. A report is skipped when the tracker already holds its GVM report ID (re-posting it returns 409), or when it ended before the newest imported OpenVAS report: such a report is stale, and importing it would reopen tickets that newer scans already closed.
+- Per task only the **last** finished report is considered. If a task finishes again before its previous report was imported (e.g. while the import was broken), the older report is never imported.
 - The socket path and the tracker address (`127.0.0.1:8080`) are defaults at the top of the script, and the webhook cannot override them (see [Configuration](#configuration)). If the gvmd socket is elsewhere, or if the app does not listen on `127.0.0.1:8080` (changed `OT_SERVER_HOST` / `OT_SERVER_PORT`), edit the script.
 - The webhook stops the script after 120 seconds. For very large reports, run `sudo /usr/local/bin/openvas-tracker-fetch-latest` by hand.
 
@@ -349,6 +355,7 @@ Except for `/api/auth/login`, `/api/health`, the import endpoints (API key) and 
 | POST | /api/auth/login | Login (username + password) |
 | POST | /api/import/openvas | Import OpenVAS XML (API-Key) |
 | GET | /api/import/openvas | Trigger GMP fetch (API-Key) |
+| GET | /api/import/openvas/check | Should the fetch script import this GVM report? `report_id`, `scan_start`, `scan_end` (API-Key) |
 | POST | /api/import/zap | Import ZAP JSON report (API-Key) |
 | POST | /api/import/feeds | Import Greenbone feed versions XML (API-Key) |
 | GET | /api/feeds | Greenbone feed version status |

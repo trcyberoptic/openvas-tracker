@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"net"
 	"encoding/hex"
 	"os"
@@ -14,12 +15,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 
 	"github.com/cyberoptic/openvas-tracker/internal/auth"
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
 	"github.com/cyberoptic/openvas-tracker/internal/scanner"
 )
+
+// ErrReportAlreadyImported means a scan with the same GVM report ID exists (scans.gvm_report_id is UNIQUE).
+var ErrReportAlreadyImported = errors.New("report already imported")
+
+func isDuplicateKey(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1062 // ER_DUP_ENTRY
+}
 
 // ImportResult contains the statistics from a single import operation.
 type ImportResult struct {
@@ -97,6 +107,10 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 	// Use report timestamps when available, fall back to current time
 	startedAt := now
 	completedAt := now
+	var reportID *string
+	if meta != nil && meta.ReportID != "" {
+		reportID = &meta.ReportID
+	}
 	if meta != nil && meta.StartedAt != nil {
 		startedAt = *meta.StartedAt
 	}
@@ -113,12 +127,16 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 	var notice unassignedNotice
 
 	scan, err := tq.CreateScan(ctx, queries.CreateScanParams{
-		ID:       scanID,
-		Name:     fmt.Sprintf("%s Import %s", strings.ToUpper(scanType), startedAt.Format("2006-01-02 15:04:05")),
-		ScanType: queries.ScanType(scanType),
-		Status:   queries.ScanStatusCompleted,
-		UserID:   s.systemUserID,
+		ID:          scanID,
+		Name:        fmt.Sprintf("%s Import %s", strings.ToUpper(scanType), startedAt.Format("2006-01-02 15:04:05")),
+		ScanType:    queries.ScanType(scanType),
+		Status:      queries.ScanStatusCompleted,
+		UserID:      s.systemUserID,
+		GVMReportID: reportID,
 	})
+	if isDuplicateKey(err) {
+		return nil, ErrReportAlreadyImported
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create scan: %w", err)
 	}

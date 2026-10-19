@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
-# Fetches the most recent OpenVAS scan report via the GMP Unix socket
-# and POSTs it to the local openvas-tracker instance for import.
+# Fetches finished OpenVAS scan reports via the GMP Unix socket and POSTs them
+# to the local openvas-tracker instance for import.
+#
+# Every scan task's last finished report is a candidate, oldest scan_end first.
+# Before downloading one, the script asks the tracker (GET /api/import/openvas/check)
+# whether to import it: no if a scan already holds that GVM report ID, no if it
+# ended before the newest imported report (stale). So overlapping tasks no longer
+# hide each other's reports, and a report missed while the import path was broken
+# is picked up by the next alert - as long as it is still its task's last report.
 #
 # Invoked by internal/handler/import.go via `sudo` when GVM's HTTP-Get alert
 # pings GET /api/import/openvas. Runs as root so it can traverse /var/lib/docker.
 
+import fcntl
 import http.client
+import json
 import os
 import re
 import socket
 import sys
+import urllib.parse
 
 ENV_FILE = os.environ.get("OT_ENV_FILE", "/etc/openvas-tracker/env")
 GMP_SOCKET = os.environ.get(
@@ -18,6 +28,8 @@ GMP_SOCKET = os.environ.get(
 )
 TRACKER_HOST = os.environ.get("OT_TRACKER_HOST", "127.0.0.1")
 TRACKER_PORT = int(os.environ.get("OT_TRACKER_PORT", "8080"))
+# Serializes runs: a second alert waits, then finds the reports already imported.
+LOCK_FILE = "/run/openvas-tracker-fetch.lock"
 
 
 def load_env(path):
@@ -69,24 +81,63 @@ def xml_escape(s):
     )
 
 
-def pick_latest_report(get_tasks_xml):
-    latest_ts = ""
-    latest_id = ""
+def finished_reports(get_tasks_xml):
+    """(scan_end, report_id, scan_start) of every task's last finished report, oldest first."""
+    out = []
     task_re = re.compile(rb"<task id=\"[0-9a-f-]{36}\"[^>]*>(.*?)</task>", re.DOTALL)
     lr_re = re.compile(
-        rb"<last_report>\s*<report id=\"([0-9a-f-]{36})\"[^>]*>\s*<timestamp>([^<]+)</timestamp>",
-        re.DOTALL,
+        rb"<last_report>\s*<report id=\"([0-9a-f-]{36})\"[^>]*>(.*?)</report>", re.DOTALL
     )
     for tm in task_re.finditer(get_tasks_xml):
         m = lr_re.search(tm.group(1))
         if not m:
             continue
         rid = m.group(1).decode()
-        ts = m.group(2).decode()
-        if ts > latest_ts:
-            latest_ts = ts
-            latest_id = rid
-    return latest_id, latest_ts
+        end = re.search(rb"<scan_end>([^<]+)</scan_end>", m.group(2))
+        start = re.search(rb"<scan_start>([^<]+)</scan_start>", m.group(2))
+        if not end:
+            print(f"warning: report {rid} has no scan_end, skipped", file=sys.stderr)
+            continue
+        out.append((end.group(1).decode(), rid, start.group(1).decode() if start else ""))
+    return sorted(out)  # gvmd writes uniform ISO-8601 UTC, so string order is time order
+
+
+def gmp_connect(user, password):
+    sock = socket.socket(socket.AF_UNIX)
+    sock.settimeout(600)
+    try:
+        sock.connect(GMP_SOCKET)
+    except OSError as e:
+        sys.exit(f"cannot connect to GMP socket {GMP_SOCKET}: {e}")
+    auth = (
+        f"<authenticate><credentials>"
+        f"<username>{xml_escape(user)}</username>"
+        f"<password>{xml_escape(password)}</password>"
+        f"</credentials></authenticate>"
+    ).encode()
+    resp = gmp_call(sock, auth, "authenticate_response")
+    if b'status="200"' not in resp:
+        sock.close()
+        sys.exit(
+            "GMP authenticate failed (check OT_GMP_USER/OT_GMP_PASSWORD in "
+            + ENV_FILE
+            + "): "
+            + resp.decode(errors="replace")
+        )
+    return sock
+
+
+def tracker(method, path, api_key, body=None, timeout=60):
+    headers = {"X-API-Key": api_key}
+    if body is not None:
+        headers["Content-Type"] = "application/xml"
+    conn = http.client.HTTPConnection(TRACKER_HOST, TRACKER_PORT, timeout=timeout)
+    try:
+        conn.request(method, path, body=body, headers=headers)
+        r = conn.getresponse()
+        return r.status, r.read().decode(errors="replace")
+    finally:
+        conn.close()
 
 
 def main():
@@ -99,53 +150,17 @@ def main():
     if not api_key:
         sys.exit("missing OT_IMPORT_APIKEY in " + ENV_FILE)
 
+    lock = open(LOCK_FILE, "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+
     feeds_xml = b""
-
-    sock = socket.socket(socket.AF_UNIX)
-    sock.settimeout(600)
+    sock = gmp_connect(user, password)
     try:
-        sock.connect(GMP_SOCKET)
-    except OSError as e:
-        sys.exit(f"cannot connect to GMP socket {GMP_SOCKET}: {e}")
-
-    try:
-        auth = (
-            f"<authenticate><credentials>"
-            f"<username>{xml_escape(user)}</username>"
-            f"<password>{xml_escape(password)}</password>"
-            f"</credentials></authenticate>"
-        ).encode()
-        resp = gmp_call(sock, auth, "authenticate_response")
-        if b'status="200"' not in resp:
-            sys.exit(
-                "GMP authenticate failed (check OT_GMP_USER/OT_GMP_PASSWORD in "
-                + ENV_FILE
-                + "): "
-                + resp.decode(errors="replace")
-            )
-
         tasks_resp = gmp_call(
             sock,
             b'<get_tasks filter="rows=-1" usage_type="scan"/>',
             "get_tasks_response",
         )
-        report_id, ts = pick_latest_report(tasks_resp)
-        if not report_id:
-            sys.exit("no task with a last_report found in GVM")
-
-        # NB: no format_id — gvmd's native response already is XML in the
-        # <get_reports_response><report><report>...</report></report></get_reports_response>
-        # envelope that internal/scanner/openvas.go expects. Passing the XML
-        # format_id instead goes through a report format plugin that is slow
-        # or broken in current Greenbone CE builds.
-        full_cmd = (
-            f'<get_reports report_id="{report_id}" details="1" '
-            f'ignore_pagination="1"/>'
-        ).encode()
-        full = gmp_call(sock, full_cmd, "get_reports_response")
-        if b'status="200"' not in full[:200]:
-            sys.exit("GMP get_reports failed: " + full[:500].decode(errors="replace"))
-
         # Feed versions (best-effort — must never fail the scan import).
         try:
             feeds_xml = gmp_call(sock, b"<get_feeds/>", "get_feeds_response")
@@ -154,36 +169,56 @@ def main():
     finally:
         sock.close()
 
-    conn = http.client.HTTPConnection(TRACKER_HOST, TRACKER_PORT, timeout=3600)
-    conn.request(
-        "POST",
-        "/api/import/openvas",
-        body=full,
-        headers={
-            "Content-Type": "application/xml",
-            "X-API-Key": api_key,
-        },
-    )
-    r = conn.getresponse()
-    body = r.read().decode(errors="replace")
-    conn.close()
-    if r.status >= 300:
-        sys.exit(f"tracker import POST {r.status}: {body}")
-    print(f"imported report {report_id} ({ts}): {r.status} {body}")
+    reports = finished_reports(tasks_resp)
+    if not reports:
+        print("no task with a finished report found in GVM")
+
+    for scan_end, report_id, scan_start in reports:
+        query = urllib.parse.urlencode(
+            {"report_id": report_id, "scan_start": scan_start, "scan_end": scan_end}
+        )
+        status, body = tracker("GET", "/api/import/openvas/check?" + query, api_key)
+        if status != 200:
+            sys.exit(f"tracker check {status}: {body}")
+        verdict = json.loads(body)
+        if not verdict.get("import"):
+            print(f"skipped report {report_id} ({scan_end}): {verdict.get('reason')}")
+            continue
+
+        # NB: no format_id — gvmd's native response already is XML in the
+        # <get_reports_response><report><report>...</report></report></get_reports_response>
+        # envelope that internal/scanner/openvas.go expects. Passing the XML
+        # format_id instead goes through a report format plugin that is slow
+        # or broken in current Greenbone CE builds.
+        sock = gmp_connect(user, password)
+        try:
+            full = gmp_call(
+                sock,
+                f'<get_reports report_id="{report_id}" details="1" '
+                f'ignore_pagination="1"/>'.encode(),
+                "get_reports_response",
+            )
+        finally:
+            sock.close()
+        if b'status="200"' not in full[:200]:
+            sys.exit("GMP get_reports failed: " + full[:500].decode(errors="replace"))
+
+        status, body = tracker("POST", "/api/import/openvas", api_key, full, timeout=3600)
+        if status == 409:
+            print(f"report {report_id} ({scan_end}) already imported")
+        elif status == 400:
+            # Permanent rejection (e.g. no results): retrying won't help, don't block newer reports.
+            print(f"warning: tracker rejected report {report_id}: {body}", file=sys.stderr)
+        elif status >= 300:
+            # Stop here: importing a newer report would move the cutoff past this one.
+            sys.exit(f"tracker import POST {status}: {body}")
+        else:
+            print(f"imported report {report_id} ({scan_end}): {status} {body}")
 
     if feeds_xml:
         try:
-            fconn = http.client.HTTPConnection(TRACKER_HOST, TRACKER_PORT, timeout=60)
-            fconn.request(
-                "POST",
-                "/api/import/feeds",
-                body=feeds_xml,
-                headers={"Content-Type": "application/xml", "X-API-Key": api_key},
-            )
-            fr = fconn.getresponse()
-            fbody = fr.read().decode(errors="replace")
-            fconn.close()
-            print(f"feeds updated: {fr.status} {fbody}")
+            status, body = tracker("POST", "/api/import/feeds", api_key, feeds_xml)
+            print(f"feeds updated: {status} {body}")
         except Exception as e:
             print("warning: feeds post failed: %s" % e, file=sys.stderr)
 

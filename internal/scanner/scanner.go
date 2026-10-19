@@ -9,6 +9,7 @@ import (
 type ScanMeta struct {
 	StartedAt   *time.Time
 	CompletedAt *time.Time
+	ReportID    string // GVM report UUID; empty when absent or malformed
 }
 
 // Finding is a scanner-agnostic vulnerability finding.

@@ -6,6 +6,7 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -43,6 +44,7 @@ type Scan struct {
 	ErrorMessage  *string    `json:"error_message"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	GVMReportID   *string    `json:"gvm_report_id"`
 }
 
 type CreateScanParams struct {
@@ -54,6 +56,7 @@ type CreateScanParams struct {
 	TargetGroupID *string    `json:"target_group_id"`
 	UserID        string     `json:"user_id"`
 	Options       []byte     `json:"options"`
+	GVMReportID   *string    `json:"gvm_report_id"`
 }
 
 type ListScansParams struct {
@@ -77,18 +80,39 @@ type DeleteScanParams struct {
 }
 
 func scanRow(row interface{ Scan(...any) error }, i *Scan) error {
-	return row.Scan(&i.ID, &i.Name, &i.ScanType, &i.Status, &i.TargetID, &i.TargetGroupID, &i.UserID, &i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt, &i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt)
+	return row.Scan(&i.ID, &i.Name, &i.ScanType, &i.Status, &i.TargetID, &i.TargetGroupID, &i.UserID, &i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt, &i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt, &i.GVMReportID)
 }
 
-const scanCols = `id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at`
+const scanCols = `id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at, gvm_report_id`
 
 func (q *Queries) CreateScan(ctx context.Context, arg CreateScanParams) (Scan, error) {
-	const createScan = `INSERT INTO scans (id, name, scan_type, status, target_id, target_group_id, user_id, options) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := q.db.ExecContext(ctx, createScan, arg.ID, arg.Name, arg.ScanType, arg.Status, arg.TargetID, arg.TargetGroupID, arg.UserID, arg.Options)
+	const createScan = `INSERT INTO scans (id, name, scan_type, status, target_id, target_group_id, user_id, options, gvm_report_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createScan, arg.ID, arg.Name, arg.ScanType, arg.Status, arg.TargetID, arg.TargetGroupID, arg.UserID, arg.Options, arg.GVMReportID)
 	if err != nil {
 		return Scan{}, err
 	}
 	return q.GetScan(ctx, arg.ID)
+}
+
+// LatestOpenVASScanEnd returns the newest completed_at over all OpenVAS scans, nil when there
+// are none. completed_at is the report's scan_end as of the import - gvmd may still bump the
+// final scan_end by a minute after the alert fired, so this is a staleness cutoff, not identity.
+func (q *Queries) LatestOpenVASScanEnd(ctx context.Context) (*time.Time, error) {
+	var t sql.NullTime
+	if err := q.db.QueryRowContext(ctx, `SELECT MAX(completed_at) FROM scans WHERE scan_type = 'openvas'`).Scan(&t); err != nil || !t.Valid {
+		return nil, err
+	}
+	return &t.Time, nil
+}
+
+// OpenVASReportImported reports whether a scan holds the given GVM report. Scans imported
+// before migration 026 have no report ID; for those the report's scan_start (stored unchanged
+// as started_at) identifies it, so the first fetch after an upgrade doesn't re-import.
+func (q *Queries) OpenVASReportImported(ctx context.Context, reportID string, scanStart *time.Time) (bool, error) {
+	var n int
+	err := q.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scans WHERE gvm_report_id = ?
+		OR (gvm_report_id IS NULL AND scan_type = 'openvas' AND started_at = ?)`, reportID, scanStart).Scan(&n)
+	return n > 0, err
 }
 
 func (q *Queries) GetScan(ctx context.Context, id string) (Scan, error) {

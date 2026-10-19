@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os/exec"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/cyberoptic/openvas-tracker/internal/database/queries"
@@ -33,6 +35,9 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	}
 
 	res, err := h.importSvc.Import(c.Request().Context(), results, "openvas", meta)
+	if errors.Is(err, service.ErrReportAlreadyImported) {
+		return echo.NewHTTPError(http.StatusConflict, "report already imported")
+	}
 	if err != nil {
 		log.Printf("import error: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "import failed")
@@ -48,6 +53,50 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	}()
 
 	return c.JSON(http.StatusCreated, res)
+}
+
+// shouldImportReport decides whether the fetch script should import a GVM report: not when a
+// scan already holds it, and not when it ended at or before the newest imported OpenVAS report
+// (stale, e.g. a long-idle task's last report on the first run after an upgrade).
+func shouldImportReport(known bool, cutoff *time.Time, scanEnd time.Time) (bool, string) {
+	if known {
+		return false, "already imported"
+	}
+	if cutoff != nil && !scanEnd.After(*cutoff) {
+		return false, "ended before the newest imported report"
+	}
+	return true, ""
+}
+
+// CheckOpenVASReport answers the fetch script's "import this GVM report?" before it downloads
+// the (possibly huge) report. scan_start/scan_end come from GMP get_tasks <last_report>.
+func (h *ImportHandler) CheckOpenVASReport(c echo.Context) error {
+	id, err := uuid.Parse(c.QueryParam("report_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "report_id must be a UUID")
+	}
+	scanEnd, err := time.Parse(time.RFC3339, c.QueryParam("scan_end"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "scan_end must be RFC3339")
+	}
+	var scanStart *time.Time
+	if t, err := time.Parse(time.RFC3339, c.QueryParam("scan_start")); err == nil {
+		scanStart = &t
+	}
+
+	ctx := c.Request().Context()
+	known, err := h.q.OpenVASReportImported(ctx, id.String(), scanStart)
+	if err != nil {
+		log.Printf("openvas check: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "query failed")
+	}
+	cutoff, err := h.q.LatestOpenVASScanEnd(ctx)
+	if err != nil {
+		log.Printf("openvas check: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "query failed")
+	}
+	ok, reason := shouldImportReport(known, cutoff, scanEnd)
+	return c.JSON(http.StatusOK, map[string]any{"import": ok, "reason": reason})
 }
 
 func (h *ImportHandler) TriggerFetch(c echo.Context) error {
@@ -110,6 +159,7 @@ func (h *ImportHandler) HandleFeeds(c echo.Context) error {
 func (h *ImportHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/openvas", h.HandleOpenVAS)
 	g.GET("/openvas", h.TriggerFetch)
+	g.GET("/openvas/check", h.CheckOpenVASReport)
 	g.POST("/zap", h.HandleZAP)
 	g.POST("/feeds", h.HandleFeeds)
 }

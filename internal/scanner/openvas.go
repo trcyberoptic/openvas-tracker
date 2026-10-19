@@ -8,11 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Standard report format: <report><results><result>
 type ovasReport struct {
 	XMLName xml.Name    `xml:"report"`
+	ID      string      `xml:"id,attr"`
 	Results ovasResults `xml:"results"`
 	// GMP nested format: <report><report><results><result>
 	Inner *ovasInnerReport `xml:"report"`
@@ -31,6 +34,7 @@ type gmpEnvelope struct {
 }
 
 type gmpOuterReport struct {
+	ID    string         `xml:"id,attr"`
 	Inner gmpInnerReport `xml:"report"`
 }
 
@@ -94,7 +98,7 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 	}
 
 	var rawResults []ovasResult
-	var scanStart, scanEnd string
+	var scanStart, scanEnd, reportID string
 
 	// Try GMP envelope format first: <get_reports_response>
 	if strings.Contains(string(data[:min(500, len(data))]), "get_reports_response") {
@@ -103,6 +107,7 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 			rawResults = env.Report.Inner.Results.Results
 			scanStart = env.Report.Inner.ScanStart
 			scanEnd = env.Report.Inner.ScanEnd
+			reportID = env.Report.ID
 		}
 	}
 
@@ -113,6 +118,7 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 			return nil, nil, fmt.Errorf("failed to parse OpenVAS XML: %w", err)
 		}
 		rawResults = report.Results.Results
+		reportID = report.ID
 		// Check nested <report><report><results>
 		if len(rawResults) == 0 && report.Inner != nil {
 			rawResults = report.Inner.Results.Results
@@ -124,6 +130,12 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 	}
 
 	meta := parseScanMeta(scanStart, scanEnd)
+	if u, err := uuid.Parse(reportID); err == nil {
+		if meta == nil {
+			meta = &ScanMeta{}
+		}
+		meta.ReportID = u.String() // canonical 36-char form, fits scans.gvm_report_id CHAR(36)
+	}
 
 	var results []Finding
 	for _, res := range rawResults {
