@@ -28,6 +28,12 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      # Fails before anything is built or published when the tag has no changelog section.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="$GITHUB_REF_NAME" '$1 == "##" && $2 == v { f = 1; next } f && /^## / { exit } f' CHANGELOG.md > release-notes.md
+          grep -q '[^[:space:]]' release-notes.md || { echo "::error::CHANGELOG.md has no '## $GITHUB_REF_NAME' section"; exit 1; }
+
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
 
@@ -111,6 +117,7 @@ jobs:
           BIN="bin/openvas-tracker-linux-amd64"
           gh release create "$GITHUB_REF_NAME" \
             --title "OpenVAS-Tracker $GITHUB_REF_NAME" \
+            --notes "$(cat release-notes.md)" \
             --generate-notes \
             "$DEB" \
             "$BIN"
