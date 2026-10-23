@@ -33,6 +33,15 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	if len(results) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "empty report — no results found")
 	}
+	if ranNoTests(results) {
+		// Not importing it keeps the tickets of every scanned host from counting a miss.
+		rid := ""
+		if meta != nil {
+			rid = meta.ReportID
+		}
+		log.Printf("import rejected: OpenVAS report %q has %d results from a single NVT - scanner ran without VTs?", rid, len(results))
+		return echo.NewHTTPError(http.StatusBadRequest, "report contains results of only one NVT - the scanner probably had no VTs loaded")
+	}
 
 	res, err := h.importSvc.Import(c.Request().Context(), results, "openvas", meta)
 	if errors.Is(err, service.ErrReportAlreadyImported) {
@@ -53,6 +62,20 @@ func (h *ImportHandler) HandleOpenVAS(c echo.Context) error {
 	}()
 
 	return c.JSON(http.StatusCreated, res)
+}
+
+// ranNoTests reports whether all results come from fewer than two NVTs. A real scan always
+// yields several log-level NVTs (services, OS detection, ...); a scanner that failed to load its
+// VTs (prod 2026-10-22: "openvas --update-vt-info" failed) still finishes "Done" with nothing but
+// one "Hostname Determination Reporting" result per host.
+func ranNoTests(results []scanner.Finding) bool {
+	first := results[0].OID
+	for _, r := range results[1:] {
+		if r.OID != first {
+			return false
+		}
+	}
+	return true
 }
 
 // shouldImportReport decides whether the fetch script should import a GVM report: not when a

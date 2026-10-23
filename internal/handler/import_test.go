@@ -77,3 +77,22 @@ func TestCheckOpenVASReport_BadParams(t *testing.T) {
 		}
 	}
 }
+
+// A scan whose scanner had no VTs loaded (prod 2026-10-22) is "Done" in GVM but holds only the
+// hostname-determination result per host. Importing it would count every ticket on those hosts
+// as fixed-in-this-scan.
+func TestHandleOpenVAS_RejectsReportWithoutTests(t *testing.T) {
+	result := func(host string) string {
+		return `<result><name>Hostname Determination Reporting</name><host>` + host + `</host><port>general/tcp</port>
+<threat>Log</threat><severity>0.0</severity><nvt oid="1.3.6.1.4.1.25623.1.0.1"><name>Hostname Determination Reporting</name></nvt></result>`
+	}
+	xml := `<report><results>` + result("10.0.0.1") + result("10.0.0.2") + `</results></report>`
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/import/openvas", strings.NewReader(xml))
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	err := (&ImportHandler{}).HandleOpenVAS(c) // nil importSvc: reaching the import would panic
+	if he, ok := err.(*echo.HTTPError); !ok || he.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %v", err)
+	}
+}
