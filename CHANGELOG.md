@@ -2,6 +2,14 @@
 
 User-facing changes per release. The release workflow publishes the section of the tagged version as the GitHub release notes and fails if it is missing.
 
+## v2.4.1 - 2026-10-23
+
+### Fixed
+- **Scans that ran no vulnerability tests are no longer imported.** When the Greenbone scanner fails to load its tests (seen on 2026-10-22 after a restart of `ospd-openvas`), GVM still finishes the scan as "Done", but the report holds nothing except one "Hostname Determination Reporting" result per host. The tracker imported such a report like a normal scan, so every open ticket on the scanned hosts counted as "not found any more" and moved to `pending_resolution` - after three such scans they would have been closed as fixed. The tracker now rejects a report whose results all come from a single test (HTTP 400, logged as `import rejected: ...`). The fetch script skips it with a warning and continues with the other reports.
+
+### Known limits
+- A report that was filtered down to a single test before a manual upload is rejected as well.
+
 ## v2.4.0 - 2026-10-19
 
 ### Changed
