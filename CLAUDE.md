@@ -95,7 +95,7 @@ Fetch-script-only vars (NOT the app): `OT_GMP_USER` (default admin), `OT_GMP_PAS
 ## Database
 
 - **MariaDB** with `database/sql` + `go-sql-driver/mysql`
-- 26 migrations in `sql/migrations/` (001-026). `sql/docker-init.sql` sources all.
+- 27 migrations in `sql/migrations/` (001-027). `sql/docker-init.sql` sources all.
 - **Auto-migrate on startup** — `AutoMigrate` applies pending migrations automatically. Bootstraps `schema_migrations` for existing databases (detected via `users` table). Bootstrap only marks CREATE TABLE migrations as applied — ALTER TABLE migrations always run.
 - **AutoMigrate splits on bare semicolons** (full-line `--` comments stripped) — keep migrations to plain semicolon-separated DDL/DML: no procedures, triggers, or string literals containing `;`.
 - **Foreign keys ARE enforced, including the inline ones** — verified 2026-08-10 against production (MariaDB 11.8.6): 29 constraints, and the inline column-level `REFERENCES … ON DELETE …` clauses in migrations 004/005 produce real constraints with exactly the declared delete rules (`vulnerabilities.scan_id → scans` CASCADE, `tickets.vulnerability_id → vulnerabilities` SET NULL, `ticket_activity.ticket_id → tickets` CASCADE). An earlier note here claimed MariaDB silently ignores inline `REFERENCES` — that is MySQL/older-MariaDB behaviour and does not hold on 11.8. Still check `information_schema.REFERENTIAL_CONSTRAINTS` on the target DB before relying on a cascade, since older installs may predate this.
@@ -181,6 +181,7 @@ Docker Compose or Debian Trixie systemd service. The former in-repo `/deploy` sk
 - **Ticket title ≠ vuln title** — tickets formatted `[SEV] Title — Host`. Risk rules and dedup use raw vuln title.
 - **`read` is a MariaDB reserved word** — always backtick it in notification queries (bitten in d23ce07: un-backticked = 1064, all endpoints 500).
 - **MariaDB** — no FULL OUTER JOIN (use UNION ALL + NOT EXISTS), no `generate_series` (use `WITH RECURSIVE dates`).
+- **Scan diff pairs runs of the same job** — `scans.gvm_task_id` (migration 027, from `<report><task id>` in the GMP XML; NULL for ZAP/legacy) and the task name in the scan name (`OPENVAS Import <task> <start>`). `ScanDiff.tsx` offers as "Previous Scan" only scans with the same `scan_type` AND `gvm_task_id` — prod runs several GVM tasks on different host sets, and diffing task A against task B shows mostly `host_unscanned`. Pre-027 scans have no task until backfilled.
 - **Scan diff statuses** — `DiffScans` always runs `diffScansCompat` (FULL OUTER JOIN path is dead). 7 statuses: `new`, `rediscovered`, `pending_fix`, `fixed`, `risk_accepted`, `host_unscanned`, `unchanged`. A finding in the new scan but not the old is downgraded from `new` to `host_unscanned` when the old scan never covered that host (`scan_hosts` check), or to `unchanged`/`risk_accepted`/`rediscovered` when a ticket created before the new scan already exists. Legacy fallback: scans with zero `scan_hosts` rows skip the coverage check.
 - **VulnTrend boundary** — counts tickets open at *end of day D*; both `created_at` and `resolved_at` comparisons must use `dates.d + INTERVAL 1 DAY`.
 - **tickets has no `affected_host`/`cve_id`** — both live on `vulnerabilities`; join via `t.vulnerability_id`. Tolerate NULL `vulnerability_id` (orphans).

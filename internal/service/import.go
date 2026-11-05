@@ -107,9 +107,16 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 	// Use report timestamps when available, fall back to current time
 	startedAt := now
 	completedAt := now
-	var reportID *string
+	var reportID, taskID *string
+	name := strings.ToUpper(scanType) + " Import"
 	if meta != nil && meta.ReportID != "" {
 		reportID = &meta.ReportID
+	}
+	if meta != nil && meta.TaskID != "" {
+		taskID = &meta.TaskID
+		if meta.TaskName != "" {
+			name += " " + meta.TaskName
+		}
 	}
 	if meta != nil && meta.StartedAt != nil {
 		startedAt = *meta.StartedAt
@@ -128,11 +135,12 @@ func (s *ImportService) Import(ctx context.Context, results []scanner.Finding, s
 
 	scan, err := tq.CreateScan(ctx, queries.CreateScanParams{
 		ID:          scanID,
-		Name:        fmt.Sprintf("%s Import %s", strings.ToUpper(scanType), startedAt.Format("2006-01-02 15:04:05")),
+		Name:        name + " " + startedAt.Format("2006-01-02 15:04:05"),
 		ScanType:    queries.ScanType(scanType),
 		Status:      queries.ScanStatusCompleted,
 		UserID:      s.systemUserID,
 		GVMReportID: reportID,
+		GVMTaskID:   taskID,
 	})
 	if isDuplicateKey(err) {
 		return nil, ErrReportAlreadyImported

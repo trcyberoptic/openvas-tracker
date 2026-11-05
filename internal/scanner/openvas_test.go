@@ -60,29 +60,34 @@ func TestParseOpenVASXML(t *testing.T) {
 
 func TestParseOpenVASXML_ReportID(t *testing.T) {
 	const rid = "0f6c3f5e-1a2b-4c3d-9e8f-123456789abc"
-	gmp := `<get_reports_response status="200"><report id="` + rid + `"><report id="` + rid + `">
+	const tid = "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+	task := `<task id="` + tid + `"><name> Server </name></task>`
+	gmp := `<get_reports_response status="200"><report id="` + rid + `">` + task + `<report id="` + rid + `">
   <scan_start>2026-10-16T22:00:28Z</scan_start><scan_end>2026-10-17T13:44:51Z</scan_end>
   <results><result><name>X</name><host>10.0.0.1</host><port>22/tcp</port><threat>High</threat><severity>7.5</severity>
   <nvt oid="1.3.6.1.4.1.25623.1.0.1"><name>X</name></nvt></result></results>
 </report></report></get_reports_response>`
-	plain := `<report id="` + rid + `"><results><result><name>X</name><host>10.0.0.1</host><severity>7.5</severity></result></results></report>`
+	plain := `<report id="` + rid + `">` + task + `<results><result><name>X</name><host>10.0.0.1</host><severity>7.5</severity></result></results></report>`
 	junk := `<report id="not-a-uuid"><results><result><name>X</name><host>10.0.0.1</host><severity>7.5</severity></result></results></report>`
 
-	for name, tc := range map[string]struct{ xml, want string }{
-		"gmp envelope": {gmp, rid},
-		"plain report": {plain, rid},
-		"invalid id":   {junk, ""},
+	for name, tc := range map[string]struct{ xml, want, wantTask string }{
+		"gmp envelope": {gmp, rid, tid},
+		"plain report": {plain, rid, tid},
+		"invalid id":   {junk, "", ""},
 	} {
 		_, meta, err := ParseOpenVASXML(strings.NewReader(tc.xml))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		got := ""
+		got, gotTask, gotName := "", "", ""
 		if meta != nil {
-			got = meta.ReportID
+			got, gotTask, gotName = meta.ReportID, meta.TaskID, meta.TaskName
 		}
 		if got != tc.want {
 			t.Errorf("%s: ReportID = %q, want %q", name, got, tc.want)
+		}
+		if gotTask != tc.wantTask || (tc.wantTask != "" && gotName != "Server") {
+			t.Errorf("%s: task = %q %q, want %q \"Server\"", name, gotTask, gotName, tc.wantTask)
 		}
 	}
 }

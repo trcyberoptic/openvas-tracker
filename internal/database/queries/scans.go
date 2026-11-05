@@ -45,6 +45,7 @@ type Scan struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	GVMReportID   *string    `json:"gvm_report_id"`
+	GVMTaskID     *string    `json:"gvm_task_id"`
 }
 
 type CreateScanParams struct {
@@ -57,6 +58,7 @@ type CreateScanParams struct {
 	UserID        string     `json:"user_id"`
 	Options       []byte     `json:"options"`
 	GVMReportID   *string    `json:"gvm_report_id"`
+	GVMTaskID     *string    `json:"gvm_task_id"`
 }
 
 type ListScansParams struct {
@@ -80,14 +82,14 @@ type DeleteScanParams struct {
 }
 
 func scanRow(row interface{ Scan(...any) error }, i *Scan) error {
-	return row.Scan(&i.ID, &i.Name, &i.ScanType, &i.Status, &i.TargetID, &i.TargetGroupID, &i.UserID, &i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt, &i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt, &i.GVMReportID)
+	return row.Scan(&i.ID, &i.Name, &i.ScanType, &i.Status, &i.TargetID, &i.TargetGroupID, &i.UserID, &i.Options, &i.RawOutput, &i.StartedAt, &i.CompletedAt, &i.ErrorMessage, &i.CreatedAt, &i.UpdatedAt, &i.GVMReportID, &i.GVMTaskID)
 }
 
-const scanCols = `id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at, gvm_report_id`
+const scanCols = `id, name, scan_type, status, target_id, target_group_id, user_id, options, raw_output, started_at, completed_at, error_message, created_at, updated_at, gvm_report_id, gvm_task_id`
 
 func (q *Queries) CreateScan(ctx context.Context, arg CreateScanParams) (Scan, error) {
-	const createScan = `INSERT INTO scans (id, name, scan_type, status, target_id, target_group_id, user_id, options, gvm_report_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := q.db.ExecContext(ctx, createScan, arg.ID, arg.Name, arg.ScanType, arg.Status, arg.TargetID, arg.TargetGroupID, arg.UserID, arg.Options, arg.GVMReportID)
+	const createScan = `INSERT INTO scans (id, name, scan_type, status, target_id, target_group_id, user_id, options, gvm_report_id, gvm_task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := q.db.ExecContext(ctx, createScan, arg.ID, arg.Name, arg.ScanType, arg.Status, arg.TargetID, arg.TargetGroupID, arg.UserID, arg.Options, arg.GVMReportID, arg.GVMTaskID)
 	if err != nil {
 		return Scan{}, err
 	}

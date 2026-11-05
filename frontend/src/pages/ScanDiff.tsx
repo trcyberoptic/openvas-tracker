@@ -28,7 +28,10 @@ const SCAN_TYPE_COLORS: Record<string, string> = {
   zap: 'bg-blue-900 text-blue-300',
 }
 
-interface Scan { id: string; name: string; scan_type: string; created_at: string }
+interface Scan { id: string; name: string; scan_type: string; created_at: string; gvm_task_id?: string | null }
+
+// Same scanner and, for OpenVAS, same GVM task - runs of different tasks cover different hosts
+const sameJob = (a: Scan, b: Scan) => a.scan_type === b.scan_type && (a.gvm_task_id ?? null) === (b.gvm_task_id ?? null)
 interface DiffEntry {
   status: string; vuln_id: string; title: string
   affected_host?: string; hostname?: string; severity: string; cvss_score?: number; cve_id?: string
@@ -45,27 +48,27 @@ export function ScanDiff() {
     [...scans].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [scans])
 
-  // Default to the most recent scan that has an older scan of the same type to compare against
+  // Default to the most recent scan that has an older run of the same job to compare against
   const defaultNewId = useMemo(() => {
     const newest = sortedScans[0]
     if (!newest) return ''
-    const hasOlderSameType = sortedScans.some(s => s.id !== newest.id && s.scan_type === newest.scan_type)
-    return hasOlderSameType ? newest.id : ''
+    const hasOlderSameJob = sortedScans.some(s => s.id !== newest.id && sameJob(s, newest))
+    return hasOlderSameJob ? newest.id : ''
   }, [sortedScans])
 
   const newId = newSel ?? defaultNewId
   const newScan = scans.find(s => s.id === newId)
 
-  // Filter old scan options: same type as selected new scan, and older
+  // Filter old scan options: same job as selected new scan, and older
   const oldScanOptions = useMemo(() => {
     if (!newScan) return sortedScans
     return sortedScans.filter(s =>
-      s.scan_type === newScan.scan_type &&
+      sameJob(s, newScan) &&
       new Date(s.created_at).getTime() < new Date(newScan.created_at).getTime()
     )
   }, [sortedScans, newScan])
 
-  // Options are newest-first, so the head is the next older scan of the same type
+  // Options are newest-first, so the head is the next older run of the same job
   const oldId = oldSel ?? (newScan ? oldScanOptions[0]?.id ?? '' : '')
 
   const { data: diff, isFetching } = useQuery({
@@ -127,7 +130,7 @@ export function ScanDiff() {
             ))}
           </select>
           {!newId && <p className="text-xs text-slate-500 mt-1">Select current scan first</p>}
-          {newId && oldScanOptions.length === 0 && <p className="text-xs text-amber-400 mt-1">No older {newScan?.scan_type.toUpperCase()} scans available</p>}
+          {newId && oldScanOptions.length === 0 && <p className="text-xs text-amber-400 mt-1">No older {newScan?.scan_type.toUpperCase()} scans of this job available</p>}
         </div>
       </div>
 

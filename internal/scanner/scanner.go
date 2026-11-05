@@ -10,6 +10,8 @@ type ScanMeta struct {
 	StartedAt   *time.Time
 	CompletedAt *time.Time
 	ReportID    string // GVM report UUID; empty when absent or malformed
+	TaskID      string // GVM task UUID; empty when absent or malformed
+	TaskName    string
 }
 
 // Finding is a scanner-agnostic vulnerability finding.

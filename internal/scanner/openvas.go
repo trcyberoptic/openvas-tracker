@@ -16,12 +16,19 @@ import (
 type ovasReport struct {
 	XMLName xml.Name    `xml:"report"`
 	ID      string      `xml:"id,attr"`
+	Task    ovasTask    `xml:"task"`
 	Results ovasResults `xml:"results"`
 	// GMP nested format: <report><report><results><result>
 	Inner *ovasInnerReport `xml:"report"`
 }
 
+type ovasTask struct {
+	ID   string `xml:"id,attr"`
+	Name string `xml:"name"`
+}
+
 type ovasInnerReport struct {
+	Task      ovasTask    `xml:"task"`
 	Results   ovasResults `xml:"results"`
 	ScanStart string      `xml:"scan_start"`
 	ScanEnd   string      `xml:"scan_end"`
@@ -35,6 +42,7 @@ type gmpEnvelope struct {
 
 type gmpOuterReport struct {
 	ID    string         `xml:"id,attr"`
+	Task  ovasTask       `xml:"task"`
 	Inner gmpInnerReport `xml:"report"`
 }
 
@@ -99,6 +107,7 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 
 	var rawResults []ovasResult
 	var scanStart, scanEnd, reportID string
+	var task ovasTask
 
 	// Try GMP envelope format first: <get_reports_response>
 	if strings.Contains(string(data[:min(500, len(data))]), "get_reports_response") {
@@ -108,6 +117,7 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 			scanStart = env.Report.Inner.ScanStart
 			scanEnd = env.Report.Inner.ScanEnd
 			reportID = env.Report.ID
+			task = env.Report.Task
 		}
 	}
 
@@ -119,9 +129,13 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 		}
 		rawResults = report.Results.Results
 		reportID = report.ID
+		task = report.Task
 		// Check nested <report><report><results>
 		if len(rawResults) == 0 && report.Inner != nil {
 			rawResults = report.Inner.Results.Results
+			if task.ID == "" {
+				task = report.Inner.Task
+			}
 			if scanStart == "" {
 				scanStart = report.Inner.ScanStart
 				scanEnd = report.Inner.ScanEnd
@@ -135,6 +149,13 @@ func ParseOpenVASXML(r io.Reader) ([]Finding, *ScanMeta, error) {
 			meta = &ScanMeta{}
 		}
 		meta.ReportID = u.String() // canonical 36-char form, fits scans.gvm_report_id CHAR(36)
+	}
+	if u, err := uuid.Parse(task.ID); err == nil {
+		if meta == nil {
+			meta = &ScanMeta{}
+		}
+		meta.TaskID = u.String()
+		meta.TaskName = strings.TrimSpace(task.Name)
 	}
 
 	var results []Finding
