@@ -2,6 +2,17 @@
 
 User-facing changes per release. The release workflow publishes the section of the tagged version as the GitHub release notes and fails if it is missing.
 
+## v2.4.3 - 2026-11-05
+
+### Security
+- **Web framework Echo updated to v4.16.3.** Fixes 12 advisories, among them a critical one (rejected WebSocket upgrades could bypass route-level access checks, GHSA-cxf3-9h37-7rr8) and unbounded memory use when decompressing request bodies (GHSA-h7wr-284f-5qvc). The tracker already sets its own client-IP rule (`X-Forwarded-For` only from a proxy on the same host), so the changed IP and scheme defaults in this Echo release do not change its behavior.
+- **Built with Go 1.26.10.** Go 1.26.9 still trusted a set of compromised intermediate certificates (GO-2026-6809). This matters wherever the tracker verifies TLS certificates: LDAP over `ldaps://`, the mail relay and the GitHub release check.
+- `golang.org/x/net` updated to v0.62.0 (two HTML parser fixes, not reachable from the tracker's code).
+- The frontend build tools use `minimatch` 11.0.4 (denial of service via crafted glob patterns, GHSA-g3hv-75wg-m249). This only affects linting during development; minimatch is not part of the shipped app.
+
+### Upgrade
+- No database migration and no configuration change.
+
 ## v2.4.2 - 2026-11-05
 
 ### Fixed
