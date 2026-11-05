@@ -2,6 +2,15 @@
 
 User-facing changes per release. The release workflow publishes the section of the tagged version as the GitHub release notes and fails if it is missing.
 
+## v2.4.2 - 2026-11-05
+
+### Fixed
+- **Scan Comparison only compares runs of the same GVM task.** With several scan tasks (e.g. one for `10.9.1.0/24` at 21:00 and one for `10.10.0.0/20` at 22:00), the page preselected the 21:00 scan as "previous" for the 22:00 scan, so almost every finding showed up as "host not scanned". The tracker now stores the GVM task with each OpenVAS import and shows the task name in the scan name (`OPENVAS Import <task> <start time>`). "Previous Scan" lists only older scans of the same task.
+
+### Upgrade
+- Database migration 027 runs automatically on startup.
+- Scans imported before this version have no task. They are compared only with each other until they are assigned one; the next run of each task starts a new series.
+
 ## v2.4.1 - 2026-10-23
 
 ### Fixed
