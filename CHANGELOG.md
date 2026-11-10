@@ -2,6 +2,14 @@
 
 User-facing changes per release. The release workflow publishes the section of the tagged version as the GitHub release notes and fails if it is missing.
 
+## v2.4.4 - 2026-11-10
+
+### Security
+- **Excel library excelize updated to v2.11.1.** This release fixes 16 advisories, among them GHSA-fq3v-74gv-27gm (high: a crafted workbook can hang the process or exhaust its memory). All of them need a crafted workbook as input. The tracker only writes new workbooks for the Excel report and never opens an uploaded one, so it was not exposed. The update closes the open Dependabot alert.
+
+### Upgrade
+- No database migration and no configuration change.
+
 ## v2.4.3 - 2026-11-05
 
 ### Security
